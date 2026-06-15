@@ -27,7 +27,7 @@ set -euo pipefail
 : "${GATEWAY:=}"                           # nur bei statischer IP nötig
 : "${UNPRIVILEGED:=1}"
 : "${PASSWORD:=}"                          # leer = zufälliges Passwort wird gesetzt + ausgegeben
-: "${REPO_URL:=https://github.com/CHANGE-ME/Gemeindeverwaltung.git}"
+: "${REPO_URL:=https://github.com/mgoebel89/Gemeindeverwaltung.git}"
 : "${REPO_BRANCH:=main}"
 : "${HTTP_PORT:=80}"
 
