@@ -165,6 +165,77 @@
       save(); rerender();
     }
 
+    function setOneZeit(mitgliedId, key, frage) {
+      const zeiten = sitzung.anwesenheitsZeiten[mitgliedId] || {};
+      const v = askZeit(frage, zeiten[key] || nowTime());
+      if (v === undefined) return;
+      const nz = { ...zeiten };
+      if (v) nz[key] = v; else delete nz[key];
+      if (nz.kamUm || nz.gingUm) sitzung.anwesenheitsZeiten[mitgliedId] = nz;
+      else delete sitzung.anwesenheitsZeiten[mitgliedId];
+      save(); rerender();
+    }
+
+    function clearZeiten(mitgliedId) {
+      delete sitzung.anwesenheitsZeiten[mitgliedId];
+      save(); rerender();
+    }
+
+    function openZeitMenu(x, y, mitglied) {
+      document.querySelectorAll('.ctx-menu').forEach(m => m.remove());
+      const z = sitzung.anwesenheitsZeiten[mitglied.id] || {};
+      const name = fullName(mitglied);
+      const menu = document.createElement('div');
+      menu.className = 'ctx-menu';
+
+      function close() {
+        menu.remove();
+        document.removeEventListener('mousedown', onOutside, true);
+        document.removeEventListener('keydown', onKey, true);
+      }
+      function onOutside(ev) { if (!menu.contains(ev.target)) close(); }
+      function onKey(ev) { if (ev.key === 'Escape') close(); }
+
+      function addItem(label, action, danger) {
+        const it = document.createElement('div');
+        it.className = 'ctx-item' + (danger ? ' ctx-item--danger' : '');
+        it.textContent = label;
+        it.addEventListener('click', () => { close(); try { action(); } catch (err) { console.warn(err); } });
+        menu.appendChild(it);
+      }
+      function addHeader(label) {
+        const h = document.createElement('div');
+        h.className = 'ctx-header';
+        h.textContent = label;
+        menu.appendChild(h);
+      }
+      function addSep() { const s = document.createElement('div'); s.className = 'ctx-sep'; menu.appendChild(s); }
+
+      addHeader(name);
+      addItem(
+        z.kamUm ? `Später gekommen ändern (aktuell ${z.kamUm} Uhr)…` : 'Später gekommen…',
+        () => setOneZeit(mitglied.id, 'kamUm', `Ankunftszeit für ${name}`),
+      );
+      addItem(
+        z.gingUm ? `Früher gegangen ändern (aktuell ${z.gingUm} Uhr)…` : 'Früher gegangen…',
+        () => setOneZeit(mitglied.id, 'gingUm', `Gehzeit für ${name}`),
+      );
+      addSep();
+      addItem('Beide Zeiten bearbeiten…', () => editZeiten(mitglied.id));
+      if (z.kamUm || z.gingUm) addItem('Zeiten löschen', () => clearZeiten(mitglied.id), true);
+
+      document.body.appendChild(menu);
+      const rect = menu.getBoundingClientRect();
+      const px = Math.min(x, window.innerWidth - rect.width - 8);
+      const py = Math.min(y, window.innerHeight - rect.height - 8);
+      menu.style.left = Math.max(4, px) + 'px';
+      menu.style.top = Math.max(4, py) + 'px';
+      setTimeout(() => {
+        document.addEventListener('mousedown', onOutside, true);
+        document.addEventListener('keydown', onKey, true);
+      }, 0);
+    }
+
     // Pointer-basiertes Drag (funktioniert für Maus UND Touch)
     function makeDraggableChip(mitglied) {
       const z = sitzung.anwesenheitsZeiten[mitglied.id] || {};
@@ -176,13 +247,37 @@
       const chip = el('div', {
         class: 'pers-chip' + (isLockedFunktionstraeger(sitzung, mitglied.id) ? ' funktion' : ''),
         'data-mid': mitglied.id,
-        title: 'Ziehen oder Klick: andere Spalte. Doppelklick: Zeiten bearbeiten.',
+        title: 'Ziehen / Klick: andere Spalte. Rechtsklick: Zeiten. Doppelklick: beide Zeiten.',
       }, [
         el('span', { class: 'pers-name' }, fullName(mitglied)),
         subline.length ? el('span', { class: 'pers-time' }, '(' + subline.join(', ') + ')') : null,
       ]);
 
       chip.addEventListener('dblclick', () => editZeiten(mitglied.id));
+
+      // Kontextmenü (Rechtsklick / Long-Press)
+      chip.addEventListener('contextmenu', (e) => {
+        e.preventDefault();
+        openZeitMenu(e.clientX, e.clientY, mitglied);
+      });
+      // Long-Press auf Touch (fallback, falls contextmenu nicht zuverlässig feuert)
+      let pressTimer = null;
+      chip.addEventListener('pointerdown', (e) => {
+        if (e.pointerType !== 'touch') return;
+        clearTimeout(pressTimer);
+        pressTimer = setTimeout(() => {
+          openZeitMenu(e.clientX, e.clientY, mitglied);
+          // Drag-Initialisierung abbrechen, falls schon gestartet
+          dragging = false;
+          if (ghost) { ghost.remove(); ghost = null; }
+          chip.classList.remove('pers-chip--dragging');
+          pointerId = null;
+        }, 550);
+      });
+      const cancelPress = () => { if (pressTimer) { clearTimeout(pressTimer); pressTimer = null; } };
+      chip.addEventListener('pointermove', cancelPress);
+      chip.addEventListener('pointerup', cancelPress);
+      chip.addEventListener('pointercancel', cancelPress);
 
       let dragging = false;
       let ghost = null;
