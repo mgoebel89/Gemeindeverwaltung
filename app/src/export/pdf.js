@@ -282,21 +282,38 @@
     const titleLine = `TOP ${top.nummer} — ${(top.titel || '').toUpperCase()}`;
     const lines = doc.splitTextToSize(titleLine, CONTENT_W);
     const lineH = 5.2;
-    ensureSpace(doc, state, lines.length * lineH + 9);
     for (const ln of lines) {
       doc.text(ln, MARGIN_X, state.y);
       state.y += lineH;
     }
-    state.y += 0.5;
+    state.y += 1.5;
     doc.setDrawColor(C_LINE_DARK[0], C_LINE_DARK[1], C_LINE_DARK[2]);
     doc.setLineWidth(0.3);
     doc.line(MARGIN_X, state.y, PAGE_W - MARGIN_X, state.y);
-    state.y += 6;
+    state.y += 9;
   }
 
   function renderTop(doc, state, top, isFirst, mitglieder, wechselVor, wechselNach) {
-    if (!isFirst) drawLine(doc, state, C_LINE_LIGHT, 0.2, 6, 8);
-    if (wechselVor) drawText(doc, state, wechselVor, { italic: true, color: C_MUTED, size: 10 });
+    if (!isFirst) state.y += 6;
+
+    // Mindestplatz reservieren, damit Titel + Anfang des Inhalts nicht orphan auf alter Seite landen
+    doc.setFont('helvetica', 'bold'); doc.setFontSize(11);
+    const titleLine = `TOP ${top.nummer} — ${(top.titel || '').toUpperCase()}`;
+    const titleLines = doc.splitTextToSize(titleLine, CONTENT_W).length;
+    const wechselLines = wechselVor
+      ? doc.splitTextToSize(wechselVor, CONTENT_W).length
+      : 0;
+    // Wechsel + Abstand + Titel + Linie + Abstand + Label + 2 Zeilen Inhalt
+    const needed = wechselLines * 5.4 + titleLines * 5.2 + 12 + GAP_LABEL + 2 * GAP_BLOCK + 6;
+    if (state.y + needed > PAGE_BOTTOM) {
+      doc.addPage();
+      state.y = MARGIN_TOP;
+    }
+
+    if (wechselVor) {
+      drawText(doc, state, wechselVor, { italic: true, color: C_TEXT, size: 10 });
+      state.y += 1.5;
+    }
     drawTopTitle(doc, state, top);
     drawText(doc, state, 'Beschlussvorlage:', { bold: true, lineGap: GAP_LABEL });
     drawText(doc, state, top.beschlussvorlage || '—', { lineGap: GAP_BLOCK });
@@ -309,8 +326,8 @@
     }
 
     if (wechselNach) {
-      state.y += 2;
-      drawText(doc, state, wechselNach, { italic: true, color: C_MUTED, size: 10 });
+      state.y += 3;
+      drawText(doc, state, wechselNach, { italic: true, color: C_TEXT, size: 10 });
     }
   }
 
@@ -471,7 +488,7 @@
     drawText(doc, state, 'Gäste: ' + (sitzung.gaeste || '—'), { lineGap: GAP_TEXT });
 
     drawLine(doc, state, C_LINE_LIGHT, 0.3, 6, 8);
-    drawText(doc, state, `Sitzungsbeginn (öffentlich): ${sitzung.beginnOeffentlich || 'HH:mm'} Uhr`, { bold: true, color: C_MUTED, size: 9.5 });
+    drawText(doc, state, `Sitzungsbeginn (öffentlich): ${sitzung.beginnOeffentlich || 'HH:mm'} Uhr`, { bold: true, color: C_TEXT, size: 10 });
 
     if (oeff.length === 0) {
       state.y += 2;
@@ -485,9 +502,9 @@
 
     if (hasNichtOeff) {
       drawLine(doc, state, C_LINE_LIGHT, 0.3, 8, 8);
-      drawText(doc, state, `Ende des öffentlichen Teils der Sitzung ${sitzung.endeOeffentlich || 'HH:mm'} Uhr. Alle Gäste werden verabschiedet.`, { bold: true, color: C_MUTED, size: 9.5 });
+      drawText(doc, state, `Ende des öffentlichen Teils der Sitzung ${sitzung.endeOeffentlich || 'HH:mm'} Uhr. Alle Gäste werden verabschiedet.`, { bold: true, color: C_TEXT, size: 10 });
       state.y += 2;
-      drawText(doc, state, `Beginn des nicht-öffentlichen Teils der Sitzung um ${sitzung.beginnNichtOeffentlich || 'HH:mm'} Uhr.`, { bold: true, color: C_MUTED, size: 9.5 });
+      drawText(doc, state, `Beginn des nicht-öffentlichen Teils der Sitzung um ${sitzung.beginnNichtOeffentlich || 'HH:mm'} Uhr.`, { bold: true, color: C_TEXT, size: 10 });
       nicht.forEach((t, i) => {
         const isLastOfAll = i === nicht.length - 1;
         renderTop(doc, state, t, i === 0, mitglieder, wechselFor.get(t.id), isLastOfAll ? wechsel.trailing : '');
@@ -495,7 +512,7 @@
     }
 
     drawLine(doc, state, C_LINE_LIGHT, 0.3, 8, 8);
-    drawText(doc, state, `Die Sitzung endet um ${sitzung.endeSitzung || 'HH:mm'} Uhr.`, { bold: true, color: C_MUTED, size: 9.5 });
+    drawText(doc, state, `Die Sitzung endet um ${sitzung.endeSitzung || 'HH:mm'} Uhr.`, { bold: true, color: C_TEXT, size: 10 });
 
     drawSignatureBlock(doc, state, settings, sitzung);
     drawFooters(doc, sitzung);
