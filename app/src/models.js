@@ -22,6 +22,7 @@
       beschlussvorlage: '',
       bemerkungen: '',
       befangenheitsText: '',
+      befangenheitsIds: [],
       sitzungsleitungId: '',
       freiwilligerVerzichtIds: [],
       stimmrechtRuhtIds: [],

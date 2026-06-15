@@ -40,6 +40,7 @@
           if (typeof t.sitzungsleitungId !== 'string') t.sitzungsleitungId = '';
           if (!Array.isArray(t.freiwilligerVerzichtIds)) t.freiwilligerVerzichtIds = [];
           if (!Array.isArray(t.stimmrechtRuhtIds)) t.stimmrechtRuhtIds = [];
+          if (!Array.isArray(t.befangenheitsIds)) t.befangenheitsIds = [];
         }
       }
       sitzung.schemaVersion = 2;

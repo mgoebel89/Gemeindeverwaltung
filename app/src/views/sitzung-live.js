@@ -444,18 +444,6 @@
       bemerk.value = top.bemerkungen;
       bemerk.oninput = e => { top.bemerkungen = e.target.value; save(); };
 
-      const befangen = el('textarea', { placeholder: 'Vermerke zu §22-Befangenheit (siehe Snippet — wird im Protokoll wörtlich übernommen)' });
-      befangen.value = top.befangenheitsText;
-      befangen.oninput = e => { top.befangenheitsText = e.target.value; save(); };
-
-      const snippetButtons = el('div', { class: 'snippets' }, SNIPPETS.map(s =>
-        el('button', { onClick: () => {
-          const sep = top.befangenheitsText.trim() ? '\n' : '';
-          top.befangenheitsText = top.befangenheitsText + sep + s.text;
-          save(); rerender();
-        } }, '+ ' + s.label)
-      ));
-
       const children = [
         el('div', { class: 'card' }, [
           el('div', { class: 'toolbar' }, [
@@ -476,9 +464,11 @@
       if (top.abstimmung && top.abstimmung.durchgefuehrt) {
         children.push(el('div', { class: 'card' }, [
           el('h3', {}, 'Vermerke zur Abstimmung'),
-          el('label', {}, '§22 GemO – Befangenheit (Freitext, wird wörtlich übernommen)'),
-          befangen,
-          snippetButtons,
+          multiSelectMitglieder(
+            'Ratsmitglieder, die wegen §22 Abs. 1 GemO nicht teilgenommen haben',
+            top.befangenheitsIds || [],
+            (next) => { top.befangenheitsIds = next; save(); rerender(); },
+          ),
           el('div', { style: 'margin-top:12px' }, [
             multiSelectMitglieder(
               'Ratsmitglieder, die freiwillig auf Teilnahme verzichtet haben',

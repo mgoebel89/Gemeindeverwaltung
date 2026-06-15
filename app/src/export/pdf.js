@@ -150,13 +150,12 @@
     const innerW = boxW - BOX_CB_COL_W - 2 * BOX_TEXT_PAD_L;
     const SIZE_ROW = 10;
 
-    // §22-Zeile: Label + freitext aus befangenheitsText (mehrzeilig erlaubt)
-    const befText = (top.befangenheitsText || '').trim();
+    // §22-Zeile: Label + Bullet-Liste der ausgewählten Ratsmitglieder
+    const befIds = top.befangenheitsIds || [];
+    const bef = befIds.map(id => nameOf(id, mitglieder)).filter(Boolean);
     const r1Lead = 'Ratsmitglied hat wegen §22 Abs. 1 GemO nicht teilgenommen und zuvor im Zuhörerbereich Platz genommen / den Sitzungsraum verlassen:';
     const r1Lines = wrapWidth(doc, r1Lead, innerW, SIZE_ROW, false);
-    const befLines = befText
-      ? befText.split(/\r?\n/).flatMap(line => wrapWidth(doc, line, innerW - 4, SIZE_ROW, false).map(l => ({ bullet: true, text: l })))
-      : [];
+    const befLines = bef.map(n => ({ bullet: true, text: n }));
 
     // Freiwilliger-Verzicht-Zeile
     const verz = (top.freiwilligerVerzichtIds || []).map(id => nameOf(id, mitglieder)).filter(Boolean);
@@ -263,7 +262,7 @@
       }
     }
 
-    drawBoxRow(doc, boxX, y, boxW, r1H, !!befText, (cx, cy, cw) => drawContentBlock(cx, cy, cw, r1Lines, befLines));
+    drawBoxRow(doc, boxX, y, boxW, r1H, bef.length > 0, (cx, cy, cw) => drawContentBlock(cx, cy, cw, r1Lines, befLines));
     y += r1H;
     drawBoxRow(doc, boxX, y, boxW, r2H, verz.length > 0, (cx, cy, cw) => drawContentBlock(cx, cy, cw, r2Lines, r2Bullets));
     y += r2H;
