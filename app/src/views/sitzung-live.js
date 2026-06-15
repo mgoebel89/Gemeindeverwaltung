@@ -120,32 +120,14 @@
     }
 
     function handleVerschieben(mitgliedId, ziel /* 'anwesend' | 'abwesend' */) {
-      if (isLockedFunktionstraeger(sitzung, mitgliedId)) {
-        // Locked: Sitzungsleiter/Schriftführer dürfen laut Vorgabe doch verschoben werden — kein Lock mehr.
-      }
       const istAnwesend = sitzung.anwesendIds.includes(mitgliedId);
       const willAnwesend = ziel === 'anwesend';
-      if (istAnwesend === willAnwesend) return; // keine Änderung
-      const zeiten = sitzung.anwesenheitsZeiten[mitgliedId] || {};
-      const m = mitglieder.find(x => x.id === mitgliedId);
-      const name = m ? fullName(m) : '';
-      if (willAnwesend) {
-        const v = askZeit(`Wann ist ${name} eingetroffen?`, zeiten.kamUm || nowTime());
-        if (v === undefined) return; // Abbruch → keine Änderung
-        setAnwesend(mitgliedId, true);
-        const z = { ...zeiten };
-        if (v) z.kamUm = v; else delete z.kamUm;
-        if (z.kamUm || z.gingUm) sitzung.anwesenheitsZeiten[mitgliedId] = z;
-        else delete sitzung.anwesenheitsZeiten[mitgliedId];
-      } else {
-        const v = askZeit(`Wann hat ${name} die Sitzung verlassen?`, zeiten.gingUm || nowTime());
-        if (v === undefined) return;
-        setAnwesend(mitgliedId, false);
-        const z = { ...zeiten };
-        if (v) z.gingUm = v; else delete z.gingUm;
-        if (z.kamUm || z.gingUm) sitzung.anwesenheitsZeiten[mitgliedId] = z;
-        else delete sitzung.anwesenheitsZeiten[mitgliedId];
-      }
+      if (istAnwesend === willAnwesend) return;
+      setAnwesend(mitgliedId, willAnwesend);
+      // Beim Verschieben in „Abwesend" werden eventuelle Zeitangaben entfernt — die Person
+      // gilt dann als nie erschienen. Zeitangaben werden über das Kontextmenü gepflegt
+      // („Später gekommen" / „Früher gegangen" lassen die Person in „Anwesend").
+      if (!willAnwesend) delete sitzung.anwesenheitsZeiten[mitgliedId];
       save(); rerender();
     }
 
@@ -162,6 +144,8 @@
       if (ging) z.gingUm = ging;
       if (z.kamUm || z.gingUm) sitzung.anwesenheitsZeiten[mitgliedId] = z;
       else delete sitzung.anwesenheitsZeiten[mitgliedId];
+      // Wer eine Zeit hat, gilt fürs Protokoll als anwesend
+      if (z.kamUm || z.gingUm) setAnwesend(mitgliedId, true);
       save(); rerender();
     }
 
@@ -173,6 +157,8 @@
       if (v) nz[key] = v; else delete nz[key];
       if (nz.kamUm || nz.gingUm) sitzung.anwesenheitsZeiten[mitgliedId] = nz;
       else delete sitzung.anwesenheitsZeiten[mitgliedId];
+      // „Später gekommen" / „Früher gegangen" → Person gilt fürs Protokoll als anwesend
+      setAnwesend(mitgliedId, true);
       save(); rerender();
     }
 
@@ -376,7 +362,7 @@
       ]);
 
       const hint = el('p', { class: 'help', style: 'margin-top:8px' },
-        'Ziehen oder klicken, um Mitglieder zwischen den Spalten zu verschieben. Doppelklick öffnet die Zeit-Eingabe.');
+        'Ziehen oder klicken: zwischen Anwesend / Abwesend wechseln (ohne Zeit). Rechtsklick (oder Long-Press): „Später gekommen" / „Früher gegangen" — die Person bleibt fürs Protokoll unter Anwesend.');
 
       return el('div', { class: 'card' }, [
         header,
