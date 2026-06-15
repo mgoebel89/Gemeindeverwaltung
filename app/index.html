@@ -19,6 +19,10 @@
       <a href="#/" data-route="/">Sitzungen</a>
       <a href="#/stammdaten" data-route="/stammdaten">Stammdaten</a>
       <a href="#/einstellungen" data-route="/einstellungen">Einstellungen</a>
+      <button id="syncStatus" class="sync-status sync-status--unconfigured" title="NocoDB nicht konfiguriert" aria-label="Sync-Status">
+        <span class="sync-dot"></span>
+        <span class="sync-label">Sync</span>
+      </button>
     </nav>
   </header>
   <main id="app"></main>
@@ -35,6 +39,7 @@
   <script src="src/store.js"></script>
   <script src="src/ui/components.js"></script>
   <script src="src/integrations/nocodb-client.js"></script>
+  <script src="src/integrations/auto-sync.js"></script>
   <script src="src/export/csv.js"></script>
   <script src="src/export/nocodb.js"></script>
   <script src="src/export/pdf.js"></script>

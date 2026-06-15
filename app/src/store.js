@@ -8,6 +8,7 @@
     mitglieder: 'gr.mitglieder',
     settings: 'gr.settings',
     syncQueue: 'gr.syncQueue',
+    syncState: 'gr.syncState',
   };
 
   function read(key, fallback) {
@@ -25,10 +26,11 @@
     localStorage.setItem(key, JSON.stringify(value));
   }
 
+  function nowIso() { return new Date().toISOString(); }
+
   function migrateSitzung(sitzung) {
     const v = sitzung.schemaVersion || 1;
     if (v < 2) {
-      // entschuldigtIds entfällt — wer nicht in anwesendIds steht, ist abwesend.
       if ('entschuldigtIds' in sitzung) delete sitzung.entschuldigtIds;
       if (!sitzung.anwesenheitsZeiten || typeof sitzung.anwesenheitsZeiten !== 'object') {
         sitzung.anwesenheitsZeiten = {};
@@ -67,6 +69,8 @@
     return {
       ortsname: 'Hörschhausen',
       nocodb: defaultNocoDbSettings(),
+      autoSync: true,
+      autoSyncIntervalSec: 60,
     };
   }
 
@@ -77,9 +81,15 @@
       baseId: '',
       tableSitzungenName: 'Sitzungen',
       tableBeschluesseName: 'Beschluesse',
+      tableMitgliederName: 'Mitglieder',
       tableSitzungenId: '',
       tableBeschluesseId: '',
+      tableMitgliederId: '',
     };
+  }
+
+  function emptySyncState() {
+    return { sitzungen: {}, mitglieder: {} };
   }
 
   const store = {
@@ -87,14 +97,20 @@
     listSitzungen() { return read(KEYS.sitzungen, []).map(migrateSitzung); },
     getSitzung(id) { return this.listSitzungen().find(s => s.id === id) || null; },
     saveSitzung(sitzung) {
+      sitzung.lastModifiedAt = nowIso();
       const all = this.listSitzungen();
       const idx = all.findIndex(s => s.id === sitzung.id);
       if (idx >= 0) all[idx] = sitzung;
       else all.unshift(sitzung);
       write(KEYS.sitzungen, all);
+      this._notifyChange();
     },
     deleteSitzung(id) {
       write(KEYS.sitzungen, this.listSitzungen().filter(s => s.id !== id));
+      const st = this.getSyncState();
+      delete st.sitzungen[id];
+      write(KEYS.syncState, st);
+      this._notifyChange();
     },
 
     // --- Mitglieder mit Lazy-Migration ---
@@ -108,14 +124,20 @@
       return arr;
     },
     saveMitglied(m) {
+      m.lastModifiedAt = nowIso();
       const all = this.listMitglieder();
       const idx = all.findIndex(x => x.id === m.id);
       if (idx >= 0) all[idx] = m;
       else all.push(m);
       write(KEYS.mitglieder, all);
+      this._notifyChange();
     },
     deleteMitglied(id) {
       write(KEYS.mitglieder, this.listMitglieder().filter(m => m.id !== id));
+      const st = this.getSyncState();
+      delete st.mitglieder[id];
+      write(KEYS.syncState, st);
+      this._notifyChange();
     },
     getMitglied(id) { return this.listMitglieder().find(m => m.id === id) || null; },
 
@@ -127,25 +149,26 @@
         const d = defaultNocoDbSettings();
         for (const k of Object.keys(d)) if (s.nocodb[k] === undefined) s.nocodb[k] = d[k];
       }
+      if (s.autoSync === undefined) s.autoSync = true;
+      if (s.autoSyncIntervalSec === undefined) s.autoSyncIntervalSec = 60;
       return s;
     },
     saveSettings(s) { write(KEYS.settings, s); },
 
-    // --- Sync-Queue für NocoDB ---
+    // --- Sync-Queue (für manuell eingereihte Versuche) ---
     listQueue() { return read(KEYS.syncQueue, []); },
     enqueueSync(sitzungId, lastError) {
       const all = this.listQueue();
-      // Bereits in Queue? Dann nur error/timestamp aktualisieren.
       const existing = all.find(q => q.sitzungId === sitzungId);
       if (existing) {
         existing.lastError = lastError || existing.lastError || '';
-        existing.lastAttemptAt = new Date().toISOString();
+        existing.lastAttemptAt = nowIso();
       } else {
         all.push({
           id: uuid(),
           type: 'sitzung-complete',
           sitzungId,
-          queuedAt: new Date().toISOString(),
+          queuedAt: nowIso(),
           lastError: lastError || '',
         });
       }
@@ -158,14 +181,49 @@
     markQueueError(queueId, msg) {
       const all = this.listQueue();
       const it = all.find(q => q.id === queueId);
-      if (it) { it.lastError = msg; it.lastAttemptAt = new Date().toISOString(); write(KEYS.syncQueue, all); }
+      if (it) { it.lastError = msg; it.lastAttemptAt = nowIso(); write(KEYS.syncQueue, all); }
+    },
+
+    // --- Sync-State (lastSyncedAt + lastError pro Item) ---
+    getSyncState() {
+      const s = read(KEYS.syncState, emptySyncState());
+      if (!s.sitzungen) s.sitzungen = {};
+      if (!s.mitglieder) s.mitglieder = {};
+      return s;
+    },
+    markSynced(kind, id) {
+      const s = this.getSyncState();
+      s[kind][id] = { lastSyncedAt: nowIso(), lastError: '' };
+      write(KEYS.syncState, s);
+    },
+    markSyncError(kind, id, msg) {
+      const s = this.getSyncState();
+      const prev = s[kind][id] || {};
+      s[kind][id] = { lastSyncedAt: prev.lastSyncedAt || '', lastError: msg, lastAttemptAt: nowIso() };
+      write(KEYS.syncState, s);
+    },
+    isDirty(kind, item) {
+      if (!item || !item.lastModifiedAt) return true; // unbekannt → sicherheitshalber syncen
+      const s = this.getSyncState();
+      const rec = s[kind][item.id];
+      if (!rec || !rec.lastSyncedAt) return true;
+      return item.lastModifiedAt > rec.lastSyncedAt;
+    },
+
+    // --- Change-Listener (für Auto-Sync) ---
+    _changeListeners: [],
+    onChange(fn) { this._changeListeners.push(fn); return () => { this._changeListeners = this._changeListeners.filter(f => f !== fn); }; },
+    _notifyChange() {
+      for (const fn of this._changeListeners) {
+        try { fn(); } catch (e) { console.warn('Change-Listener Fehler', e); }
+      }
     },
 
     // --- Backup ---
     exportAll() {
       return {
         schemaVersion: SCHEMA_VERSION,
-        exportedAt: new Date().toISOString(),
+        exportedAt: nowIso(),
         sitzungen: this.listSitzungen(),
         mitglieder: this.listMitglieder(),
         settings: this.getSettings(),

@@ -152,6 +152,28 @@
     }
     refreshQueueBlock();
 
+    const onRestore = async () => {
+      if (!confirmDialog('Alle Sitzungen und Mitglieder aus NocoDB ziehen?\n\nLokal vorhandene Datensätze bleiben unverändert; nur fehlende werden ergänzt.')) return;
+      try {
+        setStatus('Lade aus NocoDB…', '');
+        const res = await GR.nocodb_client.restoreFromNocoDb();
+        setStatus(`Wiederherstellung: ${res.sitzungenHinzugefuegt} Sitzung(en) und ${res.mitgliederHinzugefuegt} Mitglied(er) hinzugefügt.`, '#2f855a');
+        toast('Wiederherstellung abgeschlossen');
+      } catch (e) {
+        setStatus('Fehler: ' + e.message, '#c53030');
+      }
+    };
+
+    const onToggleAutoSync = (checked) => {
+      const s = store.getSettings();
+      s.autoSync = !!checked;
+      store.saveSettings(s);
+      if (GR.auto_sync) {
+        if (s.autoSync) GR.auto_sync.start();
+        else GR.auto_sync.stop();
+      }
+    };
+
     const onSyncQueue = async () => {
       try {
         const res = await GR.nocodb_client.syncQueue();
@@ -173,16 +195,27 @@
         el('div', {}, [el('label', {}, 'Server-URL (z. B. https://nocodb.example.com)'), bindNocoInput('serverUrl')]),
         el('div', {}, [el('label', {}, 'API-Token'), bindNocoInput('token', 'password')]),
       ]),
-      el('div', { class: 'grid-3' }, [
+      el('div', { class: 'grid-2' }, [
         el('div', {}, [el('label', {}, 'Base-ID'), bindNocoInput('baseId')]),
         el('div', {}, [el('label', {}, 'Tabelle Sitzungen'), bindNocoInput('tableSitzungenName')]),
-        el('div', {}, [el('label', {}, 'Tabelle Beschluesse'), bindNocoInput('tableBeschluesseName')]),
       ]),
+      el('div', { class: 'grid-2' }, [
+        el('div', {}, [el('label', {}, 'Tabelle Beschluesse'), bindNocoInput('tableBeschluesseName')]),
+        el('div', {}, [el('label', {}, 'Tabelle Mitglieder'), bindNocoInput('tableMitgliederName')]),
+      ]),
+      (() => {
+        const cb = el('input', { type: 'checkbox', checked: !!settings.autoSync });
+        cb.onchange = () => onToggleAutoSync(cb.checked);
+        return el('label', { style: 'display:flex; gap:8px; align-items:center; margin-top:10px;' }, [
+          cb, ' Automatisch im Hintergrund sichern (ca. alle ' + (settings.autoSyncIntervalSec || 60) + ' s)',
+        ]);
+      })(),
       el('div', { class: 'toolbar', style: 'margin-top:10px;' }, [
         el('button', { class: 'btn-primary', onClick: onTest }, 'Verbindung testen'),
         el('button', { onClick: onInitSchema }, 'Schema initialisieren'),
         el('div', { class: 'spacer' }),
         el('button', { onClick: onSyncQueue }, 'Queue jetzt synchronisieren'),
+        el('button', { onClick: onRestore }, 'Aus NocoDB wiederherstellen…'),
       ]),
       ncStatus,
       el('h3', { style: 'margin-top:16px;' }, 'Offline-Queue'),
