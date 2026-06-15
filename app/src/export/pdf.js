@@ -521,11 +521,30 @@
       const filename = draft
         ? `Protokoll-Entwurf-${sitzung.datum}.pdf`
         : `Protokoll-${sitzung.datum}.pdf`;
-      doc.save(filename);
-      toast(draft ? 'Entwurfs-PDF erstellt' : 'PDF erstellt');
+      const blob = doc.output('blob');
+      const url = URL.createObjectURL(blob);
+      // In neuem Tab öffnen — der eingebaute PDF-Viewer des Browsers übernimmt Vorschau, Drucken und Speichern.
+      const win = window.open(url, '_blank');
+      if (!win) {
+        // Popup blockiert → unsichtbaren Link mit gewünschtem Dateinamen klicken (Fallback: Download).
+        const a = document.createElement('a');
+        a.href = url;
+        a.target = '_blank';
+        a.rel = 'noopener';
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        setTimeout(() => a.remove(), 0);
+        toast('Popup blockiert — PDF als Download gestartet');
+      } else {
+        try { win.document.title = filename; } catch (_) { /* cross-origin write nach Load nicht zwingend möglich */ }
+        toast(draft ? 'Entwurfs-PDF in neuem Tab geöffnet' : 'PDF in neuem Tab geöffnet');
+      }
+      // URL nach einigen Minuten freigeben — Tab hat Blob bis dahin geladen
+      setTimeout(() => URL.revokeObjectURL(url), 5 * 60 * 1000);
     } catch (e) {
       console.error(e);
-      alert('PDF konnte nicht gespeichert werden: ' + e.message);
+      alert('PDF konnte nicht erzeugt werden: ' + e.message);
     }
   }
 
