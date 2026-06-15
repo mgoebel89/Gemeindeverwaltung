@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Gemeinderats-Protokoll</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <img src="assets/wappen.png" alt="Wappen" class="brand-wappen" onerror="this.style.display='none'" />
+      <div>
+        <h1>Gemeinderats-Protokoll</h1>
+        <small>Hörschhausen</small>
+      </div>
+    </div>
+    <nav class="mainnav">
+      <a href="#/" data-route="/">Sitzungen</a>
+      <a href="#/stammdaten" data-route="/stammdaten">Stammdaten</a>
+      <a href="#/einstellungen" data-route="/einstellungen">Einstellungen</a>
+    </nav>
+  </header>
+  <main id="app"></main>
+  <div id="toast" class="toast" hidden></div>
+
+  <!-- Verstecktes Wappen-Bild für PDF-Export (wird per Canvas in Data-URL konvertiert, kein fetch). -->
+  <img id="wappenImg" src="assets/wappen.png" alt="" style="display:none;" onerror="this.dataset.failed='1'" />
+
+  <!-- Vendor: jsPDF (offline, eine Datei in vendor/) -->
+  <script src="vendor/jspdf.inline.js"></script>
+
+  <!-- App-Module (klassische Scripts; Reihenfolge wichtig!) -->
+  <script src="src/models.js"></script>
+  <script src="src/store.js"></script>
+  <script src="src/ui/components.js"></script>
+  <script src="src/integrations/nocodb-client.js"></script>
+  <script src="src/export/csv.js"></script>
+  <script src="src/export/nocodb.js"></script>
+  <script src="src/export/pdf.js"></script>
+  <script src="src/views/dashboard.js"></script>
+  <script src="src/views/stammdaten.js"></script>
+  <script src="src/views/einstellungen.js"></script>
+  <script src="src/views/sitzung-vorbereitung.js"></script>
+  <script src="src/views/sitzung-live.js"></script>
+  <script src="src/app.js"></script>
+</body>
+</html>
