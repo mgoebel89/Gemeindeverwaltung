@@ -152,7 +152,7 @@
     }
     refreshQueueBlock();
 
-    const onRestore = async () => {
+    const onRestoreFromNocoDb = async () => {
       if (!confirmDialog('Alle Sitzungen und Mitglieder aus NocoDB ziehen?\n\nLokal vorhandene Datensätze bleiben unverändert; nur fehlende werden ergänzt.')) return;
       try {
         setStatus('Lade aus NocoDB…', '');
@@ -215,7 +215,7 @@
         el('button', { onClick: onInitSchema }, 'Schema initialisieren'),
         el('div', { class: 'spacer' }),
         el('button', { onClick: onSyncQueue }, 'Queue jetzt synchronisieren'),
-        el('button', { onClick: onRestore }, 'Aus NocoDB wiederherstellen…'),
+        el('button', { onClick: onRestoreFromNocoDb }, 'Aus NocoDB wiederherstellen…'),
       ]),
       ncStatus,
       el('h3', { style: 'margin-top:16px;' }, 'Offline-Queue'),
