@@ -112,4 +112,4 @@ Windows-Variante: `py -m http.server 8000`
 
 ## Lizenz
 
-Internes Werkzeug, keine Lizenz festgelegt.
+License CC BY-NC-SA
