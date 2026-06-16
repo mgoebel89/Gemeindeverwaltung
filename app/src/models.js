@@ -2,7 +2,7 @@
   'use strict';
   window.GR = window.GR || {};
 
-  const SCHEMA_VERSION = 2;
+  const SCHEMA_VERSION = 3;
 
   function uuid() {
     if (crypto.randomUUID) return crypto.randomUUID();

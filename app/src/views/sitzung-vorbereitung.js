@@ -22,6 +22,7 @@
     const renumber = () => {
       let n = 1;
       for (const t of sitzung.tops.filter(x => x.bereich === 'oeffentlich')) t.nummer = n++;
+      n = 1;
       for (const t of sitzung.tops.filter(x => x.bereich === 'nicht_oeffentlich')) t.nummer = n++;
     };
 

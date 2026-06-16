@@ -42,6 +42,16 @@
       }
       sitzung.schemaVersion = 2;
     }
+    if ((sitzung.schemaVersion || 2) < 3) {
+      // TOP-Nummerierung pro Bereich neu starten (öffentlich beginnt bei 1, nicht-öffentlich ebenfalls)
+      if (Array.isArray(sitzung.tops)) {
+        let n = 1;
+        for (const t of sitzung.tops.filter(x => x.bereich === 'oeffentlich')) t.nummer = n++;
+        n = 1;
+        for (const t of sitzung.tops.filter(x => x.bereich === 'nicht_oeffentlich')) t.nummer = n++;
+      }
+      sitzung.schemaVersion = 3;
+    }
     return sitzung;
   }
 
