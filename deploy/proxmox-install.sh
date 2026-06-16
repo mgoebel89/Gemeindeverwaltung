@@ -18,7 +18,7 @@ set -euo pipefail
 : "${HOSTNAME:=sitzungsapp}"
 : "${STORAGE:=local-lvm}"                  # Storage für das Container-Volume
 : "${TEMPLATE_STORAGE:=local}"             # Storage, in dem die Templates liegen
-: "${DISK_GB:=4}"
+: "${DISK_GB:=6}"
 : "${MEMORY_MB:=512}"
 : "${SWAP_MB:=512}"
 : "${CORES:=1}"
@@ -118,23 +118,44 @@ for i in {1..30}; do
 done
 
 # -------- Setup im Container --------
-log "Installiere App im Container…"
+log "Installiere App + Backend im Container…"
 pct exec "$CTID" -- bash -lc "
   set -euo pipefail
   export DEBIAN_FRONTEND=noninteractive
   apt-get update -qq
-  apt-get install -y -qq nginx git ca-certificates curl >/dev/null
-  mkdir -p /opt
+  apt-get install -y -qq nginx git ca-certificates curl sqlite3 cron >/dev/null
+
+  # Node.js 20.x via NodeSource
+  if ! command -v node >/dev/null 2>&1; then
+    curl -fsSL https://deb.nodesource.com/setup_20.x | bash -
+    apt-get install -y -qq nodejs >/dev/null
+  fi
+
+  mkdir -p /opt /var/lib/gemeindeverwaltung /var/backups/gemeindeverwaltung
   if [ ! -d /opt/gemeindeverwaltung/.git ]; then
     git clone --depth=1 --branch '${REPO_BRANCH}' '${REPO_URL}' /opt/gemeindeverwaltung
   fi
+
+  # Backend installieren
+  (cd /opt/gemeindeverwaltung/backend && npm ci --omit=dev --no-audit --no-fund)
+  cp /opt/gemeindeverwaltung/deploy/backend.service /etc/systemd/system/gemeindeverwaltung-backend.service
+  systemctl daemon-reload
+  systemctl enable --now gemeindeverwaltung-backend
+
+  # Frontend
   install -d /var/www
   ln -sfn /opt/gemeindeverwaltung/app /var/www/sitzungsapp
-  cp /opt/gemeindeverwaltung/deploy/nginx-site.conf /etc/nginx/sites-available/sitzungsapp
-  sed -i 's/__HTTP_PORT__/${HTTP_PORT}/g' /etc/nginx/sites-available/sitzungsapp
+  sed 's/__HTTP_PORT__/${HTTP_PORT}/g' /opt/gemeindeverwaltung/deploy/nginx-site.conf > /etc/nginx/sites-available/sitzungsapp
   ln -sfn /etc/nginx/sites-available/sitzungsapp /etc/nginx/sites-enabled/sitzungsapp
   rm -f /etc/nginx/sites-enabled/default
+
   install -m 0755 /opt/gemeindeverwaltung/deploy/update.sh /usr/local/bin/sitzungsapp-update
+  install -m 0755 /opt/gemeindeverwaltung/deploy/backup.sh /usr/local/bin/sitzungsapp-backup
+
+  # Cron: tägliches Backup um 03:30
+  echo '30 3 * * * root /usr/local/bin/sitzungsapp-backup >/var/log/sitzungsapp-backup.log 2>&1' > /etc/cron.d/sitzungsapp-backup
+  chmod 0644 /etc/cron.d/sitzungsapp-backup
+
   nginx -t
   systemctl enable --now nginx
   systemctl reload nginx

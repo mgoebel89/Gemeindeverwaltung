@@ -1,0 +1,25 @@
+[Unit]
+Description=Gemeindeverwaltung Backend (Node + SQLite)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/gemeindeverwaltung/backend
+ExecStart=/usr/bin/node server.js
+Restart=on-failure
+RestartSec=3
+Environment=NODE_ENV=production
+Environment=DATA_DIR=/var/lib/gemeindeverwaltung
+Environment=PORT=3000
+Environment=HOST=127.0.0.1
+
+# Hardening
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ReadWritePaths=/var/lib/gemeindeverwaltung
+ProtectHome=true
+
+[Install]
+WantedBy=multi-user.target

@@ -48,12 +48,12 @@
       let title = '';
       switch (state.status) {
         case 'unconfigured':
-          labelText = 'Sync aus';
-          title = 'NocoDB nicht konfiguriert — in den Einstellungen einrichten, um Sitzungen automatisch zu sichern.';
+          labelText = 'NocoDB aus';
+          title = 'NocoDB nicht konfiguriert — in den Einstellungen einrichten, um Sitzungen zusätzlich extern zu sichern.';
           break;
         case 'idle':
           labelText = 'bereit';
-          title = 'Auto-Sync läuft, noch nichts zu sichern.';
+          title = 'Auto-Sync (NocoDB) läuft, noch nichts zu sichern.';
           break;
         case 'syncing':
           labelText = `synchronisiere${state.pending ? ' (' + state.pending + ')' : ''}…`;
@@ -80,9 +80,66 @@
     });
   }
 
-  function startApp() {
-    router();
+  // ---------- Migration localStorage → Backend ----------
+  function hasLocalStorageData() {
+    try {
+      const s = JSON.parse(localStorage.getItem('gr.sitzungen') || '[]');
+      const m = JSON.parse(localStorage.getItem('gr.mitglieder') || '[]');
+      return (Array.isArray(s) && s.length > 0) || (Array.isArray(m) && m.length > 0);
+    } catch (_) { return false; }
+  }
+
+  async function maybeMigrate() {
+    if (!GR.store.isBackendAvailable()) return;
+    const backendEmpty = GR.store.listSitzungen().length === 0 && GR.store.listMitglieder().length === 0;
+    if (!backendEmpty) return;
+    if (!hasLocalStorageData()) return;
+    let s = [], m = [], settings = null;
+    try {
+      s = JSON.parse(localStorage.getItem('gr.sitzungen') || '[]');
+      m = JSON.parse(localStorage.getItem('gr.mitglieder') || '[]');
+      settings = JSON.parse(localStorage.getItem('gr.settings') || 'null');
+    } catch (_) {}
+    const msg = `Im Backend liegen noch keine Daten.\n\nIm Browser sind ${s.length} Sitzung(en) und ${m.length} Mitglied(er) vorhanden.\n\nIns Backend übernehmen?\n(Anschließend werden die lokalen Browser-Daten gelöscht.)`;
+    if (!window.confirm(msg)) return;
+    try {
+      await GR.api.importAll({ sitzungen: s, mitglieder: m, settings });
+      localStorage.removeItem('gr.sitzungen');
+      localStorage.removeItem('gr.mitglieder');
+      // Settings im localStorage löschen wir bewusst nicht, falls noch NocoDB-Setup drin ist;
+      // gleicher Inhalt liegt jetzt im Backend.
+      await GR.store.bootstrap();
+      if (GR.ui && GR.ui.toast) GR.ui.toast('Migration abgeschlossen');
+      router();
+    } catch (e) {
+      alert('Migration fehlgeschlagen: ' + e.message);
+    }
+  }
+
+  function showBackendUnavailableBanner() {
+    const banner = document.createElement('div');
+    banner.className = 'backend-banner';
+    banner.textContent = '⚠ Backend nicht erreichbar — Eingaben werden nicht gespeichert. Bitte den Container/Service prüfen.';
+    document.body.insertBefore(banner, document.body.firstChild);
+  }
+
+  async function startApp() {
     bindSyncStatus();
+    // WebSocket-Nachrichten in den Store leiten
+    if (GR.api && GR.api.subscribe) {
+      GR.api.subscribe(msg => GR.store.applyServerMessage(msg));
+      GR.api.connectWs();
+    }
+    // Snapshot ziehen
+    await GR.store.bootstrap();
+    if (!GR.store.isBackendAvailable()) showBackendUnavailableBanner();
+    // Erste View rendern
+    router();
+    // Reaktiv bei Server-Push neu rendern (einfach: bei jeder Änderung neu zeichnen)
+    GR.store.onChange(() => router());
+    // Migration anbieten
+    await maybeMigrate();
+    // NocoDB-Auto-Sync starten
     if (GR.auto_sync) GR.auto_sync.start();
   }
 

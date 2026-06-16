@@ -152,6 +152,27 @@ tr:hover td { background: #fafbfc; }
 
 .multi-mitglieder { margin-top: 6px; }
 
+/* Backend-Banner */
+.backend-banner {
+  background: #fee2e2; color: #991b1b; padding: 10px 16px;
+  text-align: center; font-weight: 500; font-size: 0.9rem;
+  border-bottom: 1px solid #fca5a5;
+}
+
+/* Anhänge */
+.attachment-list { display: flex; flex-direction: column; gap: 6px; margin-top: 8px; }
+.attachment-row {
+  display: flex; align-items: center; gap: 10px; padding: 6px 10px;
+  background: #fafbfc; border: 1px solid var(--border); border-radius: 6px;
+}
+.attachment-row .att-name { flex: 1; word-break: break-all; }
+.attachment-row .att-meta { color: var(--muted); font-size: 0.8rem; }
+.attachment-dropzone {
+  border: 2px dashed var(--border); border-radius: 8px; padding: 18px;
+  text-align: center; color: var(--muted); cursor: pointer; transition: border-color 0.15s, background 0.15s;
+}
+.attachment-dropzone:hover, .attachment-dropzone.drag-over { border-color: var(--primary); background: #eef5fb; }
+
 /* Kontextmenü (Rechtsklick auf Mitglied-Chip) */
 .ctx-menu {
   position: fixed; z-index: 1000;

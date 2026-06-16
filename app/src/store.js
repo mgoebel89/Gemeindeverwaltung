@@ -3,38 +3,32 @@
   window.GR = window.GR || {};
   const { SCHEMA_VERSION, MITGLIED_FUNKTIONEN, uuid } = GR.models;
 
-  const KEYS = {
-    sitzungen: 'gr.sitzungen',
-    mitglieder: 'gr.mitglieder',
-    settings: 'gr.settings',
-    syncQueue: 'gr.syncQueue',
-    syncState: 'gr.syncState',
+  // Cache (Single Source of Truth im Frontend; Backend ist autoritativ)
+  const cache = {
+    sitzungen: [],        // [{...}]
+    mitglieder: [],       // [{...}]
+    settings: null,       // {...} oder null
+    attachments: {},      // sitzungId -> [{id, filename, ...}]
+    ready: false,
+    backendAvailable: false,
   };
 
-  function read(key, fallback) {
-    try {
-      const raw = localStorage.getItem(key);
-      if (!raw) return fallback;
-      return JSON.parse(raw);
-    } catch (e) {
-      console.warn('Store read failed', key, e);
-      return fallback;
-    }
-  }
-
-  function write(key, value) {
-    localStorage.setItem(key, JSON.stringify(value));
-  }
+  const changeListeners = [];
+  const readyListeners = [];
 
   function nowIso() { return new Date().toISOString(); }
+  function isoOrZero(s) { return s || ''; }
 
+  function notifyChange() {
+    for (const fn of changeListeners) { try { fn(); } catch (e) { console.warn(e); } }
+  }
+
+  // ----- Migration / Defaults -----
   function migrateSitzung(sitzung) {
     const v = sitzung.schemaVersion || 1;
     if (v < 2) {
       if ('entschuldigtIds' in sitzung) delete sitzung.entschuldigtIds;
-      if (!sitzung.anwesenheitsZeiten || typeof sitzung.anwesenheitsZeiten !== 'object') {
-        sitzung.anwesenheitsZeiten = {};
-      }
+      if (!sitzung.anwesenheitsZeiten || typeof sitzung.anwesenheitsZeiten !== 'object') sitzung.anwesenheitsZeiten = {};
       if (Array.isArray(sitzung.tops)) {
         for (const t of sitzung.tops) {
           if (typeof t.sitzungsleitungId !== 'string') t.sitzungsleitungId = '';
@@ -49,21 +43,16 @@
   }
 
   function migrateMitglied(m) {
-    let changed = false;
     if ((!m.vorname && !m.nachname) && m.name) {
       const parts = m.name.trim().split(/\s+/);
       m.nachname = parts.length > 1 ? parts.pop() : parts[0] || '';
       m.vorname = parts.join(' ');
-      changed = true;
     }
-    if (m.vorname === undefined) { m.vorname = ''; changed = true; }
-    if (m.nachname === undefined) { m.nachname = ''; changed = true; }
-    if (!MITGLIED_FUNKTIONEN.includes(m.funktion)) {
-      m.funktion = 'Ratsmitglied';
-      changed = true;
-    }
-    if ('name' in m) { delete m.name; changed = true; }
-    return changed;
+    if (m.vorname === undefined) m.vorname = '';
+    if (m.nachname === undefined) m.nachname = '';
+    if (!MITGLIED_FUNKTIONEN.includes(m.funktion)) m.funktion = 'Ratsmitglied';
+    if ('name' in m) delete m.name;
+    return m;
   }
 
   function defaultSettings() {
@@ -74,153 +63,246 @@
       autoSyncIntervalSec: 60,
     };
   }
-
   function defaultNocoDbSettings() {
     return {
-      serverUrl: '',
-      token: '',
-      baseId: '',
-      tableSitzungenName: 'Sitzungen',
-      tableBeschluesseName: 'Beschluesse',
-      tableMitgliederName: 'Mitglieder',
-      tableSitzungenId: '',
-      tableBeschluesseId: '',
-      tableMitgliederId: '',
+      serverUrl: '', token: '', baseId: '',
+      tableSitzungenName: 'Sitzungen', tableBeschluesseName: 'Beschluesse', tableMitgliederName: 'Mitglieder',
+      tableSitzungenId: '', tableBeschluesseId: '', tableMitgliederId: '',
     };
   }
 
-  function emptySyncState() {
-    return { sitzungen: {}, mitglieder: {} };
+  // ----- Bootstrap (Snapshot vom Backend) -----
+  async function bootstrap() {
+    try {
+      const snap = await GR.api.snapshot();
+      cache.sitzungen = (snap.sitzungen || []).map(migrateSitzung);
+      cache.mitglieder = (snap.mitglieder || []).map(migrateMitglied);
+      cache.settings = snap.settings || defaultSettings();
+      cache.attachments = snap.attachments || {};
+      cache.backendAvailable = true;
+      cache.ready = true;
+      mergeSettingsDefaults();
+      notifyChange();
+      for (const fn of readyListeners) { try { fn(); } catch (e) { console.warn(e); } }
+    } catch (e) {
+      console.error('Backend nicht erreichbar:', e);
+      cache.backendAvailable = false;
+      cache.settings = defaultSettings();
+      cache.ready = true;
+      notifyChange();
+      for (const fn of readyListeners) { try { fn(); } catch (e) { console.warn(e); } }
+    }
   }
 
+  function mergeSettingsDefaults() {
+    if (!cache.settings) cache.settings = defaultSettings();
+    if (!cache.settings.nocodb) cache.settings.nocodb = defaultNocoDbSettings();
+    else {
+      const d = defaultNocoDbSettings();
+      for (const k of Object.keys(d)) if (cache.settings.nocodb[k] === undefined) cache.settings.nocodb[k] = d[k];
+    }
+    if (cache.settings.autoSync === undefined) cache.settings.autoSync = true;
+    if (cache.settings.autoSyncIntervalSec === undefined) cache.settings.autoSyncIntervalSec = 60;
+  }
+
+  // ----- WebSocket-Apply -----
+  function applyServerMessage(msg) {
+    if (!msg || !msg.type) return;
+    switch (msg.type) {
+      case 'sitzung:save': {
+        const s = migrateSitzung(msg.sitzung);
+        const idx = cache.sitzungen.findIndex(x => x.id === s.id);
+        if (idx >= 0) cache.sitzungen[idx] = s; else cache.sitzungen.unshift(s);
+        notifyChange();
+        break;
+      }
+      case 'sitzung:delete': {
+        cache.sitzungen = cache.sitzungen.filter(s => s.id !== msg.id);
+        delete cache.attachments[msg.id];
+        notifyChange();
+        break;
+      }
+      case 'mitglied:save': {
+        const m = migrateMitglied(msg.mitglied);
+        const idx = cache.mitglieder.findIndex(x => x.id === m.id);
+        if (idx >= 0) cache.mitglieder[idx] = m; else cache.mitglieder.push(m);
+        notifyChange();
+        break;
+      }
+      case 'mitglied:delete': {
+        cache.mitglieder = cache.mitglieder.filter(m => m.id !== msg.id);
+        notifyChange();
+        break;
+      }
+      case 'settings:save': {
+        cache.settings = msg.settings || cache.settings;
+        mergeSettingsDefaults();
+        notifyChange();
+        break;
+      }
+      case 'attachment:add': {
+        const a = msg.attachment;
+        if (!cache.attachments[a.sitzungId]) cache.attachments[a.sitzungId] = [];
+        if (!cache.attachments[a.sitzungId].some(x => x.id === a.id)) {
+          cache.attachments[a.sitzungId].push(a);
+        }
+        notifyChange();
+        break;
+      }
+      case 'attachment:delete': {
+        if (cache.attachments[msg.sitzungId]) {
+          cache.attachments[msg.sitzungId] = cache.attachments[msg.sitzungId].filter(a => a.id !== msg.id);
+        }
+        notifyChange();
+        break;
+      }
+      case 'bulk:imported': {
+        // Komplettes Re-Bootstrap, damit alle Daten konsistent kommen
+        bootstrap();
+        break;
+      }
+    }
+  }
+
+  // ----- Hintergrund-Speicherungen (fire-and-forget mit toast bei Fehler) -----
+  function bgPutSitzung(s) {
+    GR.api.putSitzung(s).catch(e => {
+      console.warn('saveSitzung Backend-Fehler', e);
+      if (GR.ui && GR.ui.toast) GR.ui.toast('Backend-Fehler: ' + e.message, 4000);
+    });
+  }
+  function bgDeleteSitzung(id) {
+    GR.api.deleteSitzungRemote(id).catch(e => console.warn('deleteSitzung Backend-Fehler', e));
+  }
+  function bgPutMitglied(m) {
+    GR.api.putMitglied(m).catch(e => {
+      console.warn('saveMitglied Backend-Fehler', e);
+      if (GR.ui && GR.ui.toast) GR.ui.toast('Backend-Fehler: ' + e.message, 4000);
+    });
+  }
+  function bgDeleteMitglied(id) {
+    GR.api.deleteMitgliedRemote(id).catch(e => console.warn('deleteMitglied Backend-Fehler', e));
+  }
+  function bgPutSettings(s) {
+    GR.api.putSettings(s).catch(e => console.warn('saveSettings Backend-Fehler', e));
+  }
+
+  // ----- Öffentliches Store-API (synchron lesend, Schreiben triggert Backend im Hintergrund) -----
   const store = {
+    onReady(fn) { if (cache.ready) try { fn(); } catch (_) {} else readyListeners.push(fn); },
+    isReady() { return cache.ready; },
+    isBackendAvailable() { return cache.backendAvailable; },
+
     // --- Sitzungen ---
-    listSitzungen() { return read(KEYS.sitzungen, []).map(migrateSitzung); },
-    getSitzung(id) { return this.listSitzungen().find(s => s.id === id) || null; },
+    listSitzungen() { return cache.sitzungen.slice(); },
+    getSitzung(id) { return cache.sitzungen.find(s => s.id === id) || null; },
     saveSitzung(sitzung) {
       sitzung.lastModifiedAt = nowIso();
-      const all = this.listSitzungen();
-      const idx = all.findIndex(s => s.id === sitzung.id);
-      if (idx >= 0) all[idx] = sitzung;
-      else all.unshift(sitzung);
-      write(KEYS.sitzungen, all);
-      this._notifyChange();
+      migrateSitzung(sitzung);
+      const idx = cache.sitzungen.findIndex(s => s.id === sitzung.id);
+      if (idx >= 0) cache.sitzungen[idx] = sitzung; else cache.sitzungen.unshift(sitzung);
+      bgPutSitzung(sitzung);
+      notifyChange();
     },
     deleteSitzung(id) {
-      write(KEYS.sitzungen, this.listSitzungen().filter(s => s.id !== id));
-      const st = this.getSyncState();
-      delete st.sitzungen[id];
-      write(KEYS.syncState, st);
-      this._notifyChange();
+      cache.sitzungen = cache.sitzungen.filter(s => s.id !== id);
+      delete cache.attachments[id];
+      bgDeleteSitzung(id);
+      notifyChange();
     },
 
-    // --- Mitglieder mit Lazy-Migration ---
-    listMitglieder() {
-      const arr = read(KEYS.mitglieder, []);
-      let mutated = false;
-      for (const m of arr) {
-        if (migrateMitglied(m)) mutated = true;
-      }
-      if (mutated) write(KEYS.mitglieder, arr);
-      return arr;
-    },
+    // --- Mitglieder ---
+    listMitglieder() { return cache.mitglieder.slice(); },
+    getMitglied(id) { return cache.mitglieder.find(m => m.id === id) || null; },
     saveMitglied(m) {
       m.lastModifiedAt = nowIso();
-      const all = this.listMitglieder();
-      const idx = all.findIndex(x => x.id === m.id);
-      if (idx >= 0) all[idx] = m;
-      else all.push(m);
-      write(KEYS.mitglieder, all);
-      this._notifyChange();
+      migrateMitglied(m);
+      const idx = cache.mitglieder.findIndex(x => x.id === m.id);
+      if (idx >= 0) cache.mitglieder[idx] = m; else cache.mitglieder.push(m);
+      bgPutMitglied(m);
+      notifyChange();
     },
     deleteMitglied(id) {
-      write(KEYS.mitglieder, this.listMitglieder().filter(m => m.id !== id));
-      const st = this.getSyncState();
-      delete st.mitglieder[id];
-      write(KEYS.syncState, st);
-      this._notifyChange();
+      cache.mitglieder = cache.mitglieder.filter(m => m.id !== id);
+      bgDeleteMitglied(id);
+      notifyChange();
     },
-    getMitglied(id) { return this.listMitglieder().find(m => m.id === id) || null; },
 
-    // --- Settings (mit NocoDB-Defaults nach-mergen) ---
-    getSettings() {
-      const s = read(KEYS.settings, defaultSettings());
-      if (!s.nocodb) s.nocodb = defaultNocoDbSettings();
-      else {
-        const d = defaultNocoDbSettings();
-        for (const k of Object.keys(d)) if (s.nocodb[k] === undefined) s.nocodb[k] = d[k];
+    // --- Settings ---
+    getSettings() { mergeSettingsDefaults(); return cache.settings; },
+    saveSettings(s) {
+      cache.settings = s;
+      mergeSettingsDefaults();
+      bgPutSettings(cache.settings);
+      notifyChange();
+    },
+
+    // --- Attachments (async) ---
+    listAttachments(sitzungId) { return (cache.attachments[sitzungId] || []).slice(); },
+    async uploadAttachment(sitzungId, file) {
+      const rec = await GR.api.uploadAttachment(sitzungId, file);
+      if (!cache.attachments[sitzungId]) cache.attachments[sitzungId] = [];
+      cache.attachments[sitzungId].push(rec);
+      notifyChange();
+      return rec;
+    },
+    async deleteAttachment(sitzungId, id) {
+      await GR.api.deleteAttachment(id);
+      if (cache.attachments[sitzungId]) {
+        cache.attachments[sitzungId] = cache.attachments[sitzungId].filter(a => a.id !== id);
       }
-      if (s.autoSync === undefined) s.autoSync = true;
-      if (s.autoSyncIntervalSec === undefined) s.autoSyncIntervalSec = 60;
-      return s;
+      notifyChange();
     },
-    saveSettings(s) { write(KEYS.settings, s); },
+    attachmentUrl(id) { return GR.api.attachmentUrl(id); },
 
-    // --- Sync-Queue (für manuell eingereihte Versuche) ---
-    listQueue() { return read(KEYS.syncQueue, []); },
+    // --- Sync-Queue (NocoDB-Backup; bleibt im localStorage als Browser-eigener Cache) ---
+    listQueue() { try { return JSON.parse(localStorage.getItem('gr.syncQueue') || '[]'); } catch (_) { return []; } },
     enqueueSync(sitzungId, lastError) {
       const all = this.listQueue();
       const existing = all.find(q => q.sitzungId === sitzungId);
-      if (existing) {
-        existing.lastError = lastError || existing.lastError || '';
-        existing.lastAttemptAt = nowIso();
-      } else {
-        all.push({
-          id: uuid(),
-          type: 'sitzung-complete',
-          sitzungId,
-          queuedAt: nowIso(),
-          lastError: lastError || '',
-        });
-      }
-      write(KEYS.syncQueue, all);
+      if (existing) { existing.lastError = lastError || existing.lastError || ''; existing.lastAttemptAt = nowIso(); }
+      else { all.push({ id: uuid(), type: 'sitzung-complete', sitzungId, queuedAt: nowIso(), lastError: lastError || '' }); }
+      localStorage.setItem('gr.syncQueue', JSON.stringify(all));
     },
-    removeFromQueue(queueId) {
-      write(KEYS.syncQueue, this.listQueue().filter(q => q.id !== queueId));
+    removeFromQueue(qid) {
+      localStorage.setItem('gr.syncQueue', JSON.stringify(this.listQueue().filter(q => q.id !== qid)));
     },
-    clearQueue() { write(KEYS.syncQueue, []); },
-    markQueueError(queueId, msg) {
+    clearQueue() { localStorage.removeItem('gr.syncQueue'); },
+    markQueueError(qid, msg) {
       const all = this.listQueue();
-      const it = all.find(q => q.id === queueId);
-      if (it) { it.lastError = msg; it.lastAttemptAt = nowIso(); write(KEYS.syncQueue, all); }
+      const it = all.find(q => q.id === qid);
+      if (it) { it.lastError = msg; it.lastAttemptAt = nowIso(); localStorage.setItem('gr.syncQueue', JSON.stringify(all)); }
     },
 
-    // --- Sync-State (lastSyncedAt + lastError pro Item) ---
+    // --- Sync-State (NocoDB) ---
     getSyncState() {
-      const s = read(KEYS.syncState, emptySyncState());
-      if (!s.sitzungen) s.sitzungen = {};
-      if (!s.mitglieder) s.mitglieder = {};
-      return s;
+      try { return JSON.parse(localStorage.getItem('gr.syncState') || '{"sitzungen":{},"mitglieder":{}}'); }
+      catch (_) { return { sitzungen: {}, mitglieder: {} }; }
     },
     markSynced(kind, id) {
       const s = this.getSyncState();
       s[kind][id] = { lastSyncedAt: nowIso(), lastError: '' };
-      write(KEYS.syncState, s);
+      localStorage.setItem('gr.syncState', JSON.stringify(s));
     },
     markSyncError(kind, id, msg) {
       const s = this.getSyncState();
       const prev = s[kind][id] || {};
       s[kind][id] = { lastSyncedAt: prev.lastSyncedAt || '', lastError: msg, lastAttemptAt: nowIso() };
-      write(KEYS.syncState, s);
+      localStorage.setItem('gr.syncState', JSON.stringify(s));
     },
     isDirty(kind, item) {
-      if (!item || !item.lastModifiedAt) return true; // unbekannt → sicherheitshalber syncen
+      if (!item || !item.lastModifiedAt) return true;
       const s = this.getSyncState();
       const rec = s[kind][item.id];
       if (!rec || !rec.lastSyncedAt) return true;
       return item.lastModifiedAt > rec.lastSyncedAt;
     },
 
-    // --- Change-Listener (für Auto-Sync) ---
-    _changeListeners: [],
-    onChange(fn) { this._changeListeners.push(fn); return () => { this._changeListeners = this._changeListeners.filter(f => f !== fn); }; },
-    _notifyChange() {
-      for (const fn of this._changeListeners) {
-        try { fn(); } catch (e) { console.warn('Change-Listener Fehler', e); }
-      }
-    },
+    // --- Change-Listener ---
+    onChange(fn) { changeListeners.push(fn); return () => { const i = changeListeners.indexOf(fn); if (i >= 0) changeListeners.splice(i, 1); }; },
+    _notifyChange: notifyChange,
 
-    // --- Backup ---
+    // --- Backup (JSON-Export bleibt verfügbar) ---
     exportAll() {
       return {
         schemaVersion: SCHEMA_VERSION,
@@ -230,12 +312,20 @@
         settings: this.getSettings(),
       };
     },
-    importAll(data) {
+    async importAll(data) {
       if (!data || typeof data !== 'object') throw new Error('Ungültige Importdatei');
-      if (Array.isArray(data.sitzungen)) write(KEYS.sitzungen, data.sitzungen);
-      if (Array.isArray(data.mitglieder)) write(KEYS.mitglieder, data.mitglieder);
-      if (data.settings) write(KEYS.settings, data.settings);
+      await GR.api.importAll({
+        sitzungen: Array.isArray(data.sitzungen) ? data.sitzungen : [],
+        mitglieder: Array.isArray(data.mitglieder) ? data.mitglieder : [],
+        settings: data.settings || null,
+      });
+      // bootstrap übernimmt den frischen Stand
+      await bootstrap();
     },
+
+    // --- Bootstrap-Hooks (für app.js) ---
+    bootstrap,
+    applyServerMessage,
   };
 
   GR.store = store;
