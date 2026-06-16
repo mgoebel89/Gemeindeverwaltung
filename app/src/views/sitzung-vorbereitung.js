@@ -133,6 +133,7 @@
       el('a', { href: `#/sitzung/live?id=${sitzung.id}`, class: 'btn btn-primary' }, 'Zur Live-Protokollierung →'),
     ]));
     mount.appendChild(kopfCard);
+    if (GR.ui.renderAntraegeCard) mount.appendChild(GR.ui.renderAntraegeCard(sitzung, save));
     if (GR.ui.renderAttachmentsCard) mount.appendChild(GR.ui.renderAttachmentsCard(sitzung.id));
     mount.appendChild(topBereichBlock('oeffentlich', 'Öffentlicher Teil'));
     mount.appendChild(topBereichBlock('nicht_oeffentlich', 'Nicht-öffentlicher Teil'));

@@ -650,6 +650,7 @@
 
     mount.appendChild(exportToolbar());
     mount.appendChild(anwesenheitsCard());
+    if (GR.ui.renderAntraegeCard) mount.appendChild(GR.ui.renderAntraegeCard(sitzung, save));
     if (GR.ui.renderAttachmentsCard) mount.appendChild(GR.ui.renderAttachmentsCard(sitzung.id));
     mount.appendChild(el('div', { class: 'live-layout' }, [sidebar(), topDetail()]));
   }

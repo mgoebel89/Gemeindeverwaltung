@@ -29,6 +29,9 @@
     if (v < 2) {
       if ('entschuldigtIds' in sitzung) delete sitzung.entschuldigtIds;
       if (!sitzung.anwesenheitsZeiten || typeof sitzung.anwesenheitsZeiten !== 'object') sitzung.anwesenheitsZeiten = {};
+      if (!sitzung.antraegeTagesordnung || typeof sitzung.antraegeTagesordnung !== 'object') sitzung.antraegeTagesordnung = { modus: 'keine', text: '' };
+      if (!['keine', 'antraege'].includes(sitzung.antraegeTagesordnung.modus)) sitzung.antraegeTagesordnung.modus = 'keine';
+      if (typeof sitzung.antraegeTagesordnung.text !== 'string') sitzung.antraegeTagesordnung.text = '';
       if (Array.isArray(sitzung.tops)) {
         for (const t of sitzung.tops) {
           if (typeof t.sitzungsleitungId !== 'string') t.sitzungsleitungId = '';

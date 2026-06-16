@@ -41,6 +41,7 @@
       anwesendIds: [],
       anwesenheitsZeiten: {},
       gaeste: '',
+      antraegeTagesordnung: { modus: 'keine', text: '' },
       beginnOeffentlich: '',
       endeOeffentlich: '',
       beginnNichtOeffentlich: '',

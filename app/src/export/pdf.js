@@ -274,6 +274,54 @@
     state.y = y + 3;
   }
 
+  function drawAntraegeBlock(doc, state, sitzung) {
+    const at = sitzung.antraegeTagesordnung || { modus: 'keine', text: '' };
+    const keine = at.modus !== 'antraege';
+    const txt = (at.text || '').trim();
+
+    state.y += 6;
+    // Titel-Zeile mit Rahmen
+    const boxX = MARGIN_X;
+    const boxW = CONTENT_W;
+    const headerH = 9;
+
+    ensureSpace(doc, state, headerH + 28);
+    doc.setDrawColor(C_LINE_DARK[0], C_LINE_DARK[1], C_LINE_DARK[2]);
+    doc.setLineWidth(0.3);
+    doc.rect(boxX, state.y, boxW, headerH, 'S');
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(11);
+    doc.setTextColor(C_TEXT[0], C_TEXT[1], C_TEXT[2]);
+    doc.text('Anträge zur Tagesordnung', boxX + 4, state.y + headerH / 2 + 1.4);
+    state.y += headerH + 4;
+
+    // Zeile 1: Es gibt keine Anträge
+    const CB = 4.4;
+    drawCheckbox(doc, MARGIN_X, state.y - 3.5, CB, keine);
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(10.5);
+    doc.text('Es gibt keine Anträge zur Tagesordnung.', MARGIN_X + CB + 4, state.y);
+    state.y += 7;
+
+    // Zeile 2: Nachfolgende Anträge … + Text
+    drawCheckbox(doc, MARGIN_X, state.y - 3.5, CB, !keine);
+    doc.text('Nachfolgende Anträge zur Tagesordnung werden vorgebracht:', MARGIN_X + CB + 4, state.y);
+    state.y += 6;
+
+    if (!keine && txt) {
+      const indent = CB + 4;
+      const lines = doc.splitTextToSize(txt, CONTENT_W - indent);
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(10.5);
+      for (const ln of lines) {
+        ensureSpace(doc, state, 5);
+        doc.text(ln, MARGIN_X + indent, state.y);
+        state.y += 5;
+      }
+    }
+    state.y += 4;
+  }
+
   function drawTopTitle(doc, state, top) {
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(11);
@@ -488,6 +536,8 @@
 
     drawLine(doc, state, C_LINE_LIGHT, 0.3, 6, 8);
     drawText(doc, state, `Sitzungsbeginn (öffentlich): ${sitzung.beginnOeffentlich || 'HH:mm'} Uhr`, { bold: true, color: C_TEXT, size: 10 });
+
+    drawAntraegeBlock(doc, state, sitzung);
 
     if (oeff.length === 0) {
       state.y += 2;
