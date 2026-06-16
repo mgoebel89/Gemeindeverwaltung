@@ -81,6 +81,63 @@
     }
   }
 
+  // Sehr leichter Markdown-Renderer für Aufzählungen.
+  // - Listenelemente: Zeilen, die mit "- ", "* " oder "1. " beginnen
+  // - **fett** und *kursiv* werden NICHT geparst (zu viel Aufwand für jsPDF)
+  // - Leerzeilen werden als halber Zeilenabstand übernommen
+  function drawMarkdown(doc, state, text, opts = {}) {
+    const {
+      size = 10.5,
+      lineGap = GAP_BLOCK,
+      indent = 0,
+      color = C_TEXT,
+    } = opts;
+    const maxWidth = CONTENT_W - indent;
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(size);
+    doc.setTextColor(color[0], color[1], color[2]);
+    const lines = String(text || '').split(/\r?\n/);
+    for (const raw of lines) {
+      if (!raw.trim()) {
+        state.y += lineGap * 0.5;
+        continue;
+      }
+      const bullet = raw.match(/^\s*[-*]\s+(.*)$/);
+      const numbered = raw.match(/^\s*(\d+)\.\s+(.*)$/);
+      if (bullet) {
+        const t = bullet[1];
+        const bIndent = 6;
+        const wrapped = doc.splitTextToSize(t, maxWidth - bIndent);
+        ensureSpace(doc, state, lineGap);
+        doc.text('•', MARGIN_X + indent + 1.5, state.y);
+        wrapped.forEach((ln, i) => {
+          if (i > 0) ensureSpace(doc, state, lineGap);
+          doc.text(ln, MARGIN_X + indent + bIndent, state.y);
+          state.y += lineGap;
+        });
+      } else if (numbered) {
+        const num = numbered[1];
+        const t = numbered[2];
+        const nIndent = 9;
+        const wrapped = doc.splitTextToSize(t, maxWidth - nIndent);
+        ensureSpace(doc, state, lineGap);
+        doc.text(num + '.', MARGIN_X + indent + 1.5, state.y);
+        wrapped.forEach((ln, i) => {
+          if (i > 0) ensureSpace(doc, state, lineGap);
+          doc.text(ln, MARGIN_X + indent + nIndent, state.y);
+          state.y += lineGap;
+        });
+      } else {
+        const wrapped = doc.splitTextToSize(raw, maxWidth);
+        for (const ln of wrapped) {
+          ensureSpace(doc, state, lineGap);
+          doc.text(ln, MARGIN_X + indent, state.y);
+          state.y += lineGap;
+        }
+      }
+    }
+  }
+
   function drawLine(doc, state, color = C_LINE_LIGHT, width = 0.3, gapBefore = 3, gapAfter = 5) {
     state.y += gapBefore;
     ensureSpace(doc, state, gapAfter + width);
@@ -310,14 +367,7 @@
 
     if (!keine && txt) {
       const indent = CB + 4;
-      const lines = doc.splitTextToSize(txt, CONTENT_W - indent);
-      doc.setFont('helvetica', 'normal');
-      doc.setFontSize(10.5);
-      for (const ln of lines) {
-        ensureSpace(doc, state, 5);
-        doc.text(ln, MARGIN_X + indent, state.y);
-        state.y += 5;
-      }
+      drawMarkdown(doc, state, txt, { indent, lineGap: 5, size: 10.5 });
     }
     state.y += 4;
   }
@@ -363,7 +413,11 @@
     }
     drawTopTitle(doc, state, top);
     drawText(doc, state, 'Beschlussvorlage:', { bold: true, lineGap: GAP_LABEL });
-    drawText(doc, state, top.beschlussvorlage || '—', { lineGap: GAP_BLOCK });
+    if ((top.beschlussvorlage || '').trim()) {
+      drawMarkdown(doc, state, top.beschlussvorlage, { lineGap: GAP_BLOCK });
+    } else {
+      drawText(doc, state, '—', { lineGap: GAP_BLOCK });
+    }
 
     if (top.abstimmung && top.abstimmung.durchgefuehrt) {
       drawAbstimmungBox(doc, state, top, mitglieder);

@@ -135,8 +135,9 @@
     if (!GR.store.isBackendAvailable()) showBackendUnavailableBanner();
     // Erste View rendern
     router();
-    // Reaktiv bei Server-Push neu rendern (einfach: bei jeder Änderung neu zeichnen)
-    GR.store.onChange(() => router());
+    // Bei Server-Push (von ANDEREN Clients) neu rendern. Eigene Eingaben triggern das nicht,
+    // damit Cursor/Scrollposition beim Tippen erhalten bleiben.
+    GR.store.onRemoteChange(() => router());
     // Migration anbieten
     await maybeMigrate();
     // NocoDB-Auto-Sync starten

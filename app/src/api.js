@@ -5,6 +5,16 @@
   const BASE = ''; // gleicher Host, nginx leitet /api an Node
   const WS_PATH = '/ws';
 
+  const CLIENT_ID = (function () {
+    let id = '';
+    try { id = sessionStorage.getItem('gr.clientId') || ''; } catch (_) {}
+    if (!id) {
+      id = (crypto.randomUUID && crypto.randomUUID()) || ('c-' + Math.random().toString(36).slice(2) + Date.now().toString(36));
+      try { sessionStorage.setItem('gr.clientId', id); } catch (_) {}
+    }
+    return id;
+  })();
+
   const listeners = [];
   let ws = null;
   let wsReconnectTimer = null;
@@ -13,7 +23,7 @@
   async function jsonFetch(path, opts = {}) {
     const res = await fetch(BASE + path, {
       method: opts.method || 'GET',
-      headers: { 'Content-Type': 'application/json', ...(opts.headers || {}) },
+      headers: { 'Content-Type': 'application/json', 'X-Client-Id': CLIENT_ID, ...(opts.headers || {}) },
       body: opts.body ? JSON.stringify(opts.body) : undefined,
     });
     if (!res.ok) {
@@ -46,7 +56,7 @@
   async function uploadAttachment(sitzungId, file) {
     const fd = new FormData();
     fd.append('file', file, file.name);
-    const res = await fetch(`/api/sitzungen/${encodeURIComponent(sitzungId)}/attachments`, { method: 'POST', body: fd });
+    const res = await fetch(`/api/sitzungen/${encodeURIComponent(sitzungId)}/attachments`, { method: 'POST', body: fd, headers: { 'X-Client-Id': CLIENT_ID } });
     if (!res.ok) {
       const txt = await res.text().catch(() => '');
       throw new Error(`Upload ${res.status}: ${txt.slice(0, 200)}`);
@@ -103,5 +113,6 @@
     listAttachments, uploadAttachment, deleteAttachment, attachmentUrl,
     importAll,
     connectWs, subscribe,
+    clientId: CLIENT_ID,
   };
 })();

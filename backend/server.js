@@ -66,12 +66,12 @@ app.put('/api/sitzungen/:id', (req, res) => {
   const body = req.body || {};
   if (body.id !== req.params.id) return res.status(400).json({ error: 'id mismatch' });
   const saved = db.saveSitzung(body);
-  broadcast({ type: 'sitzung:save', sitzung: saved });
+  broadcast({ type: 'sitzung:save', sitzung: saved, origin: req.header('x-client-id') || '' });
   res.json(saved);
 });
 app.delete('/api/sitzungen/:id', (req, res) => {
   db.deleteSitzung(req.params.id);
-  broadcast({ type: 'sitzung:delete', id: req.params.id });
+  broadcast({ type: 'sitzung:delete', id: req.params.id, origin: req.header('x-client-id') || '' });
   res.status(204).end();
 });
 
@@ -81,12 +81,12 @@ app.put('/api/mitglieder/:id', (req, res) => {
   const body = req.body || {};
   if (body.id !== req.params.id) return res.status(400).json({ error: 'id mismatch' });
   const saved = db.saveMitglied(body);
-  broadcast({ type: 'mitglied:save', mitglied: saved });
+  broadcast({ type: 'mitglied:save', mitglied: saved, origin: req.header('x-client-id') || '' });
   res.json(saved);
 });
 app.delete('/api/mitglieder/:id', (req, res) => {
   db.deleteMitglied(req.params.id);
-  broadcast({ type: 'mitglied:delete', id: req.params.id });
+  broadcast({ type: 'mitglied:delete', id: req.params.id, origin: req.header('x-client-id') || '' });
   res.status(204).end();
 });
 
@@ -94,7 +94,7 @@ app.delete('/api/mitglieder/:id', (req, res) => {
 app.get('/api/settings', (_req, res) => res.json(db.getSettings() || null));
 app.put('/api/settings', (req, res) => {
   const saved = db.saveSettings(req.body || {});
-  broadcast({ type: 'settings:save', settings: saved });
+  broadcast({ type: 'settings:save', settings: saved, origin: req.header('x-client-id') || '' });
   res.json(saved);
 });
 
@@ -122,7 +122,7 @@ app.post('/api/sitzungen/:id/attachments', upload.single('file'), (req, res) => 
     mimetype: req.file.mimetype || 'application/octet-stream',
     size: req.file.size,
   });
-  broadcast({ type: 'attachment:add', attachment: rec });
+  broadcast({ type: 'attachment:add', attachment: rec, origin: req.header('x-client-id') || '' });
   res.status(201).json(rec);
 });
 
@@ -140,7 +140,7 @@ app.get('/api/attachments/:id', (req, res) => {
 app.delete('/api/attachments/:id', (req, res) => {
   const a = db.deleteAttachment(req.params.id);
   if (!a) return res.status(404).json({ error: 'not found' });
-  broadcast({ type: 'attachment:delete', id: a.id, sitzungId: a.sitzungId });
+  broadcast({ type: 'attachment:delete', id: a.id, sitzungId: a.sitzungId, origin: req.header('x-client-id') || '' });
   res.status(204).end();
 });
 

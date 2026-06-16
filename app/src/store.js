@@ -14,6 +14,7 @@
   };
 
   const changeListeners = [];
+  const remoteChangeListeners = [];
   const readyListeners = [];
 
   function nowIso() { return new Date().toISOString(); }
@@ -21,6 +22,9 @@
 
   function notifyChange() {
     for (const fn of changeListeners) { try { fn(); } catch (e) { console.warn(e); } }
+  }
+  function notifyRemote() {
+    for (const fn of remoteChangeListeners) { try { fn(); } catch (e) { console.warn(e); } }
   }
 
   // ----- Migration / Defaults -----
@@ -121,36 +125,38 @@
   // ----- WebSocket-Apply -----
   function applyServerMessage(msg) {
     if (!msg || !msg.type) return;
+    // Eigene Echos ignorieren — sonst rerendert das UI während der User tippt.
+    if (msg.origin && GR.api && GR.api.clientId && msg.origin === GR.api.clientId) return;
     switch (msg.type) {
       case 'sitzung:save': {
         const s = migrateSitzung(msg.sitzung);
         const idx = cache.sitzungen.findIndex(x => x.id === s.id);
         if (idx >= 0) cache.sitzungen[idx] = s; else cache.sitzungen.unshift(s);
-        notifyChange();
+        notifyChange(); notifyRemote();
         break;
       }
       case 'sitzung:delete': {
         cache.sitzungen = cache.sitzungen.filter(s => s.id !== msg.id);
         delete cache.attachments[msg.id];
-        notifyChange();
+        notifyChange(); notifyRemote();
         break;
       }
       case 'mitglied:save': {
         const m = migrateMitglied(msg.mitglied);
         const idx = cache.mitglieder.findIndex(x => x.id === m.id);
         if (idx >= 0) cache.mitglieder[idx] = m; else cache.mitglieder.push(m);
-        notifyChange();
+        notifyChange(); notifyRemote();
         break;
       }
       case 'mitglied:delete': {
         cache.mitglieder = cache.mitglieder.filter(m => m.id !== msg.id);
-        notifyChange();
+        notifyChange(); notifyRemote();
         break;
       }
       case 'settings:save': {
         cache.settings = msg.settings || cache.settings;
         mergeSettingsDefaults();
-        notifyChange();
+        notifyChange(); notifyRemote();
         break;
       }
       case 'attachment:add': {
@@ -159,14 +165,14 @@
         if (!cache.attachments[a.sitzungId].some(x => x.id === a.id)) {
           cache.attachments[a.sitzungId].push(a);
         }
-        notifyChange();
+        notifyChange(); notifyRemote();
         break;
       }
       case 'attachment:delete': {
         if (cache.attachments[msg.sitzungId]) {
           cache.attachments[msg.sitzungId] = cache.attachments[msg.sitzungId].filter(a => a.id !== msg.id);
         }
-        notifyChange();
+        notifyChange(); notifyRemote();
         break;
       }
       case 'bulk:imported': {
@@ -313,6 +319,7 @@
 
     // --- Change-Listener ---
     onChange(fn) { changeListeners.push(fn); return () => { const i = changeListeners.indexOf(fn); if (i >= 0) changeListeners.splice(i, 1); }; },
+    onRemoteChange(fn) { remoteChangeListeners.push(fn); return () => { const i = remoteChangeListeners.indexOf(fn); if (i >= 0) remoteChangeListeners.splice(i, 1); }; },
     _notifyChange: notifyChange,
 
     // --- Backup (JSON-Export bleibt verfügbar) ---
