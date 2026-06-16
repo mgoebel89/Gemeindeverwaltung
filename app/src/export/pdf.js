@@ -412,18 +412,18 @@
       state.y += 1.5;
     }
     drawTopTitle(doc, state, top);
-    drawText(doc, state, 'Beschlussvorlage:', { bold: true, lineGap: GAP_LABEL });
+    const abgestimmt = !!(top.abstimmung && top.abstimmung.durchgefuehrt);
+    if (abgestimmt) {
+      drawText(doc, state, 'Beschlussvorlage:', { bold: true, lineGap: GAP_LABEL });
+    }
     if ((top.beschlussvorlage || '').trim()) {
       drawMarkdown(doc, state, top.beschlussvorlage, { lineGap: GAP_BLOCK });
-    } else {
+    } else if (abgestimmt) {
       drawText(doc, state, '—', { lineGap: GAP_BLOCK });
     }
 
-    if (top.abstimmung && top.abstimmung.durchgefuehrt) {
+    if (abgestimmt) {
       drawAbstimmungBox(doc, state, top, mitglieder);
-    } else {
-      state.y += 1;
-      drawText(doc, state, 'Keine Abstimmung durchgeführt.', { color: C_MUTED, size: 9.5 });
     }
 
     if (wechselNach) {
