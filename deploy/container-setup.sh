@@ -24,7 +24,7 @@ if [[ ! -d /opt/gemeindeverwaltung/.git ]]; then
 fi
 
 # Backend
-(cd /opt/gemeindeverwaltung/backend && npm ci --omit=dev --no-audit --no-fund)
+(cd /opt/gemeindeverwaltung/backend && npm install --omit=dev --no-audit --no-fund)
 cp /opt/gemeindeverwaltung/deploy/backend.service /etc/systemd/system/gemeindeverwaltung-backend.service
 systemctl daemon-reload
 systemctl enable --now gemeindeverwaltung-backend

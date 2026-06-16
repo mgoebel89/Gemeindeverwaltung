@@ -20,7 +20,7 @@ git reset --hard "origin/${BRANCH}"
 # Backend-Abhängigkeiten installieren, falls package.json sich geändert hat
 if [[ -f backend/package.json ]]; then
   if [[ ! -d backend/node_modules ]] || ! diff -q backend/package.json backend/node_modules/.package.json.last >/dev/null 2>&1; then
-    (cd backend && npm ci --omit=dev --no-audit --no-fund)
+    (cd backend && npm install --omit=dev --no-audit --no-fund)
     cp backend/package.json backend/node_modules/.package.json.last 2>/dev/null || true
   fi
   systemctl restart gemeindeverwaltung-backend || true
