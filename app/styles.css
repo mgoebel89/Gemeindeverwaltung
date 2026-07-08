@@ -235,8 +235,64 @@ tr:hover td { background: #fafbfc; }
 }
 .modal h3 { margin-top: 0; }
 
+/* ===== Mobile / Tablet ===== */
+
+/* Navigationsleiste: bei schmalen Screens Marke oben, Nav in eigener,
+   horizontal scrollbarer Zeile darunter. */
+@media (max-width: 900px) {
+  .topbar { flex-wrap: wrap; padding: 10px 14px; gap: 8px; }
+  .brand { flex: 1 1 auto; min-width: 0; }
+  .brand h1 { font-size: 1.05rem; }
+  .brand small { font-size: 0.75rem; }
+  .mainnav {
+    order: 3;
+    width: 100%;
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    gap: 4px;
+    padding-bottom: 2px;
+    scrollbar-width: none;
+  }
+  .mainnav::-webkit-scrollbar { display: none; }
+  .mainnav a { white-space: nowrap; padding: 8px 12px; }
+  .sync-status { margin-left: auto; flex: 0 0 auto; }
+}
+
 @media (max-width: 760px) {
+  main { margin: 14px auto; padding: 0 12px 48px; }
+  .card { padding: 15px; }
+  h2 { font-size: 1.15rem; }
+
   .live-layout { grid-template-columns: 1fr; }
   .grid-3, .grid-2 { grid-template-columns: 1fr; }
   .anw-grid { grid-template-columns: 1fr; }
+
+  /* Breite Tabellen horizontal scrollen lassen statt zu quetschen.
+     Nur Karten, die direkt eine Tabelle enthalten (nicht z. B. die
+     Mieter-Combobox), werden zum Scroll-Container. */
+  .card:has(> table) { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  .card > table { min-width: 560px; }
+  th, td { padding: 8px; white-space: nowrap; }
+
+  .toolbar { gap: 6px; }
+  .toolbar .btn, .toolbar button, .toolbar a.btn { flex: 0 0 auto; }
+  .verm-summary { gap: 16px; }
+  .verm-stepper { gap: 6px; }
+  .verm-step { padding: 5px 10px; font-size: 0.8rem; }
+  .verm-mieter-sel { flex-direction: column; align-items: stretch; }
+
+  .modal-overlay { padding: 16px 10px; }
+  .modal { padding: 18px; }
+
+  .toast { left: 12px; right: 12px; bottom: 12px; text-align: center; }
+}
+
+/* Sehr schmale Geräte: Tap-Ziele vergrößern, Buttons breiter. */
+@media (max-width: 460px) {
+  .brand small { display: none; }
+  input[type=text], input[type=date], input[type=time], input[type=number],
+  select, textarea, button, .btn { font-size: 16px; } /* verhindert Auto-Zoom in iOS */
+  button, .btn { padding: 10px 14px; }
+  .btn-sm { padding: 6px 10px; }
 }
