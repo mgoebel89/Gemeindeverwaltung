@@ -68,12 +68,16 @@
       const t = tables.find(t => (t.title || t.table_name) === name);
       return t ? (t.id || t.table_id) : '';
     };
-    const sitzId = findId(s.nocodb.tableSitzungenName);
-    const beschId = findId(s.nocodb.tableBeschluesseName);
-    const mitgId = findId(s.nocodb.tableMitgliederName);
-    if (sitzId && sitzId !== s.nocodb.tableSitzungenId) { s.nocodb.tableSitzungenId = sitzId; updated = true; }
-    if (beschId && beschId !== s.nocodb.tableBeschluesseId) { s.nocodb.tableBeschluesseId = beschId; updated = true; }
-    if (mitgId && mitgId !== s.nocodb.tableMitgliederId) { s.nocodb.tableMitgliederId = mitgId; updated = true; }
+    const resolve = (nameKey, idKey) => {
+      const id = findId(s.nocodb[nameKey]);
+      if (id && id !== s.nocodb[idKey]) { s.nocodb[idKey] = id; updated = true; }
+    };
+    resolve('tableSitzungenName', 'tableSitzungenId');
+    resolve('tableBeschluesseName', 'tableBeschluesseId');
+    resolve('tableMitgliederName', 'tableMitgliederId');
+    resolve('tableMieterName', 'tableMieterId');
+    resolve('tableRaeumeName', 'tableRaeumeId');
+    resolve('tableVermietungenName', 'tableVermietungenId');
     if (updated) store.saveSettings(s);
     return { tables, count: tables.length };
   }
@@ -117,6 +121,38 @@
     { title: 'Funktion', uidt: 'SingleLineText' },
     { title: 'Aktiv', uidt: 'Checkbox' },
     { title: 'LastModifiedAt', uidt: 'SingleLineText' },
+  ];
+  const MIETER_COLUMNS = [
+    { title: 'MieterId', uidt: 'SingleLineText' },
+    { title: 'Vorname', uidt: 'SingleLineText' },
+    { title: 'Nachname', uidt: 'SingleLineText' },
+    { title: 'Anschrift', uidt: 'SingleLineText' },
+    { title: 'Telefon', uidt: 'SingleLineText' },
+    { title: 'Email', uidt: 'SingleLineText' },
+    { title: 'Ortsfremd', uidt: 'Checkbox' },
+    { title: 'LastModifiedAt', uidt: 'SingleLineText' },
+    { title: 'Payload', uidt: 'LongText' },
+  ];
+  const RAEUME_COLUMNS = [
+    { title: 'RaumId', uidt: 'SingleLineText' },
+    { title: 'Name', uidt: 'SingleLineText' },
+    { title: 'Aktiv', uidt: 'Checkbox' },
+    { title: 'LastModifiedAt', uidt: 'SingleLineText' },
+    { title: 'Payload', uidt: 'LongText' },
+  ];
+  const VERMIETUNGEN_COLUMNS = [
+    { title: 'VermietungId', uidt: 'SingleLineText' },
+    { title: 'Objekt', uidt: 'SingleLineText' },
+    { title: 'Mieter', uidt: 'SingleLineText' },
+    { title: 'Anlass', uidt: 'SingleLineText' },
+    { title: 'StartDatum', uidt: 'Date' },
+    { title: 'EndDatum', uidt: 'Date' },
+    { title: 'Status', uidt: 'SingleLineText' },
+    { title: 'Ortsfremd', uidt: 'Checkbox' },
+    { title: 'Grundmiete', uidt: 'Number' },
+    { title: 'Gesamtbetrag', uidt: 'Number' },
+    { title: 'LastModifiedAt', uidt: 'SingleLineText' },
+    { title: 'Payload', uidt: 'LongText' },
   ];
 
   async function createTable(title, columns) {
@@ -166,6 +202,9 @@
     await ensureTable(s.nocodb.tableSitzungenName, SITZUNGEN_COLUMNS, 'tableSitzungenId');
     await ensureTable(s.nocodb.tableBeschluesseName, BESCHLUESSE_COLUMNS, 'tableBeschluesseId');
     await ensureTable(s.nocodb.tableMitgliederName, MITGLIEDER_COLUMNS, 'tableMitgliederId');
+    await ensureTable(s.nocodb.tableMieterName || 'Mieter', MIETER_COLUMNS, 'tableMieterId');
+    await ensureTable(s.nocodb.tableRaeumeName || 'Raeume', RAEUME_COLUMNS, 'tableRaeumeId');
+    await ensureTable(s.nocodb.tableVermietungenName || 'Vermietungen', VERMIETUNGEN_COLUMNS, 'tableVermietungenId');
 
     store.saveSettings(s);
     return log;
@@ -294,6 +333,63 @@
     return { mitglieder: 1 };
   }
 
+  // --- Vermietungs-Modul: Row-Builder + Sync ---
+  async function ensureTableId(idKey, nameLabel) {
+    let cfg = store.getSettings().nocodb;
+    if (!cfg[idKey]) { await testConnection(); cfg = store.getSettings().nocodb; }
+    if (!cfg[idKey]) throw new Error(`Tabelle „${nameLabel}" fehlt. Bitte „Schema initialisieren" ausführen.`);
+    return cfg[idKey];
+  }
+
+  function mieterAnschrift(m) {
+    return [m.strasse, [m.plz, m.ort].filter(Boolean).join(' ')].filter(Boolean).join(', ');
+  }
+  function buildMieterRow(m) {
+    return {
+      MieterId: m.id,
+      Vorname: m.vorname || '', Nachname: m.nachname || '',
+      Anschrift: mieterAnschrift(m), Telefon: m.telefon || '', Email: m.email || '',
+      Ortsfremd: !!m.ortsfremd, LastModifiedAt: m.lastModifiedAt || '', Payload: JSON.stringify(m),
+    };
+  }
+  function buildRaumRow(r) {
+    return {
+      RaumId: r.id, Name: r.name || '', Aktiv: !!r.aktiv,
+      LastModifiedAt: r.lastModifiedAt || '', Payload: JSON.stringify(r),
+    };
+  }
+  function buildVermietungRow(v) {
+    const raum = store.getRaum(v.raumId);
+    const mieter = store.getMieter(v.mieterId);
+    const g = GR.models.berechneGesamt(v, raum);
+    return {
+      VermietungId: v.id,
+      Objekt: raum ? raum.name : '',
+      Mieter: mieter ? GR.models.fullNameMieter(mieter) : '',
+      Anlass: v.anlass || '',
+      StartDatum: v.startDatum || null,
+      EndDatum: v.endDatum || null,
+      Status: v.status || '',
+      Ortsfremd: !!v.ortsfremd,
+      Grundmiete: g.grundMiete,
+      Gesamtbetrag: g.gesamt,
+      LastModifiedAt: v.lastModifiedAt || '',
+      Payload: JSON.stringify(v),
+    };
+  }
+  async function syncMieter(m) {
+    await upsertRecord(await ensureTableId('tableMieterId', 'Mieter'), 'MieterId', buildMieterRow(m));
+    return { mieter: 1 };
+  }
+  async function syncRaum(r) {
+    await upsertRecord(await ensureTableId('tableRaeumeId', 'Raeume'), 'RaumId', buildRaumRow(r));
+    return { raeume: 1 };
+  }
+  async function syncVermietung(v) {
+    await upsertRecord(await ensureTableId('tableVermietungenId', 'Vermietungen'), 'VermietungId', buildVermietungRow(v));
+    return { vermietungen: 1 };
+  }
+
   async function syncQueue() {
     const queue = store.listQueue();
     let ok = 0, fail = 0;
@@ -384,6 +480,9 @@
     initSchema,
     syncSitzungComplete,
     syncMitglied,
+    syncMieter,
+    syncRaum,
+    syncVermietung,
     syncQueue,
     restoreFromNocoDb,
     isConfigured,

@@ -1,6 +1,6 @@
 (function () {
   'use strict';
-  const { renderDashboard, renderStammdaten, renderEinstellungen, renderVorbereitung, renderLive } = GR.views;
+  const { renderDashboard, renderDokumente, renderStammdaten, renderEinstellungen, renderVorbereitung, renderLive, renderVermietung, renderMieter } = GR.views;
 
   const mount = document.getElementById('app');
 
@@ -22,10 +22,13 @@
     mount.innerHTML = '';
     setActiveNav(path);
     if (path === '/' || path === '') return renderDashboard(mount);
+    if (path === '/dokumente') return renderDokumente(mount, params);
     if (path === '/stammdaten') return renderStammdaten(mount);
     if (path === '/einstellungen') return renderEinstellungen(mount);
     if (path === '/sitzung/vorbereitung') return renderVorbereitung(mount, params.id);
     if (path === '/sitzung/live') return renderLive(mount, params.id);
+    if (path === '/vermietung') return renderVermietung(mount, params);
+    if (path === '/mieter') return renderMieter(mount);
     mount.innerHTML = '<div class="card"><h2>Seite nicht gefunden</h2><a href="#/">Zurück zur Übersicht</a></div>';
   }
 

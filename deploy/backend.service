@@ -13,6 +13,12 @@ Environment=NODE_ENV=production
 Environment=DATA_DIR=/var/lib/gemeindeverwaltung
 Environment=PORT=3000
 Environment=HOST=127.0.0.1
+# Modul "Dokumente": Paperless-ngx-Anbindung.
+# Secrets gehören in /etc/gemeindeverwaltung.env (root-only, 0600), nicht ins Unit-File.
+# Inhalt z. B.:
+#   PAPERLESS_URL=http://192.168.1.20:8000
+#   PAPERLESS_TOKEN=xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+EnvironmentFile=-/etc/gemeindeverwaltung.env
 
 # Hardening
 NoNewPrivileges=true

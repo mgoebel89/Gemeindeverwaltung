@@ -154,6 +154,85 @@ nicht funktionieren, ist aber für UI-Tests irrelevant.
   Echtzeit; letzte Schreibung gewinnt bei gleichzeitigem Tippen auf dasselbe
   Feld.
 
+## Modul „Dokumente" (Paperless-ngx)
+
+Der Container ist als **Multi-Modul-Gemeindeverwaltung** angelegt. Neben dem
+Sitzungsprotokoll gibt es das Modul **Dokumente**, das die in **Paperless-ngx**
+(Docker auf dem NAS) abgelegten Dokumente durchsuchbar macht und das **Bearbeiten der
+Metadaten** erlaubt (Titel, Datum, Korrespondent, Dokumenttyp, Tags, Archiv-Nr., Custom Fields).
+
+**Architektur:** Das Frontend spricht ausschließlich das eigene Node-Backend an
+(`/api/dokumente/...`). Das Backend (`backend/paperless.js` + `backend/routes/dokumente.js`)
+proxyt zu Paperless und hält den **API-Token serverseitig** — der Token landet nie im Browser,
+CORS muss in Paperless **nicht** geöffnet werden.
+
+**Konfiguration (Env-Variablen):**
+
+| Variable          | Bedeutung                                                        |
+|-------------------|------------------------------------------------------------------|
+| `PAPERLESS_URL`   | Basis-URL der Paperless-Instanz, vom Container erreichbar, z. B. `http://192.168.1.20:8000` |
+| `PAPERLESS_TOKEN` | API-Token (Paperless: **Einstellungen → API-Token**)             |
+
+Im LXC kommen die Werte aus `/etc/gemeindeverwaltung.env` (root-only, `chmod 600`), die von
+der systemd-Unit via `EnvironmentFile=-/etc/gemeindeverwaltung.env` geladen wird:
+
+```bash
+cat >/etc/gemeindeverwaltung.env <<'EOF'
+PAPERLESS_URL=http://192.168.1.20:8000
+PAPERLESS_TOKEN=xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+EOF
+chmod 600 /etc/gemeindeverwaltung.env
+systemctl restart gemeindeverwaltung-backend   # bzw. der konfigurierte Service-Name
+```
+
+Verbindungstest: `GET /api/dokumente/health` → `{ "ok": true, ... }`.
+
+**Lokal testen:**
+
+```bash
+cd backend && npm install
+PAPERLESS_URL=http://<nas>:8000 PAPERLESS_TOKEN=<token> npm start &
+cd ../app && python3 -m http.server 8080
+# Backend-Proxy nachbilden oder über das nginx-Setup laufen lassen.
+```
+
+> **Noch nicht enthalten (Folge-Iterationen):** SMB-Direktzugriff, Upload neuer Dokumente,
+> Löschen, Notizen-Bearbeitung und eine gemeinsame Benutzeranmeldung.
+
+## Modul „Vermietung" (Gemeindehaus & Jugendraum)
+
+Verwaltung der Saalvermietungen über den gesamten Ablauf hinweg. Erreichbar über
+den Navigationspunkt **Vermietung**.
+
+**Ablauf (drei Status):**
+1. **geplant** – Termin, Objekt, Anlass und Mieter erfassen. Mieter werden dauerhaft
+   gespeichert (Menü **Mieter**) und stehen bei jeder weiteren Vermietung per
+   Suche zur Auswahl. Anwohner/Ortsfremd wird pro Mieter hinterlegt und je
+   Vermietung überschrieben.
+2. **Vertrag** – Zähler-Anfangsstände (Strom kWh, Gas cbm) erfassen. Beim Erstellen
+   des Vertrags werden die aktuellen Preise **eingefroren** (`preisSnapshot`), damit
+   spätere Preisänderungen alte Verträge nicht verändern. → **Mietvertrag als PDF**.
+3. **abgerechnet** – Zähler-Endstände + optionale Zusatzposten (z. B. Reinigung).
+   → **Kostenabrechnungsbogen als PDF** (Layout der VG-Kelberg-Vorlage) für den
+   Versand an die Verbandsgemeindeverwaltung.
+
+**Preise** (Menü *Einstellungen → Vermietung – Preise*): je Objekt gestaffelte
+Grundmiete (1. Tag / jeder weitere Tag, getrennt für Anwohner und Ortsfremde) sowie
+Strompreis (€/kWh) und Gaspreis (€/cbm). Absender-/Vertragsdaten für die PDFs
+(Ortsgemeinde, Bürgermeister, Anschrift, Satzungsdatum, VG-Empfänger) ebenfalls dort.
+
+**Datenhaltung:** wie beim Sitzungsmodul – primär in der Container-SQLite
+(Tabellen `mieter`, `raeume`, `vermietungen`), zusätzlich Auto-Sync nach NocoDB
+(Tabellen `Mieter`, `Raeume`, `Vermietungen`, jeweils mit vollständigem `Payload`
+zur Rekonstruktion). Die Tabellen werden beim Backend-Start automatisch angelegt;
+die zwei Standard-Objekte *Gemeindehaus* und *Jugendraum* werden einmalig
+mit Startpreisen aus den Vorlagen geseedet. NocoDB-Zieltabellen legt „Schema
+initialisieren" in den Einstellungen an.
+
+> **Migration:** Bestehende Installationen brauchen kein manuelles Update der
+> Datenbank – die neuen Tabellen werden per `CREATE TABLE IF NOT EXISTS` beim Start
+> ergänzt. Frontend nach dem Update mit **Strg+F5** neu laden.
+
 ## Lizenz
 
 Creative Commons **CC BY-NC-SA 4.0** — siehe `LICENSE`.

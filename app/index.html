@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Gemeinderats-Protokoll</title>
+  <title>Gemeindeverwaltung</title>
   <link rel="stylesheet" href="styles.css" />
 </head>
 <body>
@@ -11,12 +11,14 @@
     <div class="brand">
       <img src="assets/wappen.png" alt="Wappen" class="brand-wappen" onerror="this.style.display='none'" />
       <div>
-        <h1>Gemeinderats-Protokoll</h1>
+        <h1>Gemeindeverwaltung</h1>
         <small>Hörschhausen</small>
       </div>
     </div>
     <nav class="mainnav">
       <a href="#/" data-route="/">Sitzungen</a>
+      <a href="#/dokumente" data-route="/dokumente">Dokumente</a>
+      <a href="#/vermietung" data-route="/vermietung">Vermietung</a>
       <a href="#/stammdaten" data-route="/stammdaten">Stammdaten</a>
       <a href="#/einstellungen" data-route="/einstellungen">Einstellungen</a>
       <button id="syncStatus" class="sync-status sync-status--unconfigured" title="NocoDB nicht konfiguriert" aria-label="Sync-Status">
@@ -46,7 +48,11 @@
   <script src="src/export/csv.js"></script>
   <script src="src/export/nocodb.js"></script>
   <script src="src/export/pdf.js"></script>
+  <script src="src/export/vermietung-pdf.js"></script>
   <script src="src/views/dashboard.js"></script>
+  <script src="src/views/dokumente.js"></script>
+  <script src="src/views/mieter.js"></script>
+  <script src="src/views/vermietung.js"></script>
   <script src="src/views/stammdaten.js"></script>
   <script src="src/views/einstellungen.js"></script>
   <script src="src/views/sitzung-vorbereitung.js"></script>

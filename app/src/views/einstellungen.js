@@ -116,7 +116,7 @@
       }
     };
     const onInitSchema = async () => {
-      if (!confirmDialog('Fehlende Zieltabellen (Sitzungen / Beschluesse) in der konfigurierten NocoDB-Base anlegen?')) return;
+      if (!confirmDialog('Fehlende Zieltabellen (Sitzungen, Beschluesse, Mitglieder, Mieter, Raeume, Vermietungen) in der konfigurierten NocoDB-Base anlegen?')) return;
       try {
         const log = await GR.nocodb_client.initSchema();
         setStatus(log.join(' · '), '#2f855a');
@@ -221,6 +221,63 @@
       el('h3', { style: 'margin-top:16px;' }, 'Offline-Queue'),
       el('p', { class: 'help' }, 'Sitzungen, die beim Push-Versuch nicht hochgeladen werden konnten, landen hier und können später erneut synchronisiert werden.'),
       queueContainer,
+    ]));
+
+    // --- Vermietung: Preise & Absenderdaten ---
+    const numInput = (obj, key, step = '0.01') => {
+      const i = el('input', { type: 'number', step, value: obj[key] ?? 0 });
+      i.oninput = () => { obj[key] = i.value === '' ? 0 : Number(i.value); };
+      return i;
+    };
+    const raeume = store.listRaeume();
+    const raumCards = raeume.map(r => {
+      const g = r.preise.grund;
+      const save = () => store.saveRaum(r);
+      const fields = [
+        numInput(g, 'anwohnerTag1'), numInput(g, 'anwohnerWeitererTag'),
+        numInput(g, 'ortsfremdTag1'), numInput(g, 'ortsfremdWeitererTag'),
+        numInput(r.preise, 'stromProKwh', '0.001'), numInput(r.preise, 'gasProCbm', '0.001'),
+      ];
+      fields.forEach(f => f.onchange = save);
+      return el('div', { class: 'card', style: 'background:#fafbfc;' }, [
+        el('h4', { style: 'margin:0 0 10px;' }, r.name),
+        el('div', { class: 'grid-2' }, [
+          el('div', {}, [el('label', {}, 'Anwohner – 1. Tag (€)'), fields[0]]),
+          el('div', {}, [el('label', {}, 'Anwohner – jeder weitere Tag (€)'), fields[1]]),
+          el('div', {}, [el('label', {}, 'Ortsfremd – 1. Tag (€)'), fields[2]]),
+          el('div', {}, [el('label', {}, 'Ortsfremd – jeder weitere Tag (€)'), fields[3]]),
+          el('div', {}, [el('label', {}, 'Strom (€/kWh)'), fields[4]]),
+          el('div', {}, [el('label', {}, 'Gas (€/cbm)'), fields[5]]),
+        ]),
+      ]);
+    });
+
+    const vm = settings.vermietung;
+    const bindVm = (key, textarea = false) => {
+      const i = textarea ? el('textarea', {}, vm[key] || '') : el('input', { type: 'text', value: vm[key] || '' });
+      i.oninput = e => { vm[key] = e.target.value; };
+      i.onchange = () => store.saveSettings(settings);
+      return i;
+    };
+
+    mount.appendChild(el('div', { class: 'card' }, [
+      el('h3', {}, 'Vermietung – Preise'),
+      el('p', { class: 'help' }, 'Grundmiete gestaffelt nach 1. Tag / jedem weiteren Tag und getrennt für Anwohner und Ortsfremde. Änderungen gelten nur für neue Verträge – bereits erstellte Verträge behalten ihre eingefrorenen Preise.'),
+      raeume.length ? el('div', {}, raumCards) : el('p', { class: 'help' }, 'Keine Objekte vorhanden.'),
+    ]));
+
+    mount.appendChild(el('div', { class: 'card' }, [
+      el('h3', {}, 'Vermietung – Absender & Vertragsdaten'),
+      el('p', { class: 'help' }, 'Diese Angaben erscheinen im Mietvertrag und Kostenabrechnungsbogen.'),
+      el('div', { class: 'grid-2' }, [
+        el('div', {}, [el('label', {}, 'Ortsgemeinde'), bindVm('ortsgemeinde')]),
+        el('div', {}, [el('label', {}, 'Ortsbürgermeister/in'), bindVm('buergermeister')]),
+        el('div', {}, [el('label', {}, 'Telefon'), bindVm('telefon')]),
+        el('div', {}, [el('label', {}, 'E-Mail'), bindVm('email')]),
+        el('div', {}, [el('label', {}, 'Satzungsdatum'), bindVm('satzungsDatum')]),
+      ]),
+      el('div', { style: 'margin-top:10px;' }, [el('label', {}, 'Anschrift (mehrzeilig)'), bindVm('anschrift', true)]),
+      el('div', { style: 'margin-top:10px;' }, [el('label', {}, 'Empfänger Kostenabrechnungsbogen (VG)'), bindVm('vgEmpfaenger', true)]),
     ]));
 
     mount.appendChild(el('div', { class: 'card' }, [

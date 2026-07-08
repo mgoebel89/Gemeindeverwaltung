@@ -9,6 +9,8 @@ const multer = require('multer');
 const { WebSocketServer } = require('ws');
 
 const db = require('./db');
+const dokumenteRouter = require('./routes/dokumente');
+const createVermietungRouter = require('./routes/vermietung');
 
 const PORT = parseInt(process.env.PORT || '3000', 10);
 const HOST = process.env.HOST || '127.0.0.1';
@@ -35,6 +37,12 @@ wss.on('connection', ws => {
 // --- Health ---
 app.get('/api/health', (_req, res) => res.json({ ok: true, version: 1 }));
 
+// --- Modul: Dokumente (Paperless-ngx-Proxy) ---
+app.use('/api/dokumente', dokumenteRouter);
+
+// --- Modul: Vermietung (Gemeindehaus & Jugendraum) ---
+app.use('/api', createVermietungRouter(broadcast));
+
 // --- Snapshot (Bootstrap) ---
 app.get('/api/snapshot', (_req, res) => {
   res.json({
@@ -42,6 +50,9 @@ app.get('/api/snapshot', (_req, res) => {
     mitglieder: db.listMitglieder(),
     settings: db.getSettings(),
     attachments: groupAttachments(),
+    mieter: db.listMieter(),
+    raeume: db.listRaeume(),
+    vermietungen: db.listVermietungen(),
     serverTime: new Date().toISOString(),
   });
 });

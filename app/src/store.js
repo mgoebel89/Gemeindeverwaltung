@@ -9,6 +9,9 @@
     mitglieder: [],       // [{...}]
     settings: null,       // {...} oder null
     attachments: {},      // sitzungId -> [{id, filename, ...}]
+    mieter: [],           // [{...}]
+    raeume: [],           // [{...}]
+    vermietungen: [],     // [{...}]
     ready: false,
     backendAvailable: false,
   };
@@ -19,6 +22,12 @@
 
   function nowIso() { return new Date().toISOString(); }
   function isoOrZero(s) { return s || ''; }
+
+  function upsertInto(arr, obj) {
+    if (!obj || !obj.id) return;
+    const idx = arr.findIndex(x => x.id === obj.id);
+    if (idx >= 0) arr[idx] = obj; else arr.push(obj);
+  }
 
   function notifyChange() {
     for (const fn of changeListeners) { try { fn(); } catch (e) { console.warn(e); } }
@@ -78,6 +87,7 @@
       nocodb: defaultNocoDbSettings(),
       autoSync: true,
       autoSyncIntervalSec: 60,
+      vermietung: defaultVermietungSettings(),
     };
   }
   function defaultNocoDbSettings() {
@@ -85,6 +95,20 @@
       serverUrl: '', token: '', baseId: '',
       tableSitzungenName: 'Sitzungen', tableBeschluesseName: 'Beschluesse', tableMitgliederName: 'Mitglieder',
       tableSitzungenId: '', tableBeschluesseId: '', tableMitgliederId: '',
+      tableMieterName: 'Mieter', tableRaeumeName: 'Raeume', tableVermietungenName: 'Vermietungen',
+      tableMieterId: '', tableRaeumeId: '', tableVermietungenId: '',
+    };
+  }
+  // Absender-/Vertragsdaten für die PDFs (Defaults aus der Mietvertrag-Vorlage Hörschhausen).
+  function defaultVermietungSettings() {
+    return {
+      ortsgemeinde: 'Hörschhausen',
+      buergermeister: 'Matthias Göbel',
+      anschrift: 'Uessbachstr. 15\n54552 Hörschhausen',
+      telefon: '02692 93 27 63 5',
+      email: 'matthias.goebel@hoerschhausen.de',
+      satzungsDatum: '22.10.1999',
+      vgEmpfaenger: 'Verbandsgemeindeverwaltung Kelberg\nFachbereich Finanzen und Abgaben\nDauner Straße 22\n53539 Kelberg',
     };
   }
 
@@ -96,6 +120,9 @@
       cache.mitglieder = (snap.mitglieder || []).map(migrateMitglied);
       cache.settings = snap.settings || defaultSettings();
       cache.attachments = snap.attachments || {};
+      cache.mieter = snap.mieter || [];
+      cache.raeume = snap.raeume || [];
+      cache.vermietungen = snap.vermietungen || [];
       cache.backendAvailable = true;
       cache.ready = true;
       mergeSettingsDefaults();
@@ -120,6 +147,16 @@
     }
     if (cache.settings.autoSync === undefined) cache.settings.autoSync = true;
     if (cache.settings.autoSyncIntervalSec === undefined) cache.settings.autoSyncIntervalSec = 60;
+    // NocoDB-Defaults für neue Tabellen nachziehen (Bestandsinstallationen)
+    const dn = defaultNocoDbSettings();
+    for (const k of ['tableMieterName', 'tableRaeumeName', 'tableVermietungenName', 'tableMieterId', 'tableRaeumeId', 'tableVermietungenId']) {
+      if (cache.settings.nocodb[k] === undefined) cache.settings.nocodb[k] = dn[k];
+    }
+    if (!cache.settings.vermietung) cache.settings.vermietung = defaultVermietungSettings();
+    else {
+      const dv = defaultVermietungSettings();
+      for (const k of Object.keys(dv)) if (cache.settings.vermietung[k] === undefined) cache.settings.vermietung[k] = dv[k];
+    }
   }
 
   // ----- WebSocket-Apply -----
@@ -175,6 +212,12 @@
         notifyChange(); notifyRemote();
         break;
       }
+      case 'mieter:save': { upsertInto(cache.mieter, msg.mieter); notifyChange(); notifyRemote(); break; }
+      case 'mieter:delete': { cache.mieter = cache.mieter.filter(x => x.id !== msg.id); notifyChange(); notifyRemote(); break; }
+      case 'raum:save': { upsertInto(cache.raeume, msg.raum); notifyChange(); notifyRemote(); break; }
+      case 'raum:delete': { cache.raeume = cache.raeume.filter(x => x.id !== msg.id); notifyChange(); notifyRemote(); break; }
+      case 'vermietung:save': { upsertInto(cache.vermietungen, msg.vermietung); notifyChange(); notifyRemote(); break; }
+      case 'vermietung:delete': { cache.vermietungen = cache.vermietungen.filter(x => x.id !== msg.id); notifyChange(); notifyRemote(); break; }
       case 'bulk:imported': {
         // Komplettes Re-Bootstrap, damit alle Daten konsistent kommen
         bootstrap();
@@ -274,6 +317,51 @@
     },
     attachmentUrl(id) { return GR.api.attachmentUrl(id); },
 
+    // --- Mieter ---
+    listMieter() { return cache.mieter.slice(); },
+    getMieter(id) { return cache.mieter.find(m => m.id === id) || null; },
+    saveMieter(m) {
+      m.lastModifiedAt = nowIso();
+      upsertInto(cache.mieter, m);
+      GR.api.putMieter(m).catch(e => { console.warn('saveMieter Backend-Fehler', e); if (GR.ui && GR.ui.toast) GR.ui.toast('Backend-Fehler: ' + e.message, 4000); });
+      notifyChange();
+    },
+    deleteMieter(id) {
+      cache.mieter = cache.mieter.filter(m => m.id !== id);
+      GR.api.deleteMieterRemote(id).catch(e => console.warn('deleteMieter Backend-Fehler', e));
+      notifyChange();
+    },
+
+    // --- Räume ---
+    listRaeume() { return cache.raeume.slice(); },
+    getRaum(id) { return cache.raeume.find(r => r.id === id) || null; },
+    saveRaum(r) {
+      r.lastModifiedAt = nowIso();
+      upsertInto(cache.raeume, r);
+      GR.api.putRaum(r).catch(e => { console.warn('saveRaum Backend-Fehler', e); if (GR.ui && GR.ui.toast) GR.ui.toast('Backend-Fehler: ' + e.message, 4000); });
+      notifyChange();
+    },
+    deleteRaum(id) {
+      cache.raeume = cache.raeume.filter(r => r.id !== id);
+      GR.api.deleteRaumRemote(id).catch(e => console.warn('deleteRaum Backend-Fehler', e));
+      notifyChange();
+    },
+
+    // --- Vermietungen ---
+    listVermietungen() { return cache.vermietungen.slice(); },
+    getVermietung(id) { return cache.vermietungen.find(v => v.id === id) || null; },
+    saveVermietung(v) {
+      v.lastModifiedAt = nowIso();
+      upsertInto(cache.vermietungen, v);
+      GR.api.putVermietung(v).catch(e => { console.warn('saveVermietung Backend-Fehler', e); if (GR.ui && GR.ui.toast) GR.ui.toast('Backend-Fehler: ' + e.message, 4000); });
+      notifyChange();
+    },
+    deleteVermietung(id) {
+      cache.vermietungen = cache.vermietungen.filter(v => v.id !== id);
+      GR.api.deleteVermietungRemote(id).catch(e => console.warn('deleteVermietung Backend-Fehler', e));
+      notifyChange();
+    },
+
     // --- Sync-Queue (NocoDB-Backup; bleibt im localStorage als Browser-eigener Cache) ---
     listQueue() { try { return JSON.parse(localStorage.getItem('gr.syncQueue') || '[]'); } catch (_) { return []; } },
     enqueueSync(sitzungId, lastError) {
@@ -295,8 +383,13 @@
 
     // --- Sync-State (NocoDB) ---
     getSyncState() {
-      try { return JSON.parse(localStorage.getItem('gr.syncState') || '{"sitzungen":{},"mitglieder":{}}'); }
-      catch (_) { return { sitzungen: {}, mitglieder: {} }; }
+      let s;
+      try { s = JSON.parse(localStorage.getItem('gr.syncState') || '{}'); }
+      catch (_) { s = {}; }
+      for (const k of ['sitzungen', 'mitglieder', 'mieter', 'raeume', 'vermietungen']) {
+        if (!s[k] || typeof s[k] !== 'object') s[k] = {};
+      }
+      return s;
     },
     markSynced(kind, id) {
       const s = this.getSyncState();

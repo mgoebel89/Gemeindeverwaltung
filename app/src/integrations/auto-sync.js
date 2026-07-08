@@ -34,11 +34,12 @@
   }
 
   function computePending() {
-    const sitzungen = store.listSitzungen();
-    const mitglieder = store.listMitglieder();
     let n = 0;
-    for (const s of sitzungen) if (store.isDirty('sitzungen', s)) n++;
-    for (const m of mitglieder) if (store.isDirty('mitglieder', m)) n++;
+    for (const s of store.listSitzungen()) if (store.isDirty('sitzungen', s)) n++;
+    for (const m of store.listMitglieder()) if (store.isDirty('mitglieder', m)) n++;
+    for (const m of store.listMieter()) if (store.isDirty('mieter', m)) n++;
+    for (const r of store.listRaeume()) if (store.isDirty('raeume', r)) n++;
+    for (const v of store.listVermietungen()) if (store.isDirty('vermietungen', v)) n++;
     return n;
   }
 
@@ -100,6 +101,26 @@
       } catch (e) {
         lastError = e.message;
         store.markSyncError('mitglieder', m.id, e.message);
+      }
+    }
+
+    // 4) Vermietungs-Modul (Mieter, Räume, Vermietungen) syncen
+    const modules = [
+      { kind: 'mieter', list: store.listMieter(), fn: client.syncMieter },
+      { kind: 'raeume', list: store.listRaeume(), fn: client.syncRaum },
+      { kind: 'vermietungen', list: store.listVermietungen(), fn: client.syncVermietung },
+    ];
+    for (const mod of modules) {
+      for (const item of mod.list) {
+        if (!store.isDirty(mod.kind, item)) continue;
+        try {
+          await mod.fn(item);
+          store.markSynced(mod.kind, item.id);
+          anySuccess = true;
+        } catch (e) {
+          lastError = e.message;
+          store.markSyncError(mod.kind, item.id, e.message);
+        }
       }
     }
 

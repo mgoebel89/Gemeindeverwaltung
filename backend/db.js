@@ -39,6 +39,24 @@ db.exec(`
     uploaded_at TEXT NOT NULL
   );
   CREATE INDEX IF NOT EXISTS idx_att_sitzung ON attachments(sitzung_id);
+
+  -- Modul Vermietung (Gemeindehaus & Jugendraum)
+  CREATE TABLE IF NOT EXISTS mieter (
+    id           TEXT PRIMARY KEY,
+    payload      TEXT NOT NULL,
+    last_modified TEXT NOT NULL
+  );
+  CREATE TABLE IF NOT EXISTS raeume (
+    id           TEXT PRIMARY KEY,
+    payload      TEXT NOT NULL,
+    last_modified TEXT NOT NULL
+  );
+  CREATE TABLE IF NOT EXISTS vermietungen (
+    id           TEXT PRIMARY KEY,
+    payload      TEXT NOT NULL,
+    last_modified TEXT NOT NULL
+  );
+  CREATE INDEX IF NOT EXISTS idx_verm_modified ON vermietungen(last_modified);
 `);
 
 function nowIso() { return new Date().toISOString(); }
@@ -102,6 +120,60 @@ function saveSettings(s) {
   return s;
 }
 
+// --- Generischer Payload-Store (für Vermietung-Entitäten) ---
+function makePayloadStore(table) {
+  return {
+    list() { return db.prepare(`SELECT payload FROM ${table}`).all().map(r => JSON.parse(r.payload)); },
+    get(id) {
+      const r = db.prepare(`SELECT payload FROM ${table} WHERE id = ?`).get(id);
+      return r ? JSON.parse(r.payload) : null;
+    },
+    save(obj) {
+      if (!obj || !obj.id) throw new Error(`${table}.id fehlt`);
+      if (!obj.lastModifiedAt) obj.lastModifiedAt = nowIso();
+      db.prepare(`
+        INSERT INTO ${table} (id, payload, last_modified) VALUES (?, ?, ?)
+        ON CONFLICT(id) DO UPDATE SET payload = excluded.payload, last_modified = excluded.last_modified
+      `).run(obj.id, JSON.stringify(obj), obj.lastModifiedAt);
+      return obj;
+    },
+    delete(id) { db.prepare(`DELETE FROM ${table} WHERE id = ?`).run(id); },
+  };
+}
+
+const mieterStore = makePayloadStore('mieter');
+const raeumeStore = makePayloadStore('raeume');
+const vermietungenStore = makePayloadStore('vermietungen');
+
+const listMieter = () => mieterStore.list();
+const getMieter = (id) => mieterStore.get(id);
+const saveMieter = (m) => mieterStore.save(m);
+const deleteMieter = (id) => mieterStore.delete(id);
+
+const listRaeume = () => raeumeStore.list();
+const getRaum = (id) => raeumeStore.get(id);
+const saveRaum = (r) => raeumeStore.save(r);
+const deleteRaum = (id) => raeumeStore.delete(id);
+
+const listVermietungen = () => vermietungenStore.list();
+const getVermietung = (id) => vermietungenStore.get(id);
+const saveVermietung = (v) => vermietungenStore.save(v);
+const deleteVermietung = (id) => vermietungenStore.delete(id);
+
+// Beim ersten Start die beiden Standard-Objekte anlegen (Preise aus den Vorlagen).
+function seedRaeume() {
+  if (raeumeStore.list().length > 0) return;
+  const now = nowIso();
+  const mkPreise = () => ({
+    grund: { anwohnerTag1: 50, anwohnerWeitererTag: 30, ortsfremdTag1: 80, ortsfremdWeitererTag: 50 },
+    stromProKwh: 0.50,
+    gasProCbm: 2.50,
+  });
+  raeumeStore.save({ id: 'raum-gemeindehaus', name: 'Gemeindehaus', aktiv: true, preise: mkPreise(), kostenbogenTyp: 'gemeindehaus', lastModifiedAt: now });
+  raeumeStore.save({ id: 'raum-jugendraum', name: 'Jugendraum', aktiv: true, preise: mkPreise(), kostenbogenTyp: 'sonstiges', lastModifiedAt: now });
+}
+seedRaeume();
+
 // --- Attachments ---
 function listAttachments(sitzungId) {
   return db.prepare('SELECT id, sitzung_id AS sitzungId, filename, mimetype, size, uploaded_at AS uploadedAt FROM attachments WHERE sitzung_id = ? ORDER BY uploaded_at ASC').all(sitzungId);
@@ -138,4 +210,7 @@ module.exports = {
   getSettings, saveSettings,
   listAttachments, getAttachment, attachmentPath, ensureAttachmentDir,
   insertAttachment, deleteAttachment,
+  listMieter, getMieter, saveMieter, deleteMieter,
+  listRaeume, getRaum, saveRaum, deleteRaum,
+  listVermietungen, getVermietung, saveVermietung, deleteVermietung,
 };

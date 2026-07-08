@@ -187,6 +187,54 @@ tr:hover td { background: #fafbfc; }
 .ctx-item--danger:hover { background: #fdf1f1; }
 .ctx-sep { height: 1px; background: var(--border); margin: 4px 0; }
 
+/* ===== Modul Vermietung ===== */
+.verm-stepper { display: flex; gap: 8px; margin-bottom: 16px; flex-wrap: wrap; }
+.verm-step {
+  display: flex; align-items: center; gap: 8px; padding: 6px 14px;
+  border: 1px solid var(--border); border-radius: 999px; background: var(--surface);
+  color: var(--muted); font-size: 0.85rem;
+}
+.verm-step-num {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 20px; height: 20px; border-radius: 50%; background: #e5e7eb; color: var(--muted);
+  font-size: 0.78rem; font-weight: 600;
+}
+.verm-step.active { border-color: var(--primary); color: var(--primary); background: #eef5fb; }
+.verm-step.active .verm-step-num { background: var(--primary); color: white; }
+.verm-step.done { border-color: var(--success); color: var(--success); }
+.verm-step.done .verm-step-num { background: var(--success); color: white; }
+
+.verm-summary { display: flex; gap: 28px; flex-wrap: wrap; color: var(--muted); font-size: 0.95rem; }
+.verm-summary strong { color: var(--text); }
+.verm-total { font-size: 1.15rem; font-weight: 600; }
+.verm-total strong { color: var(--primary); }
+
+.verm-combo { position: relative; }
+.verm-combo-results {
+  position: absolute; top: 100%; left: 0; right: 0; z-index: 50;
+  background: var(--surface); border: 1px solid var(--border); border-radius: 6px;
+  box-shadow: var(--shadow); max-height: 260px; overflow-y: auto; margin-top: 2px;
+}
+.verm-combo-item { padding: 8px 12px; cursor: pointer; font-size: 0.92rem; }
+.verm-combo-item:hover { background: #f0f2f5; }
+.verm-combo-new { border-top: 1px solid var(--border); color: var(--primary); font-weight: 500; }
+
+.verm-mieter-sel {
+  display: flex; justify-content: space-between; align-items: center; gap: 12px;
+  padding: 10px 12px; background: #fafbfc; border: 1px solid var(--border); border-radius: 6px;
+}
+
+/* Modal (Mieter-Dialog) */
+.modal-overlay {
+  position: fixed; inset: 0; background: rgba(0,0,0,0.4); z-index: 1000;
+  display: flex; align-items: flex-start; justify-content: center; padding: 40px 16px; overflow-y: auto;
+}
+.modal {
+  background: var(--surface); border-radius: var(--radius); box-shadow: 0 12px 40px rgba(0,0,0,0.25);
+  padding: 24px; width: 100%; max-width: 560px;
+}
+.modal h3 { margin-top: 0; }
+
 @media (max-width: 760px) {
   .live-layout { grid-template-columns: 1fr; }
   .grid-3, .grid-2 { grid-template-columns: 1fr; }

@@ -69,6 +69,31 @@
   // --- Bulk-Import (Migration) ---
   async function importAll(payload) { return jsonFetch('/api/import', { method: 'POST', body: payload }); }
 
+  // --- Modul: Vermietung (Mieter, Räume, Vermietungen) ---
+  async function putMieter(m) { return jsonFetch(`/api/mieter/${encodeURIComponent(m.id)}`, { method: 'PUT', body: m }); }
+  async function deleteMieterRemote(id) { return jsonFetch(`/api/mieter/${encodeURIComponent(id)}`, { method: 'DELETE' }); }
+  async function putRaum(r) { return jsonFetch(`/api/raeume/${encodeURIComponent(r.id)}`, { method: 'PUT', body: r }); }
+  async function deleteRaumRemote(id) { return jsonFetch(`/api/raeume/${encodeURIComponent(id)}`, { method: 'DELETE' }); }
+  async function putVermietung(v) { return jsonFetch(`/api/vermietungen/${encodeURIComponent(v.id)}`, { method: 'PUT', body: v }); }
+  async function deleteVermietungRemote(id) { return jsonFetch(`/api/vermietungen/${encodeURIComponent(id)}`, { method: 'DELETE' }); }
+
+  // --- Modul: Dokumente (Paperless-Proxy im Backend) ---
+  function docQuery(params = {}) {
+    const usp = new URLSearchParams();
+    for (const [k, v] of Object.entries(params)) {
+      if (v === undefined || v === null || v === '') continue;
+      usp.set(k, v);
+    }
+    const qs = usp.toString();
+    return qs ? `?${qs}` : '';
+  }
+  async function docHealth() { return jsonFetch('/api/dokumente/health'); }
+  async function docMeta() { return jsonFetch('/api/dokumente/meta'); }
+  async function searchDocuments(params) { return jsonFetch('/api/dokumente' + docQuery(params)); }
+  async function getDocument(id) { return jsonFetch(`/api/dokumente/${encodeURIComponent(id)}`); }
+  async function patchDocument(id, patch) { return jsonFetch(`/api/dokumente/${encodeURIComponent(id)}`, { method: 'PATCH', body: patch }); }
+  function docFileUrl(id, kind = 'preview') { return `/api/dokumente/${encodeURIComponent(id)}/${kind}`; }
+
   // --- WebSocket ---
   function connectWs() {
     try {
@@ -112,6 +137,10 @@
     putSettings,
     listAttachments, uploadAttachment, deleteAttachment, attachmentUrl,
     importAll,
+    docHealth, docMeta, searchDocuments, getDocument, patchDocument, docFileUrl,
+    putMieter, deleteMieterRemote,
+    putRaum, deleteRaumRemote,
+    putVermietung, deleteVermietungRemote,
     connectWs, subscribe,
     clientId: CLIENT_ID,
   };

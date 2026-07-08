@@ -87,10 +87,109 @@
     return { id: uuid(), vorname: '', nachname: '', funktion: 'Ratsmitglied', aktiv: true };
   }
 
+  // ===== Modul Vermietung =====
+  const KOSTENBOGEN_TYPEN = ['gemeindehaus', 'grillhuette', 'sonstiges'];
+
+  function emptyMieter() {
+    return {
+      id: uuid(), anrede: '', vorname: '', nachname: '',
+      strasse: '', plz: '', ort: '', telefon: '', email: '',
+      ortsfremd: false, notiz: '',
+    };
+  }
+
+  function emptyRaumPreise() {
+    return {
+      grund: { anwohnerTag1: 0, anwohnerWeitererTag: 0, ortsfremdTag1: 0, ortsfremdWeitererTag: 0 },
+      stromProKwh: 0,
+      gasProCbm: 0,
+    };
+  }
+
+  function emptyRaum() {
+    return { id: uuid(), name: '', aktiv: true, preise: emptyRaumPreise(), kostenbogenTyp: 'gemeindehaus' };
+  }
+
+  function emptyVermietung() {
+    return {
+      id: uuid(),
+      raumId: '',
+      mieterId: '',
+      anlass: '',
+      startDatum: '',
+      endDatum: '',
+      ortsfremd: false,
+      status: 'geplant', // 'geplant' | 'vertrag' | 'abgerechnet'
+      zaehler: { stromStart: null, stromEnde: null, gasStart: null, gasEnde: null },
+      preisSnapshot: null, // { grundMiete, stromProKwh, gasProCbm } — eingefroren ab Status 'vertrag'
+      zusatzposten: [],    // [{ bezeichnung, betrag }]
+      vertragDatum: '',
+      abrechnungDatum: '',
+    };
+  }
+
+  function fullNameMieter(m) {
+    if (!m) return '';
+    const v = (m.vorname || '').trim();
+    const n = (m.nachname || '').trim();
+    return [v, n].filter(Boolean).join(' ') || '';
+  }
+
+  // Anzahl Nutzungstage inkl. Start- und Endtag (mind. 1).
+  function anzahlTage(startDatum, endDatum) {
+    if (!startDatum) return 0;
+    const start = new Date(startDatum + 'T00:00:00');
+    const end = new Date((endDatum || startDatum) + 'T00:00:00');
+    if (isNaN(start) || isNaN(end)) return 0;
+    const diff = Math.round((end - start) / 86400000);
+    return Math.max(1, diff + 1);
+  }
+
+  // Grundmiete gestaffelt: 1. Tag + (Tage-1) × weiterer Tag, je nach Anwohner/Ortsfremd.
+  function berechneGrundmiete(raum, ortsfremd, tage) {
+    if (!raum || !raum.preise || !raum.preise.grund || tage <= 0) return 0;
+    const g = raum.preise.grund;
+    const tag1 = ortsfremd ? (g.ortsfremdTag1 || 0) : (g.anwohnerTag1 || 0);
+    const weiter = ortsfremd ? (g.ortsfremdWeitererTag || 0) : (g.anwohnerWeitererTag || 0);
+    return tag1 + Math.max(0, tage - 1) * weiter;
+  }
+
+  // Verbrauch (Menge + Kosten) aus Zählerständen und eingefrorenen Preisen.
+  function berechneVerbrauch(vermietung, raum) {
+    const z = (vermietung && vermietung.zaehler) || {};
+    const snap = (vermietung && vermietung.preisSnapshot) || (raum ? { stromProKwh: raum.preise.stromProKwh, gasProCbm: raum.preise.gasProCbm } : { stromProKwh: 0, gasProCbm: 0 });
+    const num = (x) => (x === null || x === undefined || x === '' ? null : Number(x));
+    const stromMenge = (num(z.stromEnde) !== null && num(z.stromStart) !== null) ? Math.max(0, num(z.stromEnde) - num(z.stromStart)) : 0;
+    const gasMenge = (num(z.gasEnde) !== null && num(z.gasStart) !== null) ? Math.max(0, num(z.gasEnde) - num(z.gasStart)) : 0;
+    return {
+      stromMenge, gasMenge,
+      stromKosten: stromMenge * (snap.stromProKwh || 0),
+      gasKosten: gasMenge * (snap.gasProCbm || 0),
+    };
+  }
+
+  // Gesamtsumme für den Kostenbogen (Grundmiete + Verbrauch + Zusatzposten).
+  function berechneGesamt(vermietung, raum) {
+    const grund = (vermietung.preisSnapshot && vermietung.preisSnapshot.grundMiete != null)
+      ? vermietung.preisSnapshot.grundMiete
+      : berechneGrundmiete(raum, vermietung.ortsfremd, anzahlTage(vermietung.startDatum, vermietung.endDatum));
+    const v = berechneVerbrauch(vermietung, raum);
+    const zusatz = (vermietung.zusatzposten || []).reduce((s, p) => s + (Number(p.betrag) || 0), 0);
+    return {
+      grundMiete: grund,
+      stromMenge: v.stromMenge, gasMenge: v.gasMenge,
+      stromKosten: v.stromKosten, gasKosten: v.gasKosten,
+      zusatz,
+      gesamt: grund + v.stromKosten + v.gasKosten + zusatz,
+    };
+  }
+
   GR.models = {
     SCHEMA_VERSION, uuid,
     emptyAbstimmung, emptyTop, emptySitzung,
     ergebnisAbstimmung, isEinstimmig, einstimmigRichtung,
     MITGLIED_FUNKTIONEN, fullName, emptyMitglied,
+    KOSTENBOGEN_TYPEN, emptyMieter, emptyRaum, emptyRaumPreise, emptyVermietung,
+    fullNameMieter, anzahlTage, berechneGrundmiete, berechneVerbrauch, berechneGesamt,
   };
 })();
