@@ -334,10 +334,20 @@
   }
 
   // --- Vermietungs-Modul: Row-Builder + Sync ---
+  let lastSchemaHealAt = 0;
   async function ensureTableId(idKey, nameLabel) {
     let cfg = store.getSettings().nocodb;
     if (!cfg[idKey]) { await testConnection(); cfg = store.getSettings().nocodb; }
-    if (!cfg[idKey]) throw new Error(`Tabelle „${nameLabel}" fehlt. Bitte „Schema initialisieren" ausführen.`);
+    // Selbstheilung: fehlt die Tabelle noch (z. B. nach dem Update, das die
+    // Vermietungs-Tabellen neu eingeführt hat), automatisch anlegen. Höchstens
+    // alle 30 s, damit ein Sync-Durchlauf initSchema nicht mehrfach anstößt und
+    // transiente Fehler später erneut versucht werden.
+    if (!cfg[idKey] && Date.now() - lastSchemaHealAt > 30000) {
+      lastSchemaHealAt = Date.now();
+      try { await initSchema(); } catch (e) { /* Fehler wird unten ausgewertet */ }
+      cfg = store.getSettings().nocodb;
+    }
+    if (!cfg[idKey]) throw new Error(`Tabelle „${nameLabel}" fehlt. Bitte in den Einstellungen „Schema initialisieren" ausführen.`);
     return cfg[idKey];
   }
 

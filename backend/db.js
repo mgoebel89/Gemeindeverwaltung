@@ -164,15 +164,31 @@ const deleteVermietung = (id) => vermietungenStore.delete(id);
 function seedRaeume() {
   if (raeumeStore.list().length > 0) return;
   const now = nowIso();
-  const mkPreise = () => ({
-    grund: { anwohnerTag1: 50, anwohnerWeitererTag: 30, ortsfremdTag1: 80, ortsfremdWeitererTag: 50 },
-    stromProKwh: 0.50,
-    gasProCbm: 2.50,
+  raeumeStore.save({
+    id: 'raum-gemeindehaus', name: 'Gemeindehaus', aktiv: true, abrechnungsart: 'verbrauch',
+    preise: { grund: { anwohnerTag1: 50, anwohnerWeitererTag: 30, ortsfremdTag1: 80, ortsfremdWeitererTag: 50 }, stromProKwh: 0.50, gasProCbm: 2.50 },
+    kostenbogenTyp: 'gemeindehaus', lastModifiedAt: now,
   });
-  raeumeStore.save({ id: 'raum-gemeindehaus', name: 'Gemeindehaus', aktiv: true, preise: mkPreise(), kostenbogenTyp: 'gemeindehaus', lastModifiedAt: now });
-  raeumeStore.save({ id: 'raum-jugendraum', name: 'Jugendraum', aktiv: true, preise: mkPreise(), kostenbogenTyp: 'sonstiges', lastModifiedAt: now });
+  // Jugendraum: Pauschale je Herkunft, Strom/Gas inklusive (keine Verbrauchsabrechnung).
+  raeumeStore.save({
+    id: 'raum-jugendraum', name: 'Jugendraum', aktiv: true, abrechnungsart: 'pauschal',
+    preise: { grund: { anwohnerTag1: 30, anwohnerWeitererTag: 0, ortsfremdTag1: 50, ortsfremdWeitererTag: 0 }, stromProKwh: 0, gasProCbm: 0 },
+    kostenbogenTyp: 'sonstiges', lastModifiedAt: now,
+  });
 }
 seedRaeume();
+
+// Migration für Bestands-Installationen: fehlt die Abrechnungsart, Standardwerte
+// setzen (Jugendraum -> pauschal, alles andere -> verbrauch). Eine explizit vom
+// Nutzer gesetzte Art bleibt unangetastet.
+function migrateRaeumeAbrechnungsart() {
+  for (const r of raeumeStore.list()) {
+    if (r.abrechnungsart) continue;
+    r.abrechnungsart = (r.id === 'raum-jugendraum') ? 'pauschal' : 'verbrauch';
+    raeumeStore.save(r);
+  }
+}
+migrateRaeumeAbrechnungsart();
 
 // --- Attachments ---
 function listAttachments(sitzungId) {

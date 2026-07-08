@@ -106,9 +106,16 @@
     };
   }
 
+  // Abrechnungsart je Objekt:
+  //  'verbrauch' – gestaffelte Grundmiete + Strom/Gas nach Verbrauch (Gemeindehaus)
+  //  'pauschal'  – ein fester Betrag je Herkunft, Strom/Gas inklusive (Jugendraum)
+  const RAUM_ABRECHNUNGSARTEN = ['verbrauch', 'pauschal'];
+
   function emptyRaum() {
-    return { id: uuid(), name: '', aktiv: true, preise: emptyRaumPreise(), kostenbogenTyp: 'gemeindehaus' };
+    return { id: uuid(), name: '', aktiv: true, abrechnungsart: 'verbrauch', preise: emptyRaumPreise(), kostenbogenTyp: 'gemeindehaus' };
   }
+
+  function istPauschal(raum) { return !!raum && raum.abrechnungsart === 'pauschal'; }
 
   function emptyVermietung() {
     return {
@@ -145,17 +152,23 @@
     return Math.max(1, diff + 1);
   }
 
-  // Grundmiete gestaffelt: 1. Tag + (Tage-1) × weiterer Tag, je nach Anwohner/Ortsfremd.
+  // Grundmiete je nach Abrechnungsart:
+  //  pauschal  – ein fester Betrag je Herkunft (keine Tagesstaffelung)
+  //  verbrauch – 1. Tag + (Tage-1) × weiterer Tag, je nach Anwohner/Ortsfremd
   function berechneGrundmiete(raum, ortsfremd, tage) {
-    if (!raum || !raum.preise || !raum.preise.grund || tage <= 0) return 0;
+    if (!raum || !raum.preise || !raum.preise.grund) return 0;
     const g = raum.preise.grund;
-    const tag1 = ortsfremd ? (g.ortsfremdTag1 || 0) : (g.anwohnerTag1 || 0);
+    const pauschal = ortsfremd ? (g.ortsfremdTag1 || 0) : (g.anwohnerTag1 || 0);
+    if (istPauschal(raum)) return pauschal;
+    if (tage <= 0) return 0;
     const weiter = ortsfremd ? (g.ortsfremdWeitererTag || 0) : (g.anwohnerWeitererTag || 0);
-    return tag1 + Math.max(0, tage - 1) * weiter;
+    return pauschal + Math.max(0, tage - 1) * weiter;
   }
 
-  // Verbrauch (Menge + Kosten) aus Zählerständen und eingefrorenen Preisen.
+  // Verbrauch (Menge + Kosten). Bei Pauschale sind Strom/Gas in der Miete
+  // enthalten – es fallen keine separaten Verbrauchskosten an.
   function berechneVerbrauch(vermietung, raum) {
+    if (istPauschal(raum)) return { stromMenge: 0, gasMenge: 0, stromKosten: 0, gasKosten: 0 };
     const z = (vermietung && vermietung.zaehler) || {};
     const snap = (vermietung && vermietung.preisSnapshot) || (raum ? { stromProKwh: raum.preise.stromProKwh, gasProCbm: raum.preise.gasProCbm } : { stromProKwh: 0, gasProCbm: 0 });
     const num = (x) => (x === null || x === undefined || x === '' ? null : Number(x));
@@ -189,7 +202,8 @@
     emptyAbstimmung, emptyTop, emptySitzung,
     ergebnisAbstimmung, isEinstimmig, einstimmigRichtung,
     MITGLIED_FUNKTIONEN, fullName, emptyMitglied,
-    KOSTENBOGEN_TYPEN, emptyMieter, emptyRaum, emptyRaumPreise, emptyVermietung,
+    KOSTENBOGEN_TYPEN, RAUM_ABRECHNUNGSARTEN, istPauschal,
+    emptyMieter, emptyRaum, emptyRaumPreise, emptyVermietung,
     fullNameMieter, anzahlTage, berechneGrundmiete, berechneVerbrauch, berechneGesamt,
   };
 })();

@@ -231,24 +231,47 @@
     };
     const raeume = store.listRaeume();
     const raumCards = raeume.map(r => {
-      const g = r.preise.grund;
       const save = () => store.saveRaum(r);
-      const fields = [
-        numInput(g, 'anwohnerTag1'), numInput(g, 'anwohnerWeitererTag'),
-        numInput(g, 'ortsfremdTag1'), numInput(g, 'ortsfremdWeitererTag'),
-        numInput(r.preise, 'stromProKwh', '0.001'), numInput(r.preise, 'gasProCbm', '0.001'),
-      ];
-      fields.forEach(f => f.onchange = save);
+      const artSel = el('select', {});
+      [['verbrauch', 'Verbrauchsabrechnung (Grundmiete + Strom/Gas)'], ['pauschal', 'Pauschale (fester Betrag, Strom/Gas inkl.)']]
+        .forEach(([val, lbl]) => artSel.appendChild(el('option', { value: val, selected: (r.abrechnungsart || 'verbrauch') === val }, lbl)));
+
+      const fieldsBox = el('div', {});
+      function renderFields() {
+        fieldsBox.innerHTML = '';
+        const g = r.preise.grund;
+        if (r.abrechnungsart === 'pauschal') {
+          const a = numInput(g, 'anwohnerTag1'); const o = numInput(g, 'ortsfremdTag1');
+          a.onchange = save; o.onchange = save;
+          fieldsBox.appendChild(el('div', { class: 'grid-2' }, [
+            el('div', {}, [el('label', {}, 'Pauschale Anwohner (€)'), a]),
+            el('div', {}, [el('label', {}, 'Pauschale Ortsfremd (€)'), o]),
+          ]));
+          fieldsBox.appendChild(el('p', { class: 'help' }, 'Ein fester Betrag je Vermietung. Strom und Gas sind in der Pauschale enthalten – es werden keine Zählerstände erfasst.'));
+        } else {
+          const f = [
+            numInput(g, 'anwohnerTag1'), numInput(g, 'anwohnerWeitererTag'),
+            numInput(g, 'ortsfremdTag1'), numInput(g, 'ortsfremdWeitererTag'),
+            numInput(r.preise, 'stromProKwh', '0.001'), numInput(r.preise, 'gasProCbm', '0.001'),
+          ];
+          f.forEach(x => x.onchange = save);
+          fieldsBox.appendChild(el('div', { class: 'grid-2' }, [
+            el('div', {}, [el('label', {}, 'Anwohner – 1. Tag (€)'), f[0]]),
+            el('div', {}, [el('label', {}, 'Anwohner – jeder weitere Tag (€)'), f[1]]),
+            el('div', {}, [el('label', {}, 'Ortsfremd – 1. Tag (€)'), f[2]]),
+            el('div', {}, [el('label', {}, 'Ortsfremd – jeder weitere Tag (€)'), f[3]]),
+            el('div', {}, [el('label', {}, 'Strom (€/kWh)'), f[4]]),
+            el('div', {}, [el('label', {}, 'Gas (€/cbm)'), f[5]]),
+          ]));
+        }
+      }
+      artSel.onchange = () => { r.abrechnungsart = artSel.value; save(); renderFields(); };
+      renderFields();
+
       return el('div', { class: 'card', style: 'background:#fafbfc;' }, [
         el('h4', { style: 'margin:0 0 10px;' }, r.name),
-        el('div', { class: 'grid-2' }, [
-          el('div', {}, [el('label', {}, 'Anwohner – 1. Tag (€)'), fields[0]]),
-          el('div', {}, [el('label', {}, 'Anwohner – jeder weitere Tag (€)'), fields[1]]),
-          el('div', {}, [el('label', {}, 'Ortsfremd – 1. Tag (€)'), fields[2]]),
-          el('div', {}, [el('label', {}, 'Ortsfremd – jeder weitere Tag (€)'), fields[3]]),
-          el('div', {}, [el('label', {}, 'Strom (€/kWh)'), fields[4]]),
-          el('div', {}, [el('label', {}, 'Gas (€/cbm)'), fields[5]]),
-        ]),
+        el('div', { style: 'margin-bottom:10px;' }, [el('label', {}, 'Abrechnungsart'), artSel]),
+        fieldsBox,
       ]);
     });
 

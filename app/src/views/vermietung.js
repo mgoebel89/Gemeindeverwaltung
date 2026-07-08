@@ -4,7 +4,7 @@
   const { store } = GR;
   const { el, toast, confirmDialog, formatDatum } = GR.ui;
   const {
-    emptyVermietung, fullNameMieter, anzahlTage,
+    emptyVermietung, fullNameMieter, anzahlTage, istPauschal,
     berechneGrundmiete, berechneVerbrauch, berechneGesamt,
   } = GR.models;
 
@@ -100,6 +100,7 @@
 
     const raeume = store.listRaeume().filter(r => r.aktiv || r.id === v.raumId);
     const meta = STATUS_META[v.status] || STATUS_META.geplant;
+    const pauschal = istPauschal(store.getRaum(v.raumId));
 
     // ---- Kopf: Stepper + Status ----
     const steps = ['geplant', 'vertrag', 'abgerechnet'];
@@ -145,7 +146,7 @@
     const raumSel = el('select', {});
     if (!v.raumId) raumSel.appendChild(el('option', { value: '', selected: true }, '— Objekt wählen —'));
     for (const r of raeume) raumSel.appendChild(el('option', { value: r.id, selected: r.id === v.raumId }, r.name));
-    raumSel.onchange = () => { v.raumId = raumSel.value; persist(); updateLive(); };
+    raumSel.onchange = () => { v.raumId = raumSel.value; persist(); refresh(); };
 
     const anlassInput = el('input', { type: 'text', value: v.anlass || '', placeholder: 'z. B. Geburtstagsfeier' });
     anlassInput.oninput = () => { v.anlass = anlassInput.value; };
@@ -271,8 +272,10 @@
 
     const vertragCard = el('div', { class: 'card' }, [
       el('h3', {}, '2 · Mietvertrag (Tag vor der Nutzung)'),
-      el('p', { class: 'help' }, 'Zählerstände zu Beginn erfassen. Beim Erstellen des Vertrags werden die aktuellen Preise eingefroren.'),
-      el('div', { class: 'grid-2' }, [
+      el('p', { class: 'help' }, pauschal
+        ? 'Pauschalmiete – Strom und Gas sind enthalten, es werden keine Zählerstände erfasst. Beim Erstellen des Vertrags wird der Preis eingefroren.'
+        : 'Zählerstände zu Beginn erfassen. Beim Erstellen des Vertrags werden die aktuellen Preise eingefroren.'),
+      pauschal ? null : el('div', { class: 'grid-2' }, [
         el('div', {}, [el('label', {}, 'Stromzähler Anfang (kWh)'), stromStart]),
         el('div', {}, [el('label', {}, 'Gaszähler Anfang (cbm)'), gasStart]),
       ]),
@@ -329,12 +332,14 @@
 
       mount.appendChild(el('div', { class: 'card' }, [
         el('h3', {}, '3 · Abrechnung (Tag nach der Nutzung)'),
-        el('p', { class: 'help' }, 'Zähler-Endstände erfassen; optionale Zusatzposten für den Kostenbogen ergänzen.'),
-        el('div', { class: 'grid-2' }, [
+        el('p', { class: 'help' }, pauschal
+          ? 'Pauschalmiete – kein Strom-/Gasverbrauch. Optionale Zusatzposten für den Kostenbogen ergänzen.'
+          : 'Zähler-Endstände erfassen; optionale Zusatzposten für den Kostenbogen ergänzen.'),
+        pauschal ? null : el('div', { class: 'grid-2' }, [
           el('div', {}, [el('label', {}, 'Stromzähler Ende (kWh)'), stromEnde]),
           el('div', {}, [el('label', {}, 'Gaszähler Ende (cbm)'), gasEnde]),
         ]),
-        el('div', { class: 'verm-summary', style: 'margin:12px 0;' }, [
+        pauschal ? null : el('div', { class: 'verm-summary', style: 'margin:12px 0;' }, [
           el('div', {}, ['Strom: ', liveStrom]),
           el('div', {}, ['Gas: ', liveGas]),
         ]),

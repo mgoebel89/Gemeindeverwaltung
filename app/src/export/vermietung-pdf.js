@@ -2,7 +2,7 @@
   'use strict';
   window.GR = window.GR || {};
   const { store } = GR;
-  const { fullNameMieter, anzahlTage, berechneGesamt } = GR.models;
+  const { fullNameMieter, anzahlTage, berechneGesamt, istPauschal } = GR.models;
   const { formatDatum, toast } = GR.ui;
 
   // --- Layout-Konstanten (mm, A4 hochkant) ---
@@ -98,6 +98,19 @@
     return formatDatum(v.startDatum) + ' bis ' + formatDatum(v.endDatum);
   }
 
+  // Ablesedatum = Tag nach der Nutzung. Bevorzugt das Abrechnungsdatum,
+  // sonst Enddatum + 1 Tag.
+  function ablesedatum(v) {
+    if (v.abrechnungDatum) return formatDatum(v.abrechnungDatum);
+    if (v.endDatum) {
+      const [y, m, d] = v.endDatum.split('-').map(Number);
+      const dt = new Date(Date.UTC(y, m - 1, d));
+      dt.setUTCDate(dt.getUTCDate() + 1);
+      return formatDatum(dt.toISOString().slice(0, 10));
+    }
+    return '';
+  }
+
   // ================================================================ Mietvertrag
   function buildMietvertrag(v) {
     const doc = newDoc(); if (!doc) return;
@@ -144,33 +157,40 @@
     gap(state, 2);
     line(doc, state, `Saalmiete: ${euro(preise.grundMiete)}`, { bold: true });
     gap(state, 2);
-    line(doc, state, 'Neben der Miete sind die tatsächlichen Kosten für Gas und Strom zu erstatten. Dabei werden folgende Kosten in Rechnung gestellt:');
-    gap(state, 1);
-    line(doc, state, `Strom: ${euro(preise.stromProKwh)}/kWh`);
-    line(doc, state, `Gas: ${euro(preise.gasProCbm)}/cbm`);
-    gap(state, 3);
 
-    // Tabelle Zählerstand vor der Nutzung
-    const z = v.zaehler || {};
-    const tblX = MARGIN_X, tblW = 110, rowH = 8, col1 = 30;
-    const th = state.y;
-    doc.setDrawColor(0, 0, 0); doc.setLineWidth(0.3);
-    // Kopfzeile
-    doc.rect(tblX, th, col1, rowH, 'S');
-    doc.rect(tblX + col1, th, tblW - col1, rowH, 'S');
-    setFont(doc, 10, false);
-    doc.text('Zählerstand vor der Nutzung', tblX + col1 + 3, th + rowH - 2.6);
-    // Strom
-    doc.rect(tblX, th + rowH, col1, rowH, 'S');
-    doc.rect(tblX + col1, th + rowH, tblW - col1, rowH, 'S');
-    doc.text('Strom', tblX + 3, th + rowH + rowH - 2.6);
-    doc.text((z.stromStart != null ? num(z.stromStart) : '') + '  kWh', tblX + col1 + 3, th + rowH + rowH - 2.6);
-    // Gas
-    doc.rect(tblX, th + 2 * rowH, col1, rowH, 'S');
-    doc.rect(tblX + col1, th + 2 * rowH, tblW - col1, rowH, 'S');
-    doc.text('Gas', tblX + 3, th + 2 * rowH + rowH - 2.6);
-    doc.text((z.gasStart != null ? num(z.gasStart) : '') + '  cbm', tblX + col1 + 3, th + 2 * rowH + rowH - 2.6);
-    state.y = th + 3 * rowH + 6;
+    if (istPauschal(raum)) {
+      // Pauschalmiete: Strom und Gas sind enthalten, kein Zählerstand.
+      line(doc, state, 'Strom und Gas sind in der Miete enthalten; eine gesonderte Abrechnung der Verbrauchskosten erfolgt nicht.');
+      gap(state, 3);
+    } else {
+      line(doc, state, 'Neben der Miete sind die tatsächlichen Kosten für Gas und Strom zu erstatten. Dabei werden folgende Kosten in Rechnung gestellt:');
+      gap(state, 1);
+      line(doc, state, `Strom: ${euro(preise.stromProKwh)}/kWh`);
+      line(doc, state, `Gas: ${euro(preise.gasProCbm)}/cbm`);
+      gap(state, 3);
+
+      // Tabelle Zählerstand vor der Nutzung
+      const z = v.zaehler || {};
+      const tblX = MARGIN_X, tblW = 110, rowH = 8, col1 = 30;
+      const th = state.y;
+      doc.setDrawColor(0, 0, 0); doc.setLineWidth(0.3);
+      // Kopfzeile
+      doc.rect(tblX, th, col1, rowH, 'S');
+      doc.rect(tblX + col1, th, tblW - col1, rowH, 'S');
+      setFont(doc, 10, false);
+      doc.text('Zählerstand vor der Nutzung', tblX + col1 + 3, th + rowH - 2.6);
+      // Strom
+      doc.rect(tblX, th + rowH, col1, rowH, 'S');
+      doc.rect(tblX + col1, th + rowH, tblW - col1, rowH, 'S');
+      doc.text('Strom', tblX + 3, th + rowH + rowH - 2.6);
+      doc.text((z.stromStart != null ? num(z.stromStart) : '') + '  kWh', tblX + col1 + 3, th + rowH + rowH - 2.6);
+      // Gas
+      doc.rect(tblX, th + 2 * rowH, col1, rowH, 'S');
+      doc.rect(tblX + col1, th + 2 * rowH, tblW - col1, rowH, 'S');
+      doc.text('Gas', tblX + 3, th + 2 * rowH + rowH - 2.6);
+      doc.text((z.gasStart != null ? num(z.gasStart) : '') + '  cbm', tblX + col1 + 3, th + 2 * rowH + rowH - 2.6);
+      state.y = th + 3 * rowH + 6;
+    }
 
     line(doc, state, `Der Mieter erkennt die Satzung der Ortsgemeinde ${vm.ortsgemeinde || ''} über die Benutzung des Gemeindehauses und die Erhebung der Gebühren vom ${vm.satzungsDatum || ''} an.`);
     gap(state, 1);
@@ -254,13 +274,18 @@
     line(doc, state, 'anlässlich der oben aufgeführten Veranstaltung stellen wir Ihnen folgende Benutzungsgebühren und Nebenkosten in Rechnung:');
     gap(state, 3);
 
-    const z = v.zaehler || {};
     amountRow(doc, state, 'Benutzungsgebühren', { amount: euro(g.grundMiete) });
     amountRow(doc, state, 'Auswärtigenzuschlag', { percentText: '0,00 %', amount: euro(0) });
     amountRow(doc, state, '- Nebenkosten für:', {});
-    amountRow(doc, state, `Wasser: Stand: ${''}`, { mid: 'cbm x ' + euro(0), amount: euro(0) });
-    amountRow(doc, state, `Strom: Stand: ${z.stromEnde != null ? num(z.stromEnde) : ''}`, { mid: 'kWh x ' + euro(snap.stromProKwh), amount: euro(g.stromKosten) });
-    amountRow(doc, state, `Gas: Stand: ${z.gasEnde != null ? num(z.gasEnde) : ''}`, { mid: 'cbm x ' + euro(snap.gasProCbm), amount: euro(g.gasKosten) });
+    const abgelesen = ablesedatum(v);
+    amountRow(doc, state, 'Wasser: Stand:', { mid: 'cbm x ' + euro(0), amount: euro(0) });
+    amountRow(doc, state, `Strom: Stand: ${abgelesen}`, { mid: `${num(g.stromMenge)} kWh x ` + euro(snap.stromProKwh), amount: euro(g.stromKosten) });
+    amountRow(doc, state, `Gas: Stand: ${abgelesen}`, { mid: `${num(g.gasMenge)} cbm x ` + euro(snap.gasProCbm), amount: euro(g.gasKosten) });
+    amountRow(doc, state, 'Heizung: Stand:', { mid: 'ltr. x ' + euro(0), amount: euro(0) });
+    amountRow(doc, state, 'Reinigungspauschale:', { amount: euro(0) });
+    amountRow(doc, state, 'Sonstiges:', { amount: euro(0), gap: 4 });
+    line(doc, state, '(z.B. Küchennutzung, Beschallungsanlage, Verbrauchsgüter u.ä.)', { size: 8.5, color: C_MUTED, gap: 6 });
+    // Freie Zusatzposten (tatsächlich berechnet) darunter auflisten
     for (const p of (v.zusatzposten || [])) {
       amountRow(doc, state, (p.bezeichnung || 'Sonstiges') + ':', { amount: euro(p.betrag) });
     }
