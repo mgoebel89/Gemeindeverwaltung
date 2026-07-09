@@ -128,6 +128,7 @@
       ortsfremd: false,
       status: 'geplant', // 'geplant' | 'vertrag' | 'abgerechnet'
       zaehler: { stromStart: null, stromEnde: null, gasStart: null, gasEnde: null },
+      zaehlerFotos: { stromStart: null, stromEnde: null, gasStart: null, gasEnde: null }, // fileId je Zählerstand-Foto (Beweisführung)
       preisSnapshot: null, // { grundMiete, stromProKwh, gasProCbm } — eingefroren ab Status 'vertrag'
       zusatzposten: [],    // [{ bezeichnung, betrag }]
       vertragDatum: '',
@@ -198,7 +199,7 @@
   }
 
   // ===== Modul Bargeldauslagen =====
-  const AUSLAGE_STATUS = ['offen', 'erstattet'];
+  const AUSLAGE_STATUS = ['offen', 'eingereicht', 'erstattet'];
 
   function emptyEmpfaenger() {
     return { id: uuid(), name: '', vorname: '', iban: '' };
@@ -231,7 +232,7 @@
     const today = new Date().toISOString().slice(0, 10);
     return {
       id: uuid(),
-      status: 'offen', // 'offen' | 'erstattet'
+      status: 'offen', // 'offen' | 'eingereicht' | 'erstattet'
       haushaltsjahr: new Date().getFullYear(),
       haushaltsstelleId: '',
       empfaengerId: '',

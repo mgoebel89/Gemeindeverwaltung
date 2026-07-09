@@ -57,6 +57,17 @@ db.exec(`
     last_modified TEXT NOT NULL
   );
   CREATE INDEX IF NOT EXISTS idx_verm_modified ON vermietungen(last_modified);
+  -- Zählerstand-Fotos zu einer Vermietung (Beweisführung; kind = stromStart/stromEnde/gasStart/gasEnde)
+  CREATE TABLE IF NOT EXISTS vermietung_files (
+    id            TEXT PRIMARY KEY,
+    vermietung_id TEXT NOT NULL,
+    kind          TEXT NOT NULL,
+    filename      TEXT NOT NULL,
+    mimetype      TEXT NOT NULL,
+    size          INTEGER NOT NULL,
+    uploaded_at   TEXT NOT NULL
+  );
+  CREATE INDEX IF NOT EXISTS idx_vermfile_verm ON vermietung_files(vermietung_id);
 
   -- Modul Bargeldauslagen (Empfänger, Haushaltsstellen, Auslagen)
   CREATE TABLE IF NOT EXISTS empfaenger (
@@ -89,6 +100,9 @@ db.exec(`
 
 const BELEG_DIR = path.join(ATTACH_DIR, 'auslagen');
 fs.mkdirSync(BELEG_DIR, { recursive: true });
+
+const VERM_FILE_DIR = path.join(ATTACH_DIR, 'vermietung');
+fs.mkdirSync(VERM_FILE_DIR, { recursive: true });
 
 function nowIso() { return new Date().toISOString(); }
 
@@ -189,7 +203,42 @@ const deleteRaum = (id) => raeumeStore.delete(id);
 const listVermietungen = () => vermietungenStore.list();
 const getVermietung = (id) => vermietungenStore.get(id);
 const saveVermietung = (v) => vermietungenStore.save(v);
-const deleteVermietung = (id) => vermietungenStore.delete(id);
+function deleteVermietung(id) {
+  // Zählerstand-Fotos auf Disk wegräumen
+  const dir = path.join(VERM_FILE_DIR, id);
+  if (fs.existsSync(dir)) fs.rmSync(dir, { recursive: true, force: true });
+  db.prepare('DELETE FROM vermietung_files WHERE vermietung_id = ?').run(id);
+  vermietungenStore.delete(id);
+}
+
+// --- Zählerstand-Fotos (zu einer Vermietung) ---
+function listVermietungFiles(vermietungId) {
+  return db.prepare('SELECT id, vermietung_id AS vermietungId, kind, filename, mimetype, size, uploaded_at AS uploadedAt FROM vermietung_files WHERE vermietung_id = ? ORDER BY uploaded_at ASC').all(vermietungId);
+}
+function getVermietungFile(id) {
+  return db.prepare('SELECT id, vermietung_id AS vermietungId, kind, filename, mimetype, size, uploaded_at AS uploadedAt FROM vermietung_files WHERE id = ?').get(id);
+}
+function vermietungFilePath(vermietungId, id) {
+  return path.join(VERM_FILE_DIR, vermietungId, id);
+}
+function ensureVermietungFileDir(vermietungId) {
+  const dir = path.join(VERM_FILE_DIR, vermietungId);
+  fs.mkdirSync(dir, { recursive: true });
+  return dir;
+}
+function insertVermietungFile({ id, vermietungId, kind, filename, mimetype, size }) {
+  db.prepare('INSERT INTO vermietung_files (id, vermietung_id, kind, filename, mimetype, size, uploaded_at) VALUES (?, ?, ?, ?, ?, ?, ?)')
+    .run(id, vermietungId, kind, filename, mimetype, size, nowIso());
+  return getVermietungFile(id);
+}
+function deleteVermietungFile(id) {
+  const f = getVermietungFile(id);
+  if (!f) return null;
+  const p = vermietungFilePath(f.vermietungId, id);
+  if (fs.existsSync(p)) fs.unlinkSync(p);
+  db.prepare('DELETE FROM vermietung_files WHERE id = ?').run(id);
+  return f;
+}
 
 // --- Modul Bargeldauslagen ---
 const empfaengerStore = makePayloadStore('empfaenger');
@@ -306,7 +355,7 @@ function deleteAttachment(id) {
 }
 
 module.exports = {
-  DATA_DIR, ATTACH_DIR, BELEG_DIR,
+  DATA_DIR, ATTACH_DIR, BELEG_DIR, VERM_FILE_DIR,
   listSitzungen, getSitzung, saveSitzung, deleteSitzung,
   listMitglieder, getMitglied, saveMitglied, deleteMitglied,
   getSettings, saveSettings,
@@ -315,6 +364,8 @@ module.exports = {
   listMieter, getMieter, saveMieter, deleteMieter,
   listRaeume, getRaum, saveRaum, deleteRaum,
   listVermietungen, getVermietung, saveVermietung, deleteVermietung,
+  listVermietungFiles, getVermietungFile, vermietungFilePath, ensureVermietungFileDir,
+  insertVermietungFile, deleteVermietungFile,
   listEmpfaenger, getEmpfaenger, saveEmpfaenger, deleteEmpfaenger,
   listHaushaltsstellen, getHaushaltsstelle, saveHaushaltsstelle, deleteHaushaltsstelle,
   listAuslagen, getAuslage, saveAuslage, deleteAuslage,

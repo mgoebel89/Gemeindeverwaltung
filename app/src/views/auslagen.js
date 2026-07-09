@@ -4,7 +4,7 @@
   const { store } = GR;
   const { el, toast, confirmDialog, formatDatum } = GR.ui;
   const {
-    emptyAuslage, emptyBeleg, emptyEmpfaenger, emptyHaushaltsstelle,
+    AUSLAGE_STATUS, emptyAuslage, emptyBeleg, emptyEmpfaenger, emptyHaushaltsstelle,
     fullNameEmpfaenger, formatIban, gesamtbetrag, budgetVerbrauch,
   } = GR.models;
 
@@ -13,6 +13,7 @@
 
   const STATUS_META = {
     offen: { label: 'offen', tag: 'prep' },
+    eingereicht: { label: 'eingereicht', tag: 'live' },
     erstattet: { label: 'erstattet', tag: 'done' },
   };
 
@@ -126,7 +127,7 @@
     // Filter
     const statusSel = el('select', {});
     statusSel.appendChild(el('option', { value: '', selected: filter.status === '' }, 'Alle Status'));
-    for (const s of ['offen', 'erstattet']) statusSel.appendChild(el('option', { value: s, selected: filter.status === s }, STATUS_META[s].label));
+    for (const s of AUSLAGE_STATUS) statusSel.appendChild(el('option', { value: s, selected: filter.status === s }, STATUS_META[s].label));
     statusSel.onchange = () => { filter.status = statusSel.value; refresh(); };
     const jahrSel = el('select', {});
     jahrSel.appendChild(el('option', { value: '', selected: filter.jahr === '' }, 'Alle Jahre'));
@@ -240,7 +241,7 @@
     datumInput.onchange = persist;
 
     const statusSel = el('select', {});
-    for (const s of ['offen', 'erstattet']) statusSel.appendChild(el('option', { value: s, selected: (a.status || 'offen') === s }, STATUS_META[s].label));
+    for (const s of AUSLAGE_STATUS) statusSel.appendChild(el('option', { value: s, selected: (a.status || 'offen') === s }, STATUS_META[s].label));
     statusSel.onchange = () => { a.status = statusSel.value; persist(); refresh(); };
 
     // Empfänger-Auswahl

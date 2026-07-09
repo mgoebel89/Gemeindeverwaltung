@@ -59,6 +59,7 @@ app.get('/api/snapshot', (_req, res) => {
     mieter: db.listMieter(),
     raeume: db.listRaeume(),
     vermietungen: db.listVermietungen(),
+    vermietungFiles: groupVermietungFotos(),
     empfaenger: db.listEmpfaenger(),
     haushaltsstellen: db.listHaushaltsstellen(),
     auslagen: db.listAuslagen(),
@@ -81,6 +82,15 @@ function groupBelege() {
   for (const a of db.listAuslagen()) {
     const files = db.listBelegFiles(a.id);
     if (files.length) grouped[a.id] = files;
+  }
+  return grouped;
+}
+
+function groupVermietungFotos() {
+  const grouped = {};
+  for (const v of db.listVermietungen()) {
+    const files = db.listVermietungFiles(v.id);
+    if (files.length) grouped[v.id] = files;
   }
   return grouped;
 }

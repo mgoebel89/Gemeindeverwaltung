@@ -12,6 +12,7 @@
     mieter: [],           // [{...}]
     raeume: [],           // [{...}]
     vermietungen: [],     // [{...}]
+    vermietungFiles: {},  // vermietungId -> [{id, kind, filename, ...}]
     empfaenger: [],       // [{...}]
     haushaltsstellen: [], // [{...}]
     auslagen: [],         // [{...}]
@@ -141,6 +142,7 @@
       cache.mieter = snap.mieter || [];
       cache.raeume = snap.raeume || [];
       cache.vermietungen = snap.vermietungen || [];
+      cache.vermietungFiles = snap.vermietungFiles || {};
       cache.empfaenger = snap.empfaenger || [];
       cache.haushaltsstellen = snap.haushaltsstellen || [];
       cache.auslagen = snap.auslagen || [];
@@ -245,7 +247,19 @@
       case 'raum:save': { upsertInto(cache.raeume, msg.raum); notifyChange(); notifyRemote(); break; }
       case 'raum:delete': { cache.raeume = cache.raeume.filter(x => x.id !== msg.id); notifyChange(); notifyRemote(); break; }
       case 'vermietung:save': { upsertInto(cache.vermietungen, msg.vermietung); notifyChange(); notifyRemote(); break; }
-      case 'vermietung:delete': { cache.vermietungen = cache.vermietungen.filter(x => x.id !== msg.id); notifyChange(); notifyRemote(); break; }
+      case 'vermietung:delete': { cache.vermietungen = cache.vermietungen.filter(x => x.id !== msg.id); delete cache.vermietungFiles[msg.id]; notifyChange(); notifyRemote(); break; }
+      case 'vermietungFoto:add': {
+        const f = msg.foto;
+        if (!cache.vermietungFiles[f.vermietungId]) cache.vermietungFiles[f.vermietungId] = [];
+        if (!cache.vermietungFiles[f.vermietungId].some(x => x.id === f.id)) cache.vermietungFiles[f.vermietungId].push(f);
+        notifyChange(); notifyRemote();
+        break;
+      }
+      case 'vermietungFoto:delete': {
+        if (cache.vermietungFiles[msg.vermietungId]) cache.vermietungFiles[msg.vermietungId] = cache.vermietungFiles[msg.vermietungId].filter(f => f.id !== msg.id);
+        notifyChange(); notifyRemote();
+        break;
+      }
       case 'empfaenger:save': { upsertInto(cache.empfaenger, msg.empfaenger); notifyChange(); notifyRemote(); break; }
       case 'empfaenger:delete': { cache.empfaenger = cache.empfaenger.filter(x => x.id !== msg.id); notifyChange(); notifyRemote(); break; }
       case 'haushaltsstelle:save': { upsertInto(cache.haushaltsstellen, msg.haushaltsstelle); notifyChange(); notifyRemote(); break; }
@@ -404,9 +418,27 @@
     },
     deleteVermietung(id) {
       cache.vermietungen = cache.vermietungen.filter(v => v.id !== id);
+      delete cache.vermietungFiles[id];
       GR.api.deleteVermietungRemote(id).catch(e => console.warn('deleteVermietung Backend-Fehler', e));
       notifyChange();
     },
+
+    // --- Zählerstand-Fotos (zu einer Vermietung; async) ---
+    listVermietungFotos(vermietungId) { return (cache.vermietungFiles[vermietungId] || []).slice(); },
+    getVermietungFoto(vermietungId, fileId) { return (cache.vermietungFiles[vermietungId] || []).find(f => f.id === fileId) || null; },
+    async uploadVermietungFoto(vermietungId, file, kind) {
+      const rec = await GR.api.uploadVermietungFoto(vermietungId, file, kind);
+      if (!cache.vermietungFiles[vermietungId]) cache.vermietungFiles[vermietungId] = [];
+      cache.vermietungFiles[vermietungId].push(rec);
+      notifyChange();
+      return rec;
+    },
+    async deleteVermietungFoto(vermietungId, fileId) {
+      await GR.api.deleteVermietungFoto(fileId);
+      if (cache.vermietungFiles[vermietungId]) cache.vermietungFiles[vermietungId] = cache.vermietungFiles[vermietungId].filter(f => f.id !== fileId);
+      notifyChange();
+    },
+    vermietungFotoUrl(fileId) { return GR.api.vermietungFotoUrl(fileId); },
 
     // --- Empfänger (Bargeldauslagen) ---
     listEmpfaenger() { return cache.empfaenger.slice(); },

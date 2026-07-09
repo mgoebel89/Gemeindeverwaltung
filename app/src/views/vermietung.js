@@ -93,10 +93,46 @@
     // Arbeitskopie – Tippen aktualisiert nur die Live-Anzeige, Speichern bei change.
     const v = JSON.parse(JSON.stringify(stored));
     v.zaehler = v.zaehler || { stromStart: null, stromEnde: null, gasStart: null, gasEnde: null };
+    v.zaehlerFotos = v.zaehlerFotos || { stromStart: null, stromEnde: null, gasStart: null, gasEnde: null };
     v.zusatzposten = v.zusatzposten || [];
 
     function persist() { store.saveVermietung(v); }
     function refresh() { mount.innerHTML = ''; renderDetail(mount, id); }
+
+    // Foto-Steuerung für einen Zählerstand (Beweisführung). Zeigt Miniatur +
+    // „Entfernen", solange ein Foto hinterlegt ist, sonst den Aufnahme-Button.
+    function fotoControl(kind) {
+      const box = el('div', { class: 'verm-foto', style: 'display:flex; gap:8px; align-items:center; margin-top:6px;' });
+      function render() {
+        box.innerHTML = '';
+        const fid = v.zaehlerFotos && v.zaehlerFotos[kind];
+        const file = fid ? store.getVermietungFoto(id, fid) : null;
+        if (file) {
+          const url = store.vermietungFotoUrl(fid);
+          box.appendChild(el('a', { href: url, target: '_blank', rel: 'noopener', title: 'Foto ansehen' }, [
+            el('img', { src: url, style: 'height:44px; width:44px; object-fit:cover; border:1px solid var(--border); border-radius:4px;' }),
+          ]));
+          box.appendChild(el('span', { class: 'help' }, 'Foto hinterlegt'));
+          box.appendChild(el('button', { class: 'btn-sm btn-danger', type: 'button', onClick: async () => {
+            try { await store.deleteVermietungFoto(id, fid); } catch (e) { return toast('Löschen fehlgeschlagen: ' + e.message); }
+            v.zaehlerFotos[kind] = null; persist(); render();
+          } }, 'Entfernen'));
+        } else {
+          box.appendChild(el('button', { class: 'btn-sm', type: 'button', onClick: async () => {
+            const f = await GR.ui.pickFile('image/*', 'environment');
+            if (!f) return;
+            try {
+              const rec = await store.uploadVermietungFoto(id, f, kind);
+              if (!v.zaehlerFotos) v.zaehlerFotos = { stromStart: null, stromEnde: null, gasStart: null, gasEnde: null };
+              v.zaehlerFotos[kind] = rec.id; persist(); render();
+              toast('Foto gespeichert');
+            } catch (e) { toast('Upload fehlgeschlagen: ' + e.message); }
+          } }, '📷 Foto aufnehmen'));
+        }
+      }
+      render();
+      return box;
+    }
 
     const raeume = store.listRaeume().filter(r => r.aktiv || r.id === v.raumId);
     const meta = STATUS_META[v.status] || STATUS_META.geplant;
@@ -276,8 +312,8 @@
         ? 'Pauschalmiete – Strom und Gas sind enthalten, es werden keine Zählerstände erfasst. Beim Erstellen des Vertrags wird der Preis eingefroren.'
         : 'Zählerstände zu Beginn erfassen. Beim Erstellen des Vertrags werden die aktuellen Preise eingefroren.'),
       pauschal ? null : el('div', { class: 'grid-2' }, [
-        el('div', {}, [el('label', {}, 'Stromzähler Anfang (kWh)'), stromStart]),
-        el('div', {}, [el('label', {}, 'Gaszähler Anfang (cbm)'), gasStart]),
+        el('div', {}, [el('label', {}, 'Stromzähler Anfang (kWh)'), stromStart, fotoControl('stromStart')]),
+        el('div', {}, [el('label', {}, 'Gaszähler Anfang (cbm)'), gasStart, fotoControl('gasStart')]),
       ]),
       el('div', { class: 'toolbar', style: 'margin-top:14px; margin-bottom:0;' },
         v.status === 'geplant'
@@ -336,8 +372,8 @@
           ? 'Pauschalmiete – kein Strom-/Gasverbrauch. Optionale Zusatzposten für den Kostenbogen ergänzen.'
           : 'Zähler-Endstände erfassen; optionale Zusatzposten für den Kostenbogen ergänzen.'),
         pauschal ? null : el('div', { class: 'grid-2' }, [
-          el('div', {}, [el('label', {}, 'Stromzähler Ende (kWh)'), stromEnde]),
-          el('div', {}, [el('label', {}, 'Gaszähler Ende (cbm)'), gasEnde]),
+          el('div', {}, [el('label', {}, 'Stromzähler Ende (kWh)'), stromEnde, fotoControl('stromEnde')]),
+          el('div', {}, [el('label', {}, 'Gaszähler Ende (cbm)'), gasEnde, fotoControl('gasEnde')]),
         ]),
         pauschal ? null : el('div', { class: 'verm-summary', style: 'margin:12px 0;' }, [
           el('div', {}, ['Strom: ', liveStrom]),

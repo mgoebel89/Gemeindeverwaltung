@@ -92,6 +92,17 @@
     return [m.strasse, [m.plz, m.ort].filter(Boolean).join(' ')].filter(Boolean).join(', ');
   }
 
+  // Bürgermeister-Unterschrift (aus den Bargeldauslagen-Einstellungen)
+  // mittig über eine Signaturlinie legen. Ohne hinterlegtes Bild passiert nichts.
+  function drawBuergermeisterSignatur(doc, centerX, lineY) {
+    const cfg = (store.getSettings().auslagen) || {};
+    if (!cfg.unterschriftDataUrl) return;
+    try {
+      const fmt = cfg.unterschriftDataUrl.includes('image/png') ? 'PNG' : 'JPEG';
+      doc.addImage(cfg.unterschriftDataUrl, fmt, centerX - 22, lineY - 16, 44, 15, undefined, 'SLOW');
+    } catch (_) {}
+  }
+
   function zeitraumText(v) {
     if (!v.startDatum) return '';
     if (!v.endDatum || v.endDatum === v.startDatum) return formatDatum(v.startDatum);
@@ -203,12 +214,14 @@
     // Unterschriftszeilen
     gap(state, 22);
     const colW = CONTENT_W / 2 - 8;
+    // Unterschriftsbild des Bürgermeisters über die linke (Vermieter-)Linie
+    drawBuergermeisterSignatur(doc, MARGIN_X + colW / 2, state.y);
     doc.setDrawColor(0, 0, 0); doc.setLineWidth(0.4);
     doc.line(MARGIN_X, state.y, MARGIN_X + colW, state.y);
     doc.line(RIGHT_X - colW, state.y, RIGHT_X, state.y);
     setFont(doc, 9, false, false, C_MUTED);
     doc.text(vm.buergermeister || '', MARGIN_X, state.y + 5);
-    doc.text('Mieter', RIGHT_X - colW, state.y + 5);
+    doc.text(mieter ? fullNameMieter(mieter) : 'Mieter', RIGHT_X - colW, state.y + 5);
 
     openPdf(doc, `Mietvertrag-${v.startDatum || ''}.pdf`);
   }
@@ -302,10 +315,12 @@
     state.y += 6;
     line(doc, state, 'sachlich und rechnerisch richtig', { size: 10 });
     gap(state, 16);
+    // Unterschriftsbild des Bürgermeisters über die Signaturlinie
+    drawBuergermeisterSignatur(doc, MARGIN_X + 35, state.y);
     doc.setLineWidth(0.4);
     doc.line(MARGIN_X, state.y, MARGIN_X + 70, state.y);
     setFont(doc, 9, false, false, C_MUTED);
-    doc.text('Ortsbürgermeister/in', MARGIN_X, state.y + 5);
+    doc.text(vm.buergermeister || '', MARGIN_X, state.y + 5);
 
     openPdf(doc, `Kostenabrechnung-${v.startDatum || ''}.pdf`);
   }

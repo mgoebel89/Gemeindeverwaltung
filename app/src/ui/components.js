@@ -42,11 +42,14 @@
     setTimeout(() => { URL.revokeObjectURL(url); a.remove(); }, 0);
   }
 
-  function pickFile(accept = '.json') {
+  // capture: z. B. 'environment', damit auf dem Handy direkt die Kamera öffnet
+  // (auf dem Desktop wird das Attribut ignoriert → normaler Dateidialog).
+  function pickFile(accept = '.json', capture = null) {
     return new Promise(resolve => {
       const input = document.createElement('input');
       input.type = 'file';
       input.accept = accept;
+      if (capture) input.setAttribute('capture', capture);
       input.onchange = () => resolve(input.files?.[0] || null);
       input.click();
     });

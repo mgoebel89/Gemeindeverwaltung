@@ -216,6 +216,20 @@ den Navigationspunkt **Vermietung**.
    → **Kostenabrechnungsbogen als PDF** (Layout der VG-Kelberg-Vorlage) für den
    Versand an die Verbandsgemeindeverwaltung.
 
+**Zählerstand-Fotos (Beweisführung):** Zu jedem der vier Zählerstände (Strom
+Anfang/Ende, Gas Anfang/Ende) kann ein Foto hinterlegt werden – auf dem Handy
+öffnet der Button direkt die Kamera. Die Fotos dienen als interner Nachweis, sie
+werden im Container gespeichert (Tabelle `vermietung_files` + Datei unter
+`/var/lib/gemeindeverwaltung/attachments/vermietung/<vermietungId>/`) und
+erscheinen **nicht** im PDF. Wie die Beleg-Scans werden sie **nicht** nach NocoDB
+gesichert, sind aber vom Container-Backup erfasst.
+
+**Bürgermeister-Unterschrift:** Das unter *Einstellungen → Bargeldauslagen*
+hinterlegte Unterschriftsbild wird automatisch über die Bürgermeister-Linie in
+**Mietvertrag** und **Kostenabrechnungsbogen** gesetzt. Unter den
+Unterschriftslinien steht jeweils der Name: Bürgermeister (aus den
+Vermietungs-Absenderdaten) bzw. der Mietername.
+
 **Preise** (Menü *Einstellungen → Vermietung – Preise*): je Objekt gestaffelte
 Grundmiete (1. Tag / jeder weitere Tag, getrennt für Anwohner und Ortsfremde) sowie
 Strompreis (€/kWh) und Gaspreis (€/cbm). Absender-/Vertragsdaten für die PDFs
@@ -241,7 +255,7 @@ Navigationspunkt **Bargeldauslagen**.
 **Ablauf je Auslage:**
 1. **Eckdaten** – Haushaltsjahr, Haushaltsstelle (mit Budgetüberwachung),
    Empfänger (Name, Vorname, IBAN – wiederverwendbar), Verwendungszweck, Datum,
-   Status (`offen` → `erstattet`).
+   Status (`offen` → `eingereicht` → `erstattet`).
 2. **Belege** – beliebig viele Einzelbelege, je mit Nummer, Betrag, Beschreibung,
    Belegdatum und Händler. Belege werden **gescannt** (Netzwerkscanner) oder als
    Datei **hochgeladen**. Die Summe aller Belege ergibt den Gesamtbetrag, der als

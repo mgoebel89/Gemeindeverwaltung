@@ -76,6 +76,20 @@
   async function deleteRaumRemote(id) { return jsonFetch(`/api/raeume/${encodeURIComponent(id)}`, { method: 'DELETE' }); }
   async function putVermietung(v) { return jsonFetch(`/api/vermietungen/${encodeURIComponent(v.id)}`, { method: 'PUT', body: v }); }
   async function deleteVermietungRemote(id) { return jsonFetch(`/api/vermietungen/${encodeURIComponent(id)}`, { method: 'DELETE' }); }
+  async function listVermietungFotos(vermietungId) { return jsonFetch(`/api/vermietungen/${encodeURIComponent(vermietungId)}/fotos`); }
+  async function uploadVermietungFoto(vermietungId, file, kind) {
+    const fd = new FormData();
+    fd.append('file', file, file.name);
+    if (kind) fd.append('kind', kind);
+    const res = await fetch(`/api/vermietungen/${encodeURIComponent(vermietungId)}/fotos`, { method: 'POST', body: fd, headers: { 'X-Client-Id': CLIENT_ID } });
+    if (!res.ok) {
+      const txt = await res.text().catch(() => '');
+      throw new Error(`Upload ${res.status}: ${txt.slice(0, 200)}`);
+    }
+    return res.json();
+  }
+  async function deleteVermietungFoto(fileId) { return jsonFetch(`/api/vermietung-files/${encodeURIComponent(fileId)}`, { method: 'DELETE' }); }
+  function vermietungFotoUrl(fileId) { return `/api/vermietung-files/${encodeURIComponent(fileId)}`; }
 
   // --- Modul: Bargeldauslagen (Empfänger, Haushaltsstellen, Auslagen, Belege, Scan) ---
   async function putEmpfaenger(e) { return jsonFetch(`/api/empfaenger/${encodeURIComponent(e.id)}`, { method: 'PUT', body: e }); }
@@ -166,6 +180,7 @@
     putMieter, deleteMieterRemote,
     putRaum, deleteRaumRemote,
     putVermietung, deleteVermietungRemote,
+    listVermietungFotos, uploadVermietungFoto, deleteVermietungFoto, vermietungFotoUrl,
     putEmpfaenger, deleteEmpfaengerRemote,
     putHaushaltsstelle, deleteHaushaltsstelleRemote,
     putAuslage, deleteAuslageRemote,
