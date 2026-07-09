@@ -119,7 +119,8 @@
           } }, 'Entfernen'));
         } else {
           box.appendChild(el('button', { class: 'btn-sm', type: 'button', onClick: async () => {
-            const f = await GR.ui.pickFile('image/*', 'environment');
+            // Ohne capture-Attribut bietet das Handy Kamera UND Galerie zur Auswahl an.
+            const f = await GR.ui.pickFile('image/*');
             if (!f) return;
             try {
               const rec = await store.uploadVermietungFoto(id, f, kind);
@@ -127,7 +128,7 @@
               v.zaehlerFotos[kind] = rec.id; persist(); render();
               toast('Foto gespeichert');
             } catch (e) { toast('Upload fehlgeschlagen: ' + e.message); }
-          } }, '📷 Foto aufnehmen'));
+          } }, '📷 Foto hinzufügen'));
         }
       }
       render();
