@@ -2,7 +2,7 @@
   'use strict';
   window.GR = window.GR || {};
   const { store } = GR;
-  const { fullNameEmpfaenger, gesamtbetrag } = GR.models;
+  const { fullNameEmpfaenger, gesamtbetrag, formatIban } = GR.models;
   const { formatDatum, toast } = GR.ui;
 
   const PAGE_W = 210;
@@ -135,7 +135,7 @@
     // Feldblock
     const rows = [
       ['Empfänger:', emp ? fullNameEmpfaenger(emp) : ''],
-      ['Konto:', emp ? (emp.iban || '') : ''],
+      ['Konto:', emp ? formatIban(emp.iban) : ''],
       ['Fälligkeit:', ''],
       ['Adressnummer:', ''],
       ['Bezeichnung:', auslage.verwendungszweck || ''],

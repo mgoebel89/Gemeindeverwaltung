@@ -5,8 +5,11 @@
   const { el, toast, confirmDialog, formatDatum } = GR.ui;
   const {
     emptyAuslage, emptyBeleg, emptyEmpfaenger, emptyHaushaltsstelle,
-    fullNameEmpfaenger, gesamtbetrag, budgetVerbrauch,
+    fullNameEmpfaenger, formatIban, gesamtbetrag, budgetVerbrauch,
   } = GR.models;
+
+  // Session-Cache der im Netzwerk gefundenen Scanner (für die Beleg-Maske).
+  let scannerCache = [];
 
   const STATUS_META = {
     offen: { label: 'offen', tag: 'prep' },
@@ -28,14 +31,14 @@
     const e = isNew ? { ...emptyEmpfaenger(), ...(prefill || {}) } : { ...prefill };
     const name = el('input', { type: 'text', value: e.name || '' });
     const vorname = el('input', { type: 'text', value: e.vorname || '' });
-    const iban = el('input', { type: 'text', value: e.iban || '', placeholder: 'DE00 0000 0000 0000 0000 00' });
+    const iban = el('input', { type: 'text', value: formatIban(e.iban), placeholder: 'DE00 0000 0000 0000 0000 00' });
 
     const overlay = el('div', { class: 'modal-overlay' });
     const close = () => overlay.remove();
     const onSave = () => {
       e.name = name.value.trim();
       e.vorname = vorname.value.trim();
-      e.iban = iban.value.trim().replace(/\s+/g, ' ');
+      e.iban = formatIban(iban.value);
       if (!e.name && !e.vorname) return toast('Bitte mindestens einen Namen eingeben');
       store.saveEmpfaenger(e);
       toast(isNew ? 'Empfänger angelegt' : 'Empfänger gespeichert');
@@ -249,7 +252,7 @@
         empfBox.appendChild(el('div', { class: 'verm-mieter-sel' }, [
           el('div', {}, [
             el('strong', {}, fullNameEmpfaenger(sel)),
-            sel.iban ? el('div', { class: 'help' }, 'IBAN: ' + sel.iban) : el('div', { class: 'help', style: 'color:#c53030;' }, 'Keine IBAN hinterlegt'),
+            sel.iban ? el('div', { class: 'help' }, 'IBAN: ' + formatIban(sel.iban)) : el('div', { class: 'help', style: 'color:#c53030;' }, 'Keine IBAN hinterlegt'),
           ]),
           el('div', { class: 'toolbar', style: 'margin:0;' }, [
             el('button', { class: 'btn-sm', onClick: () => empfaengerDialog(sel, () => renderEmpfBox()) }, 'Bearbeiten'),
@@ -273,7 +276,7 @@
         for (const e of matches) {
           results.appendChild(el('div', { class: 'verm-combo-item', onClick: () => pick(e) }, [
             el('span', {}, fullNameEmpfaenger(e)),
-            e.iban ? el('span', { class: 'help' }, ' — ' + e.iban) : null,
+            e.iban ? el('span', { class: 'help' }, ' — ' + formatIban(e.iban)) : null,
           ]));
         }
         results.appendChild(el('div', { class: 'verm-combo-item verm-combo-new', onClick: () => {
@@ -379,12 +382,36 @@
       } catch (e) { toast('Upload fehlgeschlagen: ' + e.message); }
     }
 
+    // Scanner-Auswahl (Standard aus Einstellungen + im Netzwerk gefundene).
+    let chosenScannerUrl = (store.getSettings().auslagen || {}).scannerUrl || '';
+    const scanSelect = el('select', { style: 'max-width:100%;' });
+    function rebuildScanOptions() {
+      scanSelect.innerHTML = '';
+      const def = (store.getSettings().auslagen || {}).scannerUrl || '';
+      const opts = [];
+      const seen = new Set();
+      if (def) { opts.push({ url: def, name: 'Standard (' + def + ')' }); seen.add(def); }
+      for (const sc of scannerCache) if (!seen.has(sc.url)) { opts.push({ url: sc.url, name: sc.name + ' (' + sc.url + ')' }); seen.add(sc.url); }
+      if (!opts.length) opts.push({ url: '', name: '— kein Scanner konfiguriert —' });
+      if (!seen.has(chosenScannerUrl)) chosenScannerUrl = opts[0].url;
+      for (const o of opts) scanSelect.appendChild(el('option', { value: o.url, selected: o.url === chosenScannerUrl }, o.name));
+    }
+    rebuildScanOptions();
+    scanSelect.onchange = () => { chosenScannerUrl = scanSelect.value; };
+    async function onDiscoverScanners() {
+      toast('Suche Scanner im Netzwerk…');
+      try {
+        scannerCache = await GR.api.listScanners();
+        rebuildScanOptions();
+        toast(scannerCache.length ? `${scannerCache.length} Scanner gefunden` : 'Kein Scanner gefunden');
+      } catch (e) { toast('Suche fehlgeschlagen: ' + e.message); }
+    }
+
     // Bulk: Netzwerkscanner → je Seite ein Beleg
     async function onScan() {
-      const scannerUrl = (store.getSettings().auslagen || {}).scannerUrl;
+      const scannerUrl = chosenScannerUrl;
       if (!scannerUrl) {
-        toast('Kein Scanner konfiguriert – bitte in den Einstellungen einrichten.');
-        location.hash = '#/einstellungen';
+        toast('Kein Scanner gewählt – bitte suchen oder in den Einstellungen einrichten.');
         return;
       }
       toast('Scanne… bitte Papier einlegen', 4000);
@@ -420,8 +447,13 @@
     mount.appendChild(el('div', { class: 'card' }, [
       el('h3', {}, '2 · Belege'),
       el('p', { class: 'help' }, 'Jeder Einzelbeleg wird nummeriert und erfasst; die Summe aller Belege wird als Gesamtbetrag ins Formular übernommen. Bild-Scans werden dem Gesamt-PDF als Seiten angehängt.'),
+      el('div', { class: 'toolbar', style: 'align-items:center;' }, [
+        el('label', { style: 'margin:0; align-self:center;' }, 'Scanner:'),
+        scanSelect,
+        el('button', { class: 'btn-sm', onClick: onDiscoverScanners }, '🔎 Suchen'),
+      ]),
       el('div', { class: 'toolbar' }, [
-        el('button', { class: 'btn-primary', onClick: onScan }, '🖨 Belege scannen (Netzwerk)'),
+        el('button', { class: 'btn-primary', onClick: onScan }, '🖨 Belege scannen'),
         el('button', { onClick: onUpload }, 'Beleg-Datei hochladen'),
         el('button', { onClick: onLeererBeleg }, '+ Leerer Beleg'),
       ]),
@@ -466,7 +498,7 @@
       for (const e of empf) {
         tb.appendChild(el('tr', {}, [
           el('td', {}, el('strong', {}, fullNameEmpfaenger(e) || '—')),
-          el('td', {}, e.iban || '—'),
+          el('td', {}, formatIban(e.iban) || '—'),
           el('td', { style: 'text-align:right; white-space:nowrap;' }, [
             el('button', { class: 'btn-sm', onClick: () => empfaengerDialog(e, refresh) }, 'Bearbeiten'), ' ',
             el('button', { class: 'btn-sm btn-danger', onClick: () => { if (confirmDialog(`Empfänger „${fullNameEmpfaenger(e)}" löschen?`)) { store.deleteEmpfaenger(e.id); refresh(); } } }, 'Löschen'),

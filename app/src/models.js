@@ -203,6 +203,13 @@
   function emptyEmpfaenger() {
     return { id: uuid(), name: '', vorname: '', iban: '' };
   }
+  // IBAN für Menschen lesbar in Viererblöcken (z. B. „DE12 3456 7890 …").
+  function formatIban(iban) {
+    const compact = String(iban || '').replace(/\s+/g, '').toUpperCase();
+    if (!compact) return '';
+    return compact.replace(/(.{4})/g, '$1 ').trim();
+  }
+
   // Formular-Anzeige „Empfänger:" = „Nachname, Vorname"
   function fullNameEmpfaenger(e) {
     if (!e) return '';
@@ -255,7 +262,7 @@
     KOSTENBOGEN_TYPEN, RAUM_ABRECHNUNGSARTEN, istPauschal,
     emptyMieter, emptyRaum, emptyRaumPreise, emptyVermietung,
     fullNameMieter, anzahlTage, berechneGrundmiete, berechneVerbrauch, berechneGesamt,
-    AUSLAGE_STATUS, emptyEmpfaenger, fullNameEmpfaenger, emptyHaushaltsstelle,
+    AUSLAGE_STATUS, emptyEmpfaenger, fullNameEmpfaenger, formatIban, emptyHaushaltsstelle,
     emptyBeleg, emptyAuslage, gesamtbetrag, budgetVerbrauch,
   };
 })();
