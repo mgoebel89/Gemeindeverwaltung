@@ -78,6 +78,9 @@
     resolve('tableMieterName', 'tableMieterId');
     resolve('tableRaeumeName', 'tableRaeumeId');
     resolve('tableVermietungenName', 'tableVermietungenId');
+    resolve('tableEmpfaengerName', 'tableEmpfaengerId');
+    resolve('tableHaushaltsstellenName', 'tableHaushaltsstellenId');
+    resolve('tableAuslagenName', 'tableAuslagenId');
     if (updated) store.saveSettings(s);
     return { tables, count: tables.length };
   }
@@ -154,6 +157,35 @@
     { title: 'LastModifiedAt', uidt: 'SingleLineText' },
     { title: 'Payload', uidt: 'LongText' },
   ];
+  const EMPFAENGER_COLUMNS = [
+    { title: 'EmpfaengerId', uidt: 'SingleLineText' },
+    { title: 'Name', uidt: 'SingleLineText' },
+    { title: 'Vorname', uidt: 'SingleLineText' },
+    { title: 'IBAN', uidt: 'SingleLineText' },
+    { title: 'LastModifiedAt', uidt: 'SingleLineText' },
+    { title: 'Payload', uidt: 'LongText' },
+  ];
+  const HAUSHALTSSTELLEN_COLUMNS = [
+    { title: 'HaushaltsstelleId', uidt: 'SingleLineText' },
+    { title: 'Nummer', uidt: 'SingleLineText' },
+    { title: 'Bezeichnung', uidt: 'SingleLineText' },
+    { title: 'Budget', uidt: 'Number' },
+    { title: 'LastModifiedAt', uidt: 'SingleLineText' },
+    { title: 'Payload', uidt: 'LongText' },
+  ];
+  const AUSLAGEN_COLUMNS = [
+    { title: 'AuslageId', uidt: 'SingleLineText' },
+    { title: 'Haushaltsjahr', uidt: 'Number' },
+    { title: 'Haushaltsstelle', uidt: 'SingleLineText' },
+    { title: 'Empfaenger', uidt: 'SingleLineText' },
+    { title: 'Verwendungszweck', uidt: 'LongText' },
+    { title: 'Datum', uidt: 'Date' },
+    { title: 'Gesamtbetrag', uidt: 'Number' },
+    { title: 'AnzahlBelege', uidt: 'Number' },
+    { title: 'Status', uidt: 'SingleLineText' },
+    { title: 'LastModifiedAt', uidt: 'SingleLineText' },
+    { title: 'Payload', uidt: 'LongText' },
+  ];
 
   async function createTable(title, columns) {
     const s = settings();
@@ -205,6 +237,9 @@
     await ensureTable(s.nocodb.tableMieterName || 'Mieter', MIETER_COLUMNS, 'tableMieterId');
     await ensureTable(s.nocodb.tableRaeumeName || 'Raeume', RAEUME_COLUMNS, 'tableRaeumeId');
     await ensureTable(s.nocodb.tableVermietungenName || 'Vermietungen', VERMIETUNGEN_COLUMNS, 'tableVermietungenId');
+    await ensureTable(s.nocodb.tableEmpfaengerName || 'Empfaenger', EMPFAENGER_COLUMNS, 'tableEmpfaengerId');
+    await ensureTable(s.nocodb.tableHaushaltsstellenName || 'Haushaltsstellen', HAUSHALTSSTELLEN_COLUMNS, 'tableHaushaltsstellenId');
+    await ensureTable(s.nocodb.tableAuslagenName || 'Auslagen', AUSLAGEN_COLUMNS, 'tableAuslagenId');
 
     store.saveSettings(s);
     return log;
@@ -400,6 +435,50 @@
     return { vermietungen: 1 };
   }
 
+  // --- Bargeldauslagen-Modul: Row-Builder + Sync ---
+  function buildEmpfaengerRow(e) {
+    return {
+      EmpfaengerId: e.id, Name: e.name || '', Vorname: e.vorname || '', IBAN: e.iban || '',
+      LastModifiedAt: e.lastModifiedAt || '', Payload: JSON.stringify(e),
+    };
+  }
+  function buildHaushaltsstelleRow(h) {
+    return {
+      HaushaltsstelleId: h.id, Nummer: h.nummer || '', Bezeichnung: h.bezeichnung || '',
+      Budget: (h.budget === null || h.budget === undefined || h.budget === '') ? null : Number(h.budget),
+      LastModifiedAt: h.lastModifiedAt || '', Payload: JSON.stringify(h),
+    };
+  }
+  function buildAuslageRow(a) {
+    const emp = store.getEmpfaenger(a.empfaengerId);
+    const hs = store.getHaushaltsstelle(a.haushaltsstelleId);
+    return {
+      AuslageId: a.id,
+      Haushaltsjahr: a.haushaltsjahr ? Number(a.haushaltsjahr) : null,
+      Haushaltsstelle: hs ? (hs.nummer || '') : '',
+      Empfaenger: emp ? GR.models.fullNameEmpfaenger(emp) : '',
+      Verwendungszweck: a.verwendungszweck || '',
+      Datum: a.datum || null,
+      Gesamtbetrag: GR.models.gesamtbetrag(a),
+      AnzahlBelege: (a.belege || []).length,
+      Status: a.status || 'offen',
+      LastModifiedAt: a.lastModifiedAt || '',
+      Payload: JSON.stringify(a),
+    };
+  }
+  async function syncEmpfaenger(e) {
+    await upsertRecord(await ensureTableId('tableEmpfaengerId', 'Empfaenger'), 'EmpfaengerId', buildEmpfaengerRow(e));
+    return { empfaenger: 1 };
+  }
+  async function syncHaushaltsstelle(h) {
+    await upsertRecord(await ensureTableId('tableHaushaltsstellenId', 'Haushaltsstellen'), 'HaushaltsstelleId', buildHaushaltsstelleRow(h));
+    return { haushaltsstellen: 1 };
+  }
+  async function syncAuslage(a) {
+    await upsertRecord(await ensureTableId('tableAuslagenId', 'Auslagen'), 'AuslageId', buildAuslageRow(a));
+    return { auslagen: 1 };
+  }
+
   async function syncQueue() {
     const queue = store.listQueue();
     let ok = 0, fail = 0;
@@ -493,6 +572,9 @@
     syncMieter,
     syncRaum,
     syncVermietung,
+    syncEmpfaenger,
+    syncHaushaltsstelle,
+    syncAuslage,
     syncQueue,
     restoreFromNocoDb,
     isConfigured,

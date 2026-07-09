@@ -77,6 +77,31 @@
   async function putVermietung(v) { return jsonFetch(`/api/vermietungen/${encodeURIComponent(v.id)}`, { method: 'PUT', body: v }); }
   async function deleteVermietungRemote(id) { return jsonFetch(`/api/vermietungen/${encodeURIComponent(id)}`, { method: 'DELETE' }); }
 
+  // --- Modul: Bargeldauslagen (Empfänger, Haushaltsstellen, Auslagen, Belege, Scan) ---
+  async function putEmpfaenger(e) { return jsonFetch(`/api/empfaenger/${encodeURIComponent(e.id)}`, { method: 'PUT', body: e }); }
+  async function deleteEmpfaengerRemote(id) { return jsonFetch(`/api/empfaenger/${encodeURIComponent(id)}`, { method: 'DELETE' }); }
+  async function putHaushaltsstelle(h) { return jsonFetch(`/api/haushaltsstellen/${encodeURIComponent(h.id)}`, { method: 'PUT', body: h }); }
+  async function deleteHaushaltsstelleRemote(id) { return jsonFetch(`/api/haushaltsstellen/${encodeURIComponent(id)}`, { method: 'DELETE' }); }
+  async function putAuslage(a) { return jsonFetch(`/api/auslagen/${encodeURIComponent(a.id)}`, { method: 'PUT', body: a }); }
+  async function deleteAuslageRemote(id) { return jsonFetch(`/api/auslagen/${encodeURIComponent(id)}`, { method: 'DELETE' }); }
+
+  async function listBelege(auslageId) { return jsonFetch(`/api/auslagen/${encodeURIComponent(auslageId)}/belege`); }
+  async function uploadBeleg(auslageId, file) {
+    const fd = new FormData();
+    fd.append('file', file, file.name);
+    const res = await fetch(`/api/auslagen/${encodeURIComponent(auslageId)}/belege`, { method: 'POST', body: fd, headers: { 'X-Client-Id': CLIENT_ID } });
+    if (!res.ok) {
+      const txt = await res.text().catch(() => '');
+      throw new Error(`Upload ${res.status}: ${txt.slice(0, 200)}`);
+    }
+    return res.json();
+  }
+  async function deleteBelegFile(fileId) { return jsonFetch(`/api/belege/${encodeURIComponent(fileId)}`, { method: 'DELETE' }); }
+  function belegUrl(fileId) { return `/api/belege/${encodeURIComponent(fileId)}`; }
+  async function listScanners() { return jsonFetch('/api/scan/scanners'); }
+  async function scanHealth(url) { return jsonFetch(`/api/scan/health?url=${encodeURIComponent(url)}`); }
+  async function scan(auslageId, scannerUrl, source) { return jsonFetch('/api/scan', { method: 'POST', body: { auslageId, scannerUrl, source } }); }
+
   // --- Modul: Dokumente (Paperless-Proxy im Backend) ---
   function docQuery(params = {}) {
     const usp = new URLSearchParams();
@@ -141,6 +166,11 @@
     putMieter, deleteMieterRemote,
     putRaum, deleteRaumRemote,
     putVermietung, deleteVermietungRemote,
+    putEmpfaenger, deleteEmpfaengerRemote,
+    putHaushaltsstelle, deleteHaushaltsstelleRemote,
+    putAuslage, deleteAuslageRemote,
+    listBelege, uploadBeleg, deleteBelegFile, belegUrl,
+    listScanners, scanHealth, scan,
     connectWs, subscribe,
     clientId: CLIENT_ID,
   };

@@ -197,6 +197,56 @@
     };
   }
 
+  // ===== Modul Bargeldauslagen =====
+  const AUSLAGE_STATUS = ['offen', 'erstattet'];
+
+  function emptyEmpfaenger() {
+    return { id: uuid(), name: '', vorname: '', iban: '' };
+  }
+  // Formular-Anzeige „Empfänger:" = „Nachname, Vorname"
+  function fullNameEmpfaenger(e) {
+    if (!e) return '';
+    const n = (e.name || '').trim();
+    const v = (e.vorname || '').trim();
+    if (n && v) return `${n}, ${v}`;
+    return n || v || '';
+  }
+
+  function emptyHaushaltsstelle() {
+    return { id: uuid(), nummer: '', bezeichnung: '', budget: null };
+  }
+
+  function emptyBeleg(nr) {
+    return { id: uuid(), nr: nr || 1, betrag: 0, beschreibung: '', belegdatum: '', haendler: '', scanFileId: null };
+  }
+
+  function emptyAuslage() {
+    const today = new Date().toISOString().slice(0, 10);
+    return {
+      id: uuid(),
+      status: 'offen', // 'offen' | 'erstattet'
+      haushaltsjahr: new Date().getFullYear(),
+      haushaltsstelleId: '',
+      empfaengerId: '',
+      verwendungszweck: '',   // → Formularfeld „Bezeichnung"
+      datum: today,           // „Hörschhausen, den …"
+      belege: [],             // [{ id, nr, betrag, beschreibung, belegdatum, haendler, scanFileId }]
+    };
+  }
+
+  // Gesamtbetrag = Summe aller Einzelbelege (nur dieser Wert steht im Formular).
+  function gesamtbetrag(auslage) {
+    return (auslage && auslage.belege || []).reduce((s, b) => s + (Number(b.betrag) || 0), 0);
+  }
+
+  // Budgetverbrauch einer Haushaltsstelle in einem Haushaltsjahr über eine
+  // Liste von Auslagen (Store-unabhängig gehalten).
+  function budgetVerbrauch(auslagen, haushaltsstelleId, jahr) {
+    return (auslagen || [])
+      .filter(a => a.haushaltsstelleId === haushaltsstelleId && String(a.haushaltsjahr) === String(jahr))
+      .reduce((s, a) => s + gesamtbetrag(a), 0);
+  }
+
   GR.models = {
     SCHEMA_VERSION, uuid,
     emptyAbstimmung, emptyTop, emptySitzung,
@@ -205,5 +255,7 @@
     KOSTENBOGEN_TYPEN, RAUM_ABRECHNUNGSARTEN, istPauschal,
     emptyMieter, emptyRaum, emptyRaumPreise, emptyVermietung,
     fullNameMieter, anzahlTage, berechneGrundmiete, berechneVerbrauch, berechneGesamt,
+    AUSLAGE_STATUS, emptyEmpfaenger, fullNameEmpfaenger, emptyHaushaltsstelle,
+    emptyBeleg, emptyAuslage, gesamtbetrag, budgetVerbrauch,
   };
 })();

@@ -233,6 +233,49 @@ initialisieren" in den Einstellungen an.
 > Datenbank – die neuen Tabellen werden per `CREATE TABLE IF NOT EXISTS` beim Start
 > ergänzt. Frontend nach dem Update mit **Strg+F5** neu laden.
 
+## Modul „Bargeldauslagen"
+
+Digitalisiert die Rückzahlung privat vorgelegter Gelder. Erreichbar über den
+Navigationspunkt **Bargeldauslagen**.
+
+**Ablauf je Auslage:**
+1. **Eckdaten** – Haushaltsjahr, Haushaltsstelle (mit Budgetüberwachung),
+   Empfänger (Name, Vorname, IBAN – wiederverwendbar), Verwendungszweck, Datum,
+   Status (`offen` → `erstattet`).
+2. **Belege** – beliebig viele Einzelbelege, je mit Nummer, Betrag, Beschreibung,
+   Belegdatum und Händler. Belege werden **gescannt** (Netzwerkscanner) oder als
+   Datei **hochgeladen**. Die Summe aller Belege ergibt den Gesamtbetrag, der als
+   „Zu Zahlen sind" ins Formular übernommen wird.
+3. **Gesamt-PDF** – das ausgefüllte Bar-Auslage-Formular (Vorlage
+   Hörschhausen) plus die Bild-Scans als Folgeseiten, als ein PDF zum
+   Herunterladen und manuellen E-Mail-Versand.
+
+**Stammdaten** (Empfänger, Haushaltsstellen) werden dauerhaft gespeichert und –
+wie alle Module – zusätzlich nach NocoDB gesichert (Tabellen `Empfaenger`,
+`Haushaltsstellen`, `Auslagen`, jeweils mit vollständigem `Payload`). Neue
+Zieltabellen legt „Schema initialisieren" in den Einstellungen an.
+
+**Netzwerkscanner (eSCL/AirScan):** In den Einstellungen unter *Bargeldauslagen*
+den Scanner **automatisch im Netzwerk suchen** (mDNS `_uscan._tcp`) und als
+Standard übernehmen, oder die URL (z. B. `http://192.168.1.30`) manuell
+eintragen. Der Scan läuft serverseitig über das Backend (`backend/routes/scan.js`),
+der Browser spricht den Scanner nicht direkt an. Voraussetzung: Der Scanner ist
+vom Container erreichbar und Multicast/mDNS ist auf der Bridge erlaubt. Fällt der
+Scanner aus, funktioniert der manuelle Datei-Upload weiterhin.
+
+**Bürgermeister-Unterschrift:** Ein in den Einstellungen hochgeladenes Bild (PNG
+mit Transparenz empfohlen) wird automatisch über die Bürgermeister-Linie gesetzt;
+die übrigen Unterschriftsfelder bleiben leer.
+
+> **Grenze v1:** Nur **Bild**-Scans (JPEG/PNG) werden ins Gesamt-PDF eingebettet.
+> Ein als **PDF** hochgeladener Beleg wird gespeichert, aber nicht in das
+> Gesamt-PDF gemergt (dann als Bild scannen oder separat anhängen).
+>
+> **Migration:** Neue Tabellen entstehen per `CREATE TABLE IF NOT EXISTS` beim
+> Backend-Start; das Backend braucht die zusätzliche npm-Dependency
+> `bonjour-service` (Deploy zieht sie per `npm install`). Frontend nach dem Update
+> mit **Strg+F5** neu laden.
+
 ## Lizenz
 
 Creative Commons **CC BY-NC-SA 4.0** — siehe `LICENSE`.

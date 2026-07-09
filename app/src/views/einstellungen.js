@@ -116,7 +116,7 @@
       }
     };
     const onInitSchema = async () => {
-      if (!confirmDialog('Fehlende Zieltabellen (Sitzungen, Beschluesse, Mitglieder, Mieter, Raeume, Vermietungen) in der konfigurierten NocoDB-Base anlegen?')) return;
+      if (!confirmDialog('Fehlende Zieltabellen (Sitzungen, Beschluesse, Mitglieder, Mieter, Raeume, Vermietungen, Empfaenger, Haushaltsstellen, Auslagen) in der konfigurierten NocoDB-Base anlegen?')) return;
       try {
         const log = await GR.nocodb_client.initSchema();
         setStatus(log.join(' · '), '#2f855a');
@@ -301,6 +301,97 @@
       ]),
       el('div', { style: 'margin-top:10px;' }, [el('label', {}, 'Anschrift (mehrzeilig)'), bindVm('anschrift', true)]),
       el('div', { style: 'margin-top:10px;' }, [el('label', {}, 'Empfänger Kostenabrechnungsbogen (VG)'), bindVm('vgEmpfaenger', true)]),
+    ]));
+
+    // --- Bargeldauslagen: Absender, Unterschrift, Scanner ---
+    const au = settings.auslagen;
+    const bindAu = (key) => {
+      const i = el('input', { type: 'text', value: au[key] || '' });
+      i.oninput = e => { au[key] = e.target.value; };
+      i.onchange = () => store.saveSettings(settings);
+      return i;
+    };
+
+    // Unterschrift-Bild
+    const sigPreview = el('div', { style: 'margin:8px 0;' });
+    function refreshSigPreview() {
+      sigPreview.innerHTML = '';
+      if (au.unterschriftDataUrl) {
+        sigPreview.appendChild(el('img', { src: au.unterschriftDataUrl, style: 'max-height:70px; border:1px solid var(--border); border-radius:4px; background:white; padding:4px;' }));
+      } else {
+        sigPreview.appendChild(el('div', { class: 'help' }, 'Keine Unterschrift hinterlegt – die Bürgermeister-Linie bleibt im PDF leer.'));
+      }
+    }
+    refreshSigPreview();
+    const onUploadSig = async () => {
+      const file = await pickFile('image/png,image/*');
+      if (!file) return;
+      try {
+        au.unterschriftDataUrl = await readFileAsDataUrl(file);
+        store.saveSettings(settings);
+        toast('Unterschrift gespeichert');
+        refreshSigPreview();
+      } catch (e) { alert('Datei konnte nicht gelesen werden: ' + e.message); }
+    };
+    const onResetSig = () => { au.unterschriftDataUrl = ''; store.saveSettings(settings); toast('Unterschrift entfernt'); refreshSigPreview(); };
+
+    // Scanner
+    const scannerInput = el('input', { type: 'text', value: au.scannerUrl || '', placeholder: 'z. B. http://192.168.1.30' });
+    scannerInput.oninput = () => { au.scannerUrl = scannerInput.value.trim(); };
+    scannerInput.onchange = () => store.saveSettings(settings);
+    const scannerStatus = el('div', { class: 'help', style: 'margin-top:6px;' }, '');
+    const scannerList = el('div', { style: 'margin-top:6px;' });
+    const onDiscover = async () => {
+      scannerStatus.textContent = 'Suche Scanner im Netzwerk…'; scannerStatus.style.color = '';
+      scannerList.innerHTML = '';
+      try {
+        const found = await GR.api.listScanners();
+        if (!found.length) { scannerStatus.textContent = 'Keine Scanner gefunden. URL bitte manuell eintragen.'; return; }
+        scannerStatus.textContent = `${found.length} Scanner gefunden:`; scannerStatus.style.color = '#2f855a';
+        for (const sc of found) {
+          scannerList.appendChild(el('div', { class: 'toolbar', style: 'margin:4px 0;' }, [
+            el('span', { style: 'align-self:center;' }, `${sc.name} (${sc.url})`),
+            el('button', { class: 'btn-sm', onClick: () => { au.scannerUrl = sc.url; scannerInput.value = sc.url; store.saveSettings(settings); toast('Scanner übernommen'); } }, 'Auswählen'),
+          ]));
+        }
+      } catch (e) { scannerStatus.textContent = 'Fehler: ' + e.message; scannerStatus.style.color = '#c53030'; }
+    };
+    const onTestScanner = async () => {
+      if (!au.scannerUrl) { scannerStatus.textContent = 'Bitte zuerst eine Scanner-URL eintragen.'; scannerStatus.style.color = '#c53030'; return; }
+      scannerStatus.textContent = 'Teste Verbindung…'; scannerStatus.style.color = '';
+      try {
+        const res = await GR.api.scanHealth(au.scannerUrl);
+        scannerStatus.textContent = res.ok ? 'Scanner erreichbar ✓' : 'Fehler: ' + (res.error || 'unbekannt');
+        scannerStatus.style.color = res.ok ? '#2f855a' : '#c53030';
+      } catch (e) { scannerStatus.textContent = 'Fehler: ' + e.message; scannerStatus.style.color = '#c53030'; }
+    };
+
+    mount.appendChild(el('div', { class: 'card' }, [
+      el('h3', {}, 'Bargeldauslagen'),
+      el('p', { class: 'help' }, 'Absenderangaben und Namen für das Bar-Auslage-Formular, Bürgermeister-Unterschrift und der Netzwerkscanner.'),
+      el('div', { class: 'grid-2' }, [
+        el('div', {}, [el('label', {}, 'Ortsgemeinde'), bindAu('ortsgemeinde')]),
+        el('div', {}, [el('label', {}, 'Quittungs-Ort (z. B. Kelberg)'), bindAu('quittungOrt')]),
+        el('div', {}, [el('label', {}, 'Name Bürgermeister (unter der Linie)'), bindAu('buergermeisterName')]),
+        el('div', {}, [el('label', {}, 'Name Ortsbeigeordneter (unter der Linie)'), bindAu('ortsbeigeordneterName')]),
+      ]),
+      el('h4', { style: 'margin:14px 0 4px;' }, 'Unterschrift Bürgermeister'),
+      el('p', { class: 'help' }, 'Wird automatisch über die Bürgermeister-Linie ins PDF gesetzt. PNG mit transparentem Hintergrund empfohlen.'),
+      sigPreview,
+      el('div', { class: 'toolbar' }, [
+        el('button', { class: 'btn-primary', onClick: onUploadSig }, 'Unterschrift hochladen…'),
+        el('button', { onClick: onResetSig }, 'Entfernen'),
+      ]),
+      el('h4', { style: 'margin:14px 0 4px;' }, 'Netzwerkscanner (eSCL/AirScan)'),
+      el('p', { class: 'help' }, 'Scanner automatisch suchen und als Standard übernehmen oder die URL manuell eintragen. Beim Scannen werden die Seiten als Belege angelegt.'),
+      el('label', {}, 'Scanner-URL'),
+      scannerInput,
+      el('div', { class: 'toolbar', style: 'margin-top:8px;' }, [
+        el('button', { class: 'btn-primary', onClick: onDiscover }, 'Scanner im Netzwerk suchen'),
+        el('button', { onClick: onTestScanner }, 'Scanner testen'),
+      ]),
+      scannerStatus,
+      scannerList,
     ]));
 
     mount.appendChild(el('div', { class: 'card' }, [

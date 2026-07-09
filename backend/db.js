@@ -57,7 +57,38 @@ db.exec(`
     last_modified TEXT NOT NULL
   );
   CREATE INDEX IF NOT EXISTS idx_verm_modified ON vermietungen(last_modified);
+
+  -- Modul Bargeldauslagen (Empfänger, Haushaltsstellen, Auslagen)
+  CREATE TABLE IF NOT EXISTS empfaenger (
+    id           TEXT PRIMARY KEY,
+    payload      TEXT NOT NULL,
+    last_modified TEXT NOT NULL
+  );
+  CREATE TABLE IF NOT EXISTS haushaltsstellen (
+    id           TEXT PRIMARY KEY,
+    payload      TEXT NOT NULL,
+    last_modified TEXT NOT NULL
+  );
+  CREATE TABLE IF NOT EXISTS auslagen (
+    id           TEXT PRIMARY KEY,
+    payload      TEXT NOT NULL,
+    last_modified TEXT NOT NULL
+  );
+  CREATE INDEX IF NOT EXISTS idx_auslagen_modified ON auslagen(last_modified);
+  -- Beleg-Scans zu Auslagen (analog attachments, aber an auslage_id gebunden)
+  CREATE TABLE IF NOT EXISTS beleg_files (
+    id          TEXT PRIMARY KEY,
+    auslage_id  TEXT NOT NULL,
+    filename    TEXT NOT NULL,
+    mimetype    TEXT NOT NULL,
+    size        INTEGER NOT NULL,
+    uploaded_at TEXT NOT NULL
+  );
+  CREATE INDEX IF NOT EXISTS idx_beleg_auslage ON beleg_files(auslage_id);
 `);
+
+const BELEG_DIR = path.join(ATTACH_DIR, 'auslagen');
+fs.mkdirSync(BELEG_DIR, { recursive: true });
 
 function nowIso() { return new Date().toISOString(); }
 
@@ -160,6 +191,61 @@ const getVermietung = (id) => vermietungenStore.get(id);
 const saveVermietung = (v) => vermietungenStore.save(v);
 const deleteVermietung = (id) => vermietungenStore.delete(id);
 
+// --- Modul Bargeldauslagen ---
+const empfaengerStore = makePayloadStore('empfaenger');
+const haushaltsstellenStore = makePayloadStore('haushaltsstellen');
+const auslagenStore = makePayloadStore('auslagen');
+
+const listEmpfaenger = () => empfaengerStore.list();
+const getEmpfaenger = (id) => empfaengerStore.get(id);
+const saveEmpfaenger = (e) => empfaengerStore.save(e);
+const deleteEmpfaenger = (id) => empfaengerStore.delete(id);
+
+const listHaushaltsstellen = () => haushaltsstellenStore.list();
+const getHaushaltsstelle = (id) => haushaltsstellenStore.get(id);
+const saveHaushaltsstelle = (h) => haushaltsstellenStore.save(h);
+const deleteHaushaltsstelle = (id) => haushaltsstellenStore.delete(id);
+
+const listAuslagen = () => auslagenStore.list();
+const getAuslage = (id) => auslagenStore.get(id);
+const saveAuslage = (a) => auslagenStore.save(a);
+function deleteAuslage(id) {
+  // Beleg-Scans auf Disk wegräumen
+  const dir = path.join(BELEG_DIR, id);
+  if (fs.existsSync(dir)) fs.rmSync(dir, { recursive: true, force: true });
+  db.prepare('DELETE FROM beleg_files WHERE auslage_id = ?').run(id);
+  auslagenStore.delete(id);
+}
+
+// --- Beleg-Dateien (Scans zu einer Auslage) ---
+function listBelegFiles(auslageId) {
+  return db.prepare('SELECT id, auslage_id AS auslageId, filename, mimetype, size, uploaded_at AS uploadedAt FROM beleg_files WHERE auslage_id = ? ORDER BY uploaded_at ASC').all(auslageId);
+}
+function getBelegFile(id) {
+  return db.prepare('SELECT id, auslage_id AS auslageId, filename, mimetype, size, uploaded_at AS uploadedAt FROM beleg_files WHERE id = ?').get(id);
+}
+function belegFilePath(auslageId, id) {
+  return path.join(BELEG_DIR, auslageId, id);
+}
+function ensureBelegDir(auslageId) {
+  const dir = path.join(BELEG_DIR, auslageId);
+  fs.mkdirSync(dir, { recursive: true });
+  return dir;
+}
+function insertBelegFile({ id, auslageId, filename, mimetype, size }) {
+  db.prepare('INSERT INTO beleg_files (id, auslage_id, filename, mimetype, size, uploaded_at) VALUES (?, ?, ?, ?, ?, ?)')
+    .run(id, auslageId, filename, mimetype, size, nowIso());
+  return getBelegFile(id);
+}
+function deleteBelegFile(id) {
+  const f = getBelegFile(id);
+  if (!f) return null;
+  const p = belegFilePath(f.auslageId, id);
+  if (fs.existsSync(p)) fs.unlinkSync(p);
+  db.prepare('DELETE FROM beleg_files WHERE id = ?').run(id);
+  return f;
+}
+
 // Beim ersten Start die beiden Standard-Objekte anlegen (Preise aus den Vorlagen).
 function seedRaeume() {
   if (raeumeStore.list().length > 0) return;
@@ -220,7 +306,7 @@ function deleteAttachment(id) {
 }
 
 module.exports = {
-  DATA_DIR, ATTACH_DIR,
+  DATA_DIR, ATTACH_DIR, BELEG_DIR,
   listSitzungen, getSitzung, saveSitzung, deleteSitzung,
   listMitglieder, getMitglied, saveMitglied, deleteMitglied,
   getSettings, saveSettings,
@@ -229,4 +315,9 @@ module.exports = {
   listMieter, getMieter, saveMieter, deleteMieter,
   listRaeume, getRaum, saveRaum, deleteRaum,
   listVermietungen, getVermietung, saveVermietung, deleteVermietung,
+  listEmpfaenger, getEmpfaenger, saveEmpfaenger, deleteEmpfaenger,
+  listHaushaltsstellen, getHaushaltsstelle, saveHaushaltsstelle, deleteHaushaltsstelle,
+  listAuslagen, getAuslage, saveAuslage, deleteAuslage,
+  listBelegFiles, getBelegFile, belegFilePath, ensureBelegDir,
+  insertBelegFile, deleteBelegFile,
 };

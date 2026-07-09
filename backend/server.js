@@ -11,6 +11,8 @@ const { WebSocketServer } = require('ws');
 const db = require('./db');
 const dokumenteRouter = require('./routes/dokumente');
 const createVermietungRouter = require('./routes/vermietung');
+const createAuslagenRouter = require('./routes/auslagen');
+const createScanRouter = require('./routes/scan');
 
 const PORT = parseInt(process.env.PORT || '3000', 10);
 const HOST = process.env.HOST || '127.0.0.1';
@@ -43,6 +45,10 @@ app.use('/api/dokumente', dokumenteRouter);
 // --- Modul: Vermietung (Gemeindehaus & Jugendraum) ---
 app.use('/api', createVermietungRouter(broadcast));
 
+// --- Modul: Bargeldauslagen ---
+app.use('/api', createAuslagenRouter(broadcast));
+app.use('/api/scan', createScanRouter(broadcast));
+
 // --- Snapshot (Bootstrap) ---
 app.get('/api/snapshot', (_req, res) => {
   res.json({
@@ -53,6 +59,10 @@ app.get('/api/snapshot', (_req, res) => {
     mieter: db.listMieter(),
     raeume: db.listRaeume(),
     vermietungen: db.listVermietungen(),
+    empfaenger: db.listEmpfaenger(),
+    haushaltsstellen: db.listHaushaltsstellen(),
+    auslagen: db.listAuslagen(),
+    belege: groupBelege(),
     serverTime: new Date().toISOString(),
   });
 });
@@ -62,6 +72,15 @@ function groupAttachments() {
   for (const s of db.listSitzungen()) {
     const atts = db.listAttachments(s.id);
     if (atts.length) grouped[s.id] = atts;
+  }
+  return grouped;
+}
+
+function groupBelege() {
+  const grouped = {};
+  for (const a of db.listAuslagen()) {
+    const files = db.listBelegFiles(a.id);
+    if (files.length) grouped[a.id] = files;
   }
   return grouped;
 }

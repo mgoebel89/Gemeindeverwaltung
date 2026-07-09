@@ -12,6 +12,10 @@
     mieter: [],           // [{...}]
     raeume: [],           // [{...}]
     vermietungen: [],     // [{...}]
+    empfaenger: [],       // [{...}]
+    haushaltsstellen: [], // [{...}]
+    auslagen: [],         // [{...}]
+    belege: {},           // auslageId -> [{id, filename, ...}]
     ready: false,
     backendAvailable: false,
   };
@@ -88,6 +92,7 @@
       autoSync: true,
       autoSyncIntervalSec: 60,
       vermietung: defaultVermietungSettings(),
+      auslagen: defaultAuslagenSettings(),
     };
   }
   function defaultNocoDbSettings() {
@@ -97,6 +102,19 @@
       tableSitzungenId: '', tableBeschluesseId: '', tableMitgliederId: '',
       tableMieterName: 'Mieter', tableRaeumeName: 'Raeume', tableVermietungenName: 'Vermietungen',
       tableMieterId: '', tableRaeumeId: '', tableVermietungenId: '',
+      tableEmpfaengerName: 'Empfaenger', tableHaushaltsstellenName: 'Haushaltsstellen', tableAuslagenName: 'Auslagen',
+      tableEmpfaengerId: '', tableHaushaltsstellenId: '', tableAuslagenId: '',
+    };
+  }
+  // Absender-/Formulardaten für die Bargeldauslagen-PDFs (Defaults aus der Vorlage Hörschhausen).
+  function defaultAuslagenSettings() {
+    return {
+      ortsgemeinde: 'Hörschhausen',
+      buergermeisterName: 'M. Göbel',
+      ortsbeigeordneterName: 'C. Arenz',
+      quittungOrt: 'Kelberg',
+      unterschriftDataUrl: '',
+      scannerUrl: '',
     };
   }
   // Absender-/Vertragsdaten für die PDFs (Defaults aus der Mietvertrag-Vorlage Hörschhausen).
@@ -123,6 +141,10 @@
       cache.mieter = snap.mieter || [];
       cache.raeume = snap.raeume || [];
       cache.vermietungen = snap.vermietungen || [];
+      cache.empfaenger = snap.empfaenger || [];
+      cache.haushaltsstellen = snap.haushaltsstellen || [];
+      cache.auslagen = snap.auslagen || [];
+      cache.belege = snap.belege || {};
       cache.backendAvailable = true;
       cache.ready = true;
       mergeSettingsDefaults();
@@ -149,13 +171,19 @@
     if (cache.settings.autoSyncIntervalSec === undefined) cache.settings.autoSyncIntervalSec = 60;
     // NocoDB-Defaults für neue Tabellen nachziehen (Bestandsinstallationen)
     const dn = defaultNocoDbSettings();
-    for (const k of ['tableMieterName', 'tableRaeumeName', 'tableVermietungenName', 'tableMieterId', 'tableRaeumeId', 'tableVermietungenId']) {
+    for (const k of ['tableMieterName', 'tableRaeumeName', 'tableVermietungenName', 'tableMieterId', 'tableRaeumeId', 'tableVermietungenId',
+      'tableEmpfaengerName', 'tableHaushaltsstellenName', 'tableAuslagenName', 'tableEmpfaengerId', 'tableHaushaltsstellenId', 'tableAuslagenId']) {
       if (cache.settings.nocodb[k] === undefined) cache.settings.nocodb[k] = dn[k];
     }
     if (!cache.settings.vermietung) cache.settings.vermietung = defaultVermietungSettings();
     else {
       const dv = defaultVermietungSettings();
       for (const k of Object.keys(dv)) if (cache.settings.vermietung[k] === undefined) cache.settings.vermietung[k] = dv[k];
+    }
+    if (!cache.settings.auslagen) cache.settings.auslagen = defaultAuslagenSettings();
+    else {
+      const da = defaultAuslagenSettings();
+      for (const k of Object.keys(da)) if (cache.settings.auslagen[k] === undefined) cache.settings.auslagen[k] = da[k];
     }
   }
 
@@ -218,6 +246,24 @@
       case 'raum:delete': { cache.raeume = cache.raeume.filter(x => x.id !== msg.id); notifyChange(); notifyRemote(); break; }
       case 'vermietung:save': { upsertInto(cache.vermietungen, msg.vermietung); notifyChange(); notifyRemote(); break; }
       case 'vermietung:delete': { cache.vermietungen = cache.vermietungen.filter(x => x.id !== msg.id); notifyChange(); notifyRemote(); break; }
+      case 'empfaenger:save': { upsertInto(cache.empfaenger, msg.empfaenger); notifyChange(); notifyRemote(); break; }
+      case 'empfaenger:delete': { cache.empfaenger = cache.empfaenger.filter(x => x.id !== msg.id); notifyChange(); notifyRemote(); break; }
+      case 'haushaltsstelle:save': { upsertInto(cache.haushaltsstellen, msg.haushaltsstelle); notifyChange(); notifyRemote(); break; }
+      case 'haushaltsstelle:delete': { cache.haushaltsstellen = cache.haushaltsstellen.filter(x => x.id !== msg.id); notifyChange(); notifyRemote(); break; }
+      case 'auslage:save': { upsertInto(cache.auslagen, msg.auslage); notifyChange(); notifyRemote(); break; }
+      case 'auslage:delete': { cache.auslagen = cache.auslagen.filter(x => x.id !== msg.id); delete cache.belege[msg.id]; notifyChange(); notifyRemote(); break; }
+      case 'beleg:add': {
+        const b = msg.beleg;
+        if (!cache.belege[b.auslageId]) cache.belege[b.auslageId] = [];
+        if (!cache.belege[b.auslageId].some(x => x.id === b.id)) cache.belege[b.auslageId].push(b);
+        notifyChange(); notifyRemote();
+        break;
+      }
+      case 'beleg:delete': {
+        if (cache.belege[msg.auslageId]) cache.belege[msg.auslageId] = cache.belege[msg.auslageId].filter(f => f.id !== msg.id);
+        notifyChange(); notifyRemote();
+        break;
+      }
       case 'bulk:imported': {
         // Komplettes Re-Bootstrap, damit alle Daten konsistent kommen
         bootstrap();
@@ -362,6 +408,78 @@
       notifyChange();
     },
 
+    // --- Empfänger (Bargeldauslagen) ---
+    listEmpfaenger() { return cache.empfaenger.slice(); },
+    getEmpfaenger(id) { return cache.empfaenger.find(e => e.id === id) || null; },
+    saveEmpfaenger(e) {
+      e.lastModifiedAt = nowIso();
+      upsertInto(cache.empfaenger, e);
+      GR.api.putEmpfaenger(e).catch(err => { console.warn('saveEmpfaenger Backend-Fehler', err); if (GR.ui && GR.ui.toast) GR.ui.toast('Backend-Fehler: ' + err.message, 4000); });
+      notifyChange();
+    },
+    deleteEmpfaenger(id) {
+      cache.empfaenger = cache.empfaenger.filter(e => e.id !== id);
+      GR.api.deleteEmpfaengerRemote(id).catch(e => console.warn('deleteEmpfaenger Backend-Fehler', e));
+      notifyChange();
+    },
+
+    // --- Haushaltsstellen ---
+    listHaushaltsstellen() { return cache.haushaltsstellen.slice(); },
+    getHaushaltsstelle(id) { return cache.haushaltsstellen.find(h => h.id === id) || null; },
+    saveHaushaltsstelle(h) {
+      h.lastModifiedAt = nowIso();
+      upsertInto(cache.haushaltsstellen, h);
+      GR.api.putHaushaltsstelle(h).catch(err => { console.warn('saveHaushaltsstelle Backend-Fehler', err); if (GR.ui && GR.ui.toast) GR.ui.toast('Backend-Fehler: ' + err.message, 4000); });
+      notifyChange();
+    },
+    deleteHaushaltsstelle(id) {
+      cache.haushaltsstellen = cache.haushaltsstellen.filter(h => h.id !== id);
+      GR.api.deleteHaushaltsstelleRemote(id).catch(e => console.warn('deleteHaushaltsstelle Backend-Fehler', e));
+      notifyChange();
+    },
+
+    // --- Auslagen ---
+    listAuslagen() { return cache.auslagen.slice(); },
+    getAuslage(id) { return cache.auslagen.find(a => a.id === id) || null; },
+    saveAuslage(a) {
+      a.lastModifiedAt = nowIso();
+      upsertInto(cache.auslagen, a);
+      GR.api.putAuslage(a).catch(err => { console.warn('saveAuslage Backend-Fehler', err); if (GR.ui && GR.ui.toast) GR.ui.toast('Backend-Fehler: ' + err.message, 4000); });
+      notifyChange();
+    },
+    deleteAuslage(id) {
+      cache.auslagen = cache.auslagen.filter(a => a.id !== id);
+      delete cache.belege[id];
+      GR.api.deleteAuslageRemote(id).catch(e => console.warn('deleteAuslage Backend-Fehler', e));
+      notifyChange();
+    },
+
+    // --- Belege (Scan-Dateien zu einer Auslage; async) ---
+    listBelegFiles(auslageId) { return (cache.belege[auslageId] || []).slice(); },
+    getBelegFile(auslageId, fileId) { return (cache.belege[auslageId] || []).find(f => f.id === fileId) || null; },
+    async uploadBeleg(auslageId, file) {
+      const rec = await GR.api.uploadBeleg(auslageId, file);
+      if (!cache.belege[auslageId]) cache.belege[auslageId] = [];
+      cache.belege[auslageId].push(rec);
+      notifyChange();
+      return rec;
+    },
+    async scanBeleg(auslageId, scannerUrl, source) {
+      const recs = await GR.api.scan(auslageId, scannerUrl, source);
+      if (!cache.belege[auslageId]) cache.belege[auslageId] = [];
+      for (const rec of (recs || [])) {
+        if (!cache.belege[auslageId].some(f => f.id === rec.id)) cache.belege[auslageId].push(rec);
+      }
+      notifyChange();
+      return recs || [];
+    },
+    async deleteBelegFile(auslageId, fileId) {
+      await GR.api.deleteBelegFile(fileId);
+      if (cache.belege[auslageId]) cache.belege[auslageId] = cache.belege[auslageId].filter(f => f.id !== fileId);
+      notifyChange();
+    },
+    belegUrl(fileId) { return GR.api.belegUrl(fileId); },
+
     // --- Sync-Queue (NocoDB-Backup; bleibt im localStorage als Browser-eigener Cache) ---
     listQueue() { try { return JSON.parse(localStorage.getItem('gr.syncQueue') || '[]'); } catch (_) { return []; } },
     enqueueSync(sitzungId, lastError) {
@@ -386,7 +504,7 @@
       let s;
       try { s = JSON.parse(localStorage.getItem('gr.syncState') || '{}'); }
       catch (_) { s = {}; }
-      for (const k of ['sitzungen', 'mitglieder', 'mieter', 'raeume', 'vermietungen']) {
+      for (const k of ['sitzungen', 'mitglieder', 'mieter', 'raeume', 'vermietungen', 'empfaenger', 'haushaltsstellen', 'auslagen']) {
         if (!s[k] || typeof s[k] !== 'object') s[k] = {};
       }
       return s;
