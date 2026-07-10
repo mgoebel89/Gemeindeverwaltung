@@ -37,8 +37,17 @@
       el('button', { class: 'btn-primary', onClick: () => onNew() }, '+ Neuer Vertrag'),
     ]));
 
-    mount.appendChild(el('h2', {}, 'Verträge und Pacht'));
-    mount.appendChild(el('p', { class: 'help' }, 'Überblick über laufende Verträge, Kosten/Einnahmen und anstehende Kündigungsfristen.'));
+    const settingsForLogo = store.getSettings();
+    const wappenSrc = (settingsForLogo && settingsForLogo.wappenDataUrl) ? settingsForLogo.wappenDataUrl : 'assets/wappen.png';
+    const wappen = el('img', { src: wappenSrc, alt: 'Gemeindewappen', style: 'height:72px; width:auto; flex:0 0 auto;' });
+    wappen.addEventListener('error', () => { wappen.style.display = 'none'; });
+    mount.appendChild(el('div', { style: 'display:flex; align-items:flex-start; justify-content:space-between; gap:16px;' }, [
+      el('div', {}, [
+        el('h2', { style: 'margin-top:0;' }, 'Verträge und Pacht'),
+        el('p', { class: 'help', style: 'margin-bottom:0;' }, 'Überblick über laufende Verträge, Kosten/Einnahmen und anstehende Kündigungsfristen.'),
+      ]),
+      wappen,
+    ]));
 
     // --- Kennzahlen ---
     const aktive = vertraege.filter(v => v.status === 'aktiv');
