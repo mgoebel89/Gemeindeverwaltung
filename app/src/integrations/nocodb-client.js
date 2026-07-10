@@ -81,6 +81,8 @@
     resolve('tableEmpfaengerName', 'tableEmpfaengerId');
     resolve('tableHaushaltsstellenName', 'tableHaushaltsstellenId');
     resolve('tableAuslagenName', 'tableAuslagenId');
+    resolve('tableVertragspartnerName', 'tableVertragspartnerId');
+    resolve('tableVertraegeName', 'tableVertraegeId');
     if (updated) store.saveSettings(s);
     return { tables, count: tables.length };
   }
@@ -187,6 +189,35 @@
     { title: 'Payload', uidt: 'LongText' },
   ];
 
+  const VERTRAGSPARTNER_COLUMNS = [
+    { title: 'PartnerId', uidt: 'SingleLineText' },
+    { title: 'Name', uidt: 'SingleLineText' },
+    { title: 'Ansprechpartner', uidt: 'SingleLineText' },
+    { title: 'Telefon', uidt: 'SingleLineText' },
+    { title: 'Email', uidt: 'SingleLineText' },
+    { title: 'Anschrift', uidt: 'LongText' },
+    { title: 'LastModifiedAt', uidt: 'SingleLineText' },
+    { title: 'Payload', uidt: 'LongText' },
+  ];
+  const VERTRAEGE_COLUMNS = [
+    { title: 'VertragId', uidt: 'SingleLineText' },
+    { title: 'Bezeichnung', uidt: 'SingleLineText' },
+    { title: 'Kategorie', uidt: 'SingleLineText' },
+    { title: 'Richtung', uidt: 'SingleLineText' },
+    { title: 'Partner', uidt: 'SingleLineText' },
+    { title: 'Betrag', uidt: 'Number' },
+    { title: 'Intervall', uidt: 'SingleLineText' },
+    { title: 'Jahresbetrag', uidt: 'Number' },
+    { title: 'Beginn', uidt: 'Date' },
+    { title: 'Ende', uidt: 'Date' },
+    { title: 'KuendigungBis', uidt: 'Date' },
+    { title: 'KuendigungsfristMonate', uidt: 'Number' },
+    { title: 'Status', uidt: 'SingleLineText' },
+    { title: 'AnzahlDokumente', uidt: 'Number' },
+    { title: 'LastModifiedAt', uidt: 'SingleLineText' },
+    { title: 'Payload', uidt: 'LongText' },
+  ];
+
   async function createTable(title, columns) {
     const s = settings();
     const body = { table_name: title, title, columns };
@@ -240,6 +271,8 @@
     await ensureTable(s.nocodb.tableEmpfaengerName || 'Empfaenger', EMPFAENGER_COLUMNS, 'tableEmpfaengerId');
     await ensureTable(s.nocodb.tableHaushaltsstellenName || 'Haushaltsstellen', HAUSHALTSSTELLEN_COLUMNS, 'tableHaushaltsstellenId');
     await ensureTable(s.nocodb.tableAuslagenName || 'Auslagen', AUSLAGEN_COLUMNS, 'tableAuslagenId');
+    await ensureTable(s.nocodb.tableVertragspartnerName || 'Vertragspartner', VERTRAGSPARTNER_COLUMNS, 'tableVertragspartnerId');
+    await ensureTable(s.nocodb.tableVertraegeName || 'Vertraege', VERTRAEGE_COLUMNS, 'tableVertraegeId');
 
     store.saveSettings(s);
     return log;
@@ -479,6 +512,46 @@
     return { auslagen: 1 };
   }
 
+  // --- Modul Verträge und Pacht: Row-Builder + Sync ---
+  function isoDateOrNull(d) { return d ? GR.models.dateToIso(d) : null; }
+  function buildVertragspartnerRow(p) {
+    return {
+      PartnerId: p.id, Name: p.name || '', Ansprechpartner: p.ansprechpartner || '',
+      Telefon: p.telefon || '', Email: p.email || '', Anschrift: p.anschrift || '',
+      LastModifiedAt: p.lastModifiedAt || '', Payload: JSON.stringify(p),
+    };
+  }
+  function buildVertragRow(v) {
+    const partner = store.getVertragspartner(v.partnerId);
+    const termin = GR.models.spaetesterKuendigungstermin(v);
+    return {
+      VertragId: v.id,
+      Bezeichnung: v.bezeichnung || '',
+      Kategorie: v.kategorie || '',
+      Richtung: GR.models.RICHTUNG_LABEL[v.richtung] || v.richtung || '',
+      Partner: partner ? partner.name : '',
+      Betrag: Number(v.betrag) || 0,
+      Intervall: v.intervall || '',
+      Jahresbetrag: GR.models.jahresbetrag(v),
+      Beginn: v.beginn || null,
+      Ende: v.ende || null,
+      KuendigungBis: isoDateOrNull(termin),
+      KuendigungsfristMonate: Number(v.kuendigungsfristMonate) || 0,
+      Status: v.status || '',
+      AnzahlDokumente: (v.paperlessDocs || []).length,
+      LastModifiedAt: v.lastModifiedAt || '',
+      Payload: JSON.stringify(v),
+    };
+  }
+  async function syncVertragspartner(p) {
+    await upsertRecord(await ensureTableId('tableVertragspartnerId', 'Vertragspartner'), 'PartnerId', buildVertragspartnerRow(p));
+    return { vertragspartner: 1 };
+  }
+  async function syncVertrag(v) {
+    await upsertRecord(await ensureTableId('tableVertraegeId', 'Vertraege'), 'VertragId', buildVertragRow(v));
+    return { vertraege: 1 };
+  }
+
   async function syncQueue() {
     const queue = store.listQueue();
     let ok = 0, fail = 0;
@@ -575,6 +648,8 @@
     syncEmpfaenger,
     syncHaushaltsstelle,
     syncAuslage,
+    syncVertragspartner,
+    syncVertrag,
     syncQueue,
     restoreFromNocoDb,
     isConfigured,

@@ -394,6 +394,33 @@
       scannerList,
     ]));
 
+    // --- Verträge und Pacht: Standardwerte + Kategorien ---
+    const vt = settings.vertraege;
+    const bindVtNum = (key) => {
+      const i = el('input', { type: 'number', min: '0', value: vt[key] != null ? vt[key] : 0, style: 'width:120px;' });
+      i.oninput = e => { vt[key] = e.target.value === '' ? 0 : Number(e.target.value); };
+      i.onchange = () => store.saveSettings(settings);
+      return i;
+    };
+    const kategorienInput = el('textarea', { style: 'width:100%;' }, (vt.kategorien || []).join('\n'));
+    kategorienInput.oninput = e => {
+      vt.kategorien = e.target.value.split('\n').map(s => s.trim()).filter(Boolean);
+    };
+    kategorienInput.onchange = () => store.saveSettings(settings);
+
+    mount.appendChild(el('div', { class: 'card' }, [
+      el('h3', {}, 'Verträge und Pacht'),
+      el('p', { class: 'help' }, 'Vorgaben für neue Verträge und die Auswahlliste der Kategorien.'),
+      el('div', { class: 'grid-2' }, [
+        el('div', {}, [el('label', {}, 'Standard-Erinnerung (Tage vor Kündigungstermin)'), bindVtNum('standardVorlaufTage')]),
+        el('div', {}, [el('label', {}, 'Standard-Kündigungsfrist (Monate)'), bindVtNum('standardKuendigungsfristMonate')]),
+      ]),
+      el('div', { style: 'margin-top:10px;' }, [
+        el('label', {}, 'Kategorien (eine pro Zeile)'),
+        kategorienInput,
+      ]),
+    ]));
+
     mount.appendChild(el('div', { class: 'card' }, [
       el('h3', {}, 'Backup'),
       el('p', { class: 'help' }, 'Sichern Sie regelmäßig den gesamten Datenbestand als JSON. Sie können diese Datei jederzeit wieder einspielen — z. B. nach Browserwechsel.'),

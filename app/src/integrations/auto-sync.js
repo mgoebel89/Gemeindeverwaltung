@@ -43,6 +43,8 @@
     for (const e of store.listEmpfaenger()) if (store.isDirty('empfaenger', e)) n++;
     for (const h of store.listHaushaltsstellen()) if (store.isDirty('haushaltsstellen', h)) n++;
     for (const a of store.listAuslagen()) if (store.isDirty('auslagen', a)) n++;
+    for (const p of store.listVertragspartner()) if (store.isDirty('vertragspartner', p)) n++;
+    for (const v of store.listVertraege()) if (store.isDirty('vertraege', v)) n++;
     return n;
   }
 
@@ -115,6 +117,8 @@
       { kind: 'empfaenger', list: store.listEmpfaenger(), fn: client.syncEmpfaenger },
       { kind: 'haushaltsstellen', list: store.listHaushaltsstellen(), fn: client.syncHaushaltsstelle },
       { kind: 'auslagen', list: store.listAuslagen(), fn: client.syncAuslage },
+      { kind: 'vertragspartner', list: store.listVertragspartner(), fn: client.syncVertragspartner },
+      { kind: 'vertraege', list: store.listVertraege(), fn: client.syncVertrag },
     ];
     for (const mod of modules) {
       for (const item of mod.list) {

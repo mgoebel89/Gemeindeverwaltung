@@ -17,6 +17,8 @@
     haushaltsstellen: [], // [{...}]
     auslagen: [],         // [{...}]
     belege: {},           // auslageId -> [{id, filename, ...}]
+    vertragspartner: [],  // [{...}]
+    vertraege: [],        // [{...}]
     ready: false,
     backendAvailable: false,
   };
@@ -94,6 +96,7 @@
       autoSyncIntervalSec: 60,
       vermietung: defaultVermietungSettings(),
       auslagen: defaultAuslagenSettings(),
+      vertraege: defaultVertraegeSettings(),
     };
   }
   function defaultNocoDbSettings() {
@@ -105,6 +108,8 @@
       tableMieterId: '', tableRaeumeId: '', tableVermietungenId: '',
       tableEmpfaengerName: 'Empfaenger', tableHaushaltsstellenName: 'Haushaltsstellen', tableAuslagenName: 'Auslagen',
       tableEmpfaengerId: '', tableHaushaltsstellenId: '', tableAuslagenId: '',
+      tableVertragspartnerName: 'Vertragspartner', tableVertraegeName: 'Vertraege',
+      tableVertragspartnerId: '', tableVertraegeId: '',
     };
   }
   // Absender-/Formulardaten für die Bargeldauslagen-PDFs (Defaults aus der Vorlage Hörschhausen).
@@ -130,6 +135,15 @@
       vgEmpfaenger: 'Verbandsgemeindeverwaltung Kelberg\nFachbereich Finanzen und Abgaben\nDauner Straße 22\n53539 Kelberg',
     };
   }
+  // Modul-Einstellungen „Verträge und Pacht": Standardwerte für neue Verträge
+  // und die editierbare Kategorienliste.
+  function defaultVertraegeSettings() {
+    return {
+      standardVorlaufTage: 30,
+      standardKuendigungsfristMonate: 3,
+      kategorien: ['Pacht', 'Wartung', 'Versicherung', 'Energie', 'Dienstleistung', 'Miete', 'Sonstiges'],
+    };
+  }
 
   // ----- Bootstrap (Snapshot vom Backend) -----
   async function bootstrap() {
@@ -147,6 +161,8 @@
       cache.haushaltsstellen = snap.haushaltsstellen || [];
       cache.auslagen = snap.auslagen || [];
       cache.belege = snap.belege || {};
+      cache.vertragspartner = snap.vertragspartner || [];
+      cache.vertraege = snap.vertraege || [];
       cache.backendAvailable = true;
       cache.ready = true;
       mergeSettingsDefaults();
@@ -174,7 +190,8 @@
     // NocoDB-Defaults für neue Tabellen nachziehen (Bestandsinstallationen)
     const dn = defaultNocoDbSettings();
     for (const k of ['tableMieterName', 'tableRaeumeName', 'tableVermietungenName', 'tableMieterId', 'tableRaeumeId', 'tableVermietungenId',
-      'tableEmpfaengerName', 'tableHaushaltsstellenName', 'tableAuslagenName', 'tableEmpfaengerId', 'tableHaushaltsstellenId', 'tableAuslagenId']) {
+      'tableEmpfaengerName', 'tableHaushaltsstellenName', 'tableAuslagenName', 'tableEmpfaengerId', 'tableHaushaltsstellenId', 'tableAuslagenId',
+      'tableVertragspartnerName', 'tableVertraegeName', 'tableVertragspartnerId', 'tableVertraegeId']) {
       if (cache.settings.nocodb[k] === undefined) cache.settings.nocodb[k] = dn[k];
     }
     if (!cache.settings.vermietung) cache.settings.vermietung = defaultVermietungSettings();
@@ -186,6 +203,11 @@
     else {
       const da = defaultAuslagenSettings();
       for (const k of Object.keys(da)) if (cache.settings.auslagen[k] === undefined) cache.settings.auslagen[k] = da[k];
+    }
+    if (!cache.settings.vertraege) cache.settings.vertraege = defaultVertraegeSettings();
+    else {
+      const dvt = defaultVertraegeSettings();
+      for (const k of Object.keys(dvt)) if (cache.settings.vertraege[k] === undefined) cache.settings.vertraege[k] = dvt[k];
     }
   }
 
@@ -278,6 +300,10 @@
         notifyChange(); notifyRemote();
         break;
       }
+      case 'vertragspartner:save': { upsertInto(cache.vertragspartner, msg.vertragspartner); notifyChange(); notifyRemote(); break; }
+      case 'vertragspartner:delete': { cache.vertragspartner = cache.vertragspartner.filter(x => x.id !== msg.id); notifyChange(); notifyRemote(); break; }
+      case 'vertrag:save': { upsertInto(cache.vertraege, msg.vertrag); notifyChange(); notifyRemote(); break; }
+      case 'vertrag:delete': { cache.vertraege = cache.vertraege.filter(x => x.id !== msg.id); notifyChange(); notifyRemote(); break; }
       case 'bulk:imported': {
         // Komplettes Re-Bootstrap, damit alle Daten konsistent kommen
         bootstrap();
@@ -512,6 +538,36 @@
     },
     belegUrl(fileId) { return GR.api.belegUrl(fileId); },
 
+    // --- Vertragspartner (Modul Verträge) ---
+    listVertragspartner() { return cache.vertragspartner.slice(); },
+    getVertragspartner(id) { return cache.vertragspartner.find(p => p.id === id) || null; },
+    saveVertragspartner(p) {
+      p.lastModifiedAt = nowIso();
+      upsertInto(cache.vertragspartner, p);
+      GR.api.putVertragspartner(p).catch(e => { console.warn('saveVertragspartner Backend-Fehler', e); if (GR.ui && GR.ui.toast) GR.ui.toast('Backend-Fehler: ' + e.message, 4000); });
+      notifyChange();
+    },
+    deleteVertragspartner(id) {
+      cache.vertragspartner = cache.vertragspartner.filter(p => p.id !== id);
+      GR.api.deleteVertragspartnerRemote(id).catch(e => console.warn('deleteVertragspartner Backend-Fehler', e));
+      notifyChange();
+    },
+
+    // --- Verträge ---
+    listVertraege() { return cache.vertraege.slice(); },
+    getVertrag(id) { return cache.vertraege.find(v => v.id === id) || null; },
+    saveVertrag(v) {
+      v.lastModifiedAt = nowIso();
+      upsertInto(cache.vertraege, v);
+      GR.api.putVertrag(v).catch(e => { console.warn('saveVertrag Backend-Fehler', e); if (GR.ui && GR.ui.toast) GR.ui.toast('Backend-Fehler: ' + e.message, 4000); });
+      notifyChange();
+    },
+    deleteVertrag(id) {
+      cache.vertraege = cache.vertraege.filter(v => v.id !== id);
+      GR.api.deleteVertragRemote(id).catch(e => console.warn('deleteVertrag Backend-Fehler', e));
+      notifyChange();
+    },
+
     // --- Sync-Queue (NocoDB-Backup; bleibt im localStorage als Browser-eigener Cache) ---
     listQueue() { try { return JSON.parse(localStorage.getItem('gr.syncQueue') || '[]'); } catch (_) { return []; } },
     enqueueSync(sitzungId, lastError) {
@@ -536,7 +592,7 @@
       let s;
       try { s = JSON.parse(localStorage.getItem('gr.syncState') || '{}'); }
       catch (_) { s = {}; }
-      for (const k of ['sitzungen', 'mitglieder', 'mieter', 'raeume', 'vermietungen', 'empfaenger', 'haushaltsstellen', 'auslagen']) {
+      for (const k of ['sitzungen', 'mitglieder', 'mieter', 'raeume', 'vermietungen', 'empfaenger', 'haushaltsstellen', 'auslagen', 'vertragspartner', 'vertraege']) {
         if (!s[k] || typeof s[k] !== 'object') s[k] = {};
       }
       return s;

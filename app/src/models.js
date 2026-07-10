@@ -255,6 +255,121 @@
       .reduce((s, a) => s + gesamtbetrag(a), 0);
   }
 
+  // ===== Modul Verträge und Pacht =====
+  const VERTRAG_RICHTUNGEN = ['ausgabe', 'einnahme'];
+  const VERTRAG_INTERVALLE = ['einmalig', 'monatlich', 'quartalsweise', 'jaehrlich'];
+  const VERTRAG_LAUFZEIT_TYPEN = ['befristet', 'auto_verlaengerung'];
+  const VERTRAG_STATUS = ['aktiv', 'gekuendigt', 'ausgelaufen'];
+
+  const INTERVALL_LABEL = {
+    einmalig: 'einmalig', monatlich: 'monatlich',
+    quartalsweise: 'quartalsweise', jaehrlich: 'jährlich',
+  };
+  const RICHTUNG_LABEL = { ausgabe: 'Ausgabe', einnahme: 'Einnahme' };
+
+  function emptyVertragspartner() {
+    return {
+      id: uuid(), name: '', anschrift: '', ansprechpartner: '',
+      telefon: '', email: '', notiz: '',
+    };
+  }
+
+  function emptyVertrag() {
+    return {
+      id: uuid(),
+      bezeichnung: '',
+      kategorie: 'Sonstiges',
+      richtung: 'ausgabe',            // 'ausgabe' | 'einnahme'
+      partnerId: '',
+      betrag: 0,
+      intervall: 'jaehrlich',         // 'einmalig' | 'monatlich' | 'quartalsweise' | 'jaehrlich'
+      beginn: '',                     // ISO-Datum
+      laufzeitTyp: 'befristet',       // 'befristet' | 'auto_verlaengerung'
+      ende: '',                       // ISO-Datum: festes Ende bzw. nächster Verlängerungsstichtag
+      kuendigungsfristMonate: 3,
+      verlaengerungMonate: 12,        // nur bei auto_verlaengerung relevant
+      erinnerungVorlaufTage: 30,
+      paperlessDocs: [],              // [{ id, title }]
+      status: 'aktiv',               // 'aktiv' | 'gekuendigt' | 'ausgelaufen'
+      notiz: '',
+    };
+  }
+
+  // Betrag aufs Jahr normalisiert. Einmalige Beträge zählen nicht zu den
+  // laufenden Jahreskosten (gesondert ausweisen).
+  function jahresbetrag(v) {
+    const b = Number(v && v.betrag) || 0;
+    switch (v && v.intervall) {
+      case 'monatlich': return b * 12;
+      case 'quartalsweise': return b * 4;
+      case 'jaehrlich': return b;
+      case 'einmalig': return 0;
+      default: return 0;
+    }
+  }
+
+  // Datum n Monate verschieben (ISO 'YYYY-MM-DD' -> Date), robust bei Monatsenden.
+  function addMonths(iso, months) {
+    if (!iso) return null;
+    const d = new Date(iso + 'T00:00:00');
+    if (isNaN(d)) return null;
+    const day = d.getDate();
+    d.setDate(1);
+    d.setMonth(d.getMonth() + months);
+    // Tag zurücksetzen, ohne in den Folgemonat zu springen
+    const lastDay = new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate();
+    d.setDate(Math.min(day, lastDay));
+    return d;
+  }
+
+  // Date -> 'YYYY-MM-DD' anhand LOKALER Komponenten (nicht toISOString, das in
+  // Zeitzonen mit positivem UTC-Offset um einen Tag zurückspringt).
+  function dateToIso(d) {
+    if (!d) return null;
+    const p = n => String(n).padStart(2, '0');
+    return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+  }
+
+  // Spätester Kündigungstermin = Vertragsende minus Kündigungsfrist.
+  // Rückgabe: Date oder null.
+  function spaetesterKuendigungstermin(v) {
+    if (!v || !v.ende) return null;
+    return addMonths(v.ende, -(Number(v.kuendigungsfristMonate) || 0));
+  }
+
+  function daysBetween(a, b) {
+    return Math.round((b.getTime() - a.getTime()) / 86400000);
+  }
+
+  // Ampel-Status für den Fristen-Startbildschirm.
+  //  'ueberfaellig' – Kündigungstermin liegt in der Vergangenheit (noch aktiv)
+  //  'akut'         – innerhalb des vertraglichen Erinnerungsvorlaufs
+  //  'bald'         – innerhalb der nächsten 90 Tage
+  //  'ok'           – weiter entfernt
+  //  null           – kein aktiver Vertrag oder kein Termin
+  function fristStatus(v, today) {
+    if (!v || v.status !== 'aktiv') return null;
+    const termin = spaetesterKuendigungstermin(v);
+    if (!termin) return null;
+    const heute = today ? new Date(today) : new Date();
+    heute.setHours(0, 0, 0, 0);
+    const diff = daysBetween(heute, termin);
+    if (diff < 0) return 'ueberfaellig';
+    const vorlauf = Number(v.erinnerungVorlaufTage) || 0;
+    if (diff <= vorlauf) return 'akut';
+    if (diff <= 90) return 'bald';
+    return 'ok';
+  }
+
+  // Tage bis zum spätesten Kündigungstermin (negativ = überfällig), oder null.
+  function tageBisKuendigung(v, today) {
+    const termin = spaetesterKuendigungstermin(v);
+    if (!termin) return null;
+    const heute = today ? new Date(today) : new Date();
+    heute.setHours(0, 0, 0, 0);
+    return daysBetween(heute, termin);
+  }
+
   GR.models = {
     SCHEMA_VERSION, uuid,
     emptyAbstimmung, emptyTop, emptySitzung,
@@ -265,5 +380,9 @@
     fullNameMieter, anzahlTage, berechneGrundmiete, berechneVerbrauch, berechneGesamt,
     AUSLAGE_STATUS, emptyEmpfaenger, fullNameEmpfaenger, formatIban, emptyHaushaltsstelle,
     emptyBeleg, emptyAuslage, gesamtbetrag, budgetVerbrauch,
+    VERTRAG_RICHTUNGEN, VERTRAG_INTERVALLE, VERTRAG_LAUFZEIT_TYPEN, VERTRAG_STATUS,
+    INTERVALL_LABEL, RICHTUNG_LABEL,
+    emptyVertragspartner, emptyVertrag,
+    jahresbetrag, addMonths, dateToIso, spaetesterKuendigungstermin, fristStatus, tageBisKuendigung,
   };
 })();

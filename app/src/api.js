@@ -116,6 +116,12 @@
   async function scanHealth(url) { return jsonFetch(`/api/scan/health?url=${encodeURIComponent(url)}`); }
   async function scan(auslageId, scannerUrl, source) { return jsonFetch('/api/scan', { method: 'POST', body: { auslageId, scannerUrl, source } }); }
 
+  // --- Modul: Verträge und Pacht (Vertragspartner, Verträge) ---
+  async function putVertragspartner(p) { return jsonFetch(`/api/vertragspartner/${encodeURIComponent(p.id)}`, { method: 'PUT', body: p }); }
+  async function deleteVertragspartnerRemote(id) { return jsonFetch(`/api/vertragspartner/${encodeURIComponent(id)}`, { method: 'DELETE' }); }
+  async function putVertrag(v) { return jsonFetch(`/api/vertraege/${encodeURIComponent(v.id)}`, { method: 'PUT', body: v }); }
+  async function deleteVertragRemote(id) { return jsonFetch(`/api/vertraege/${encodeURIComponent(id)}`, { method: 'DELETE' }); }
+
   // --- Modul: Dokumente (Paperless-Proxy im Backend) ---
   function docQuery(params = {}) {
     const usp = new URLSearchParams();
@@ -186,6 +192,8 @@
     putAuslage, deleteAuslageRemote,
     listBelege, uploadBeleg, deleteBelegFile, belegUrl,
     listScanners, scanHealth, scan,
+    putVertragspartner, deleteVertragspartnerRemote,
+    putVertrag, deleteVertragRemote,
     connectWs, subscribe,
     clientId: CLIENT_ID,
   };

@@ -96,6 +96,19 @@ db.exec(`
     uploaded_at TEXT NOT NULL
   );
   CREATE INDEX IF NOT EXISTS idx_beleg_auslage ON beleg_files(auslage_id);
+
+  -- Modul Verträge und Pacht
+  CREATE TABLE IF NOT EXISTS vertragspartner (
+    id           TEXT PRIMARY KEY,
+    payload      TEXT NOT NULL,
+    last_modified TEXT NOT NULL
+  );
+  CREATE TABLE IF NOT EXISTS vertraege (
+    id           TEXT PRIMARY KEY,
+    payload      TEXT NOT NULL,
+    last_modified TEXT NOT NULL
+  );
+  CREATE INDEX IF NOT EXISTS idx_vertraege_modified ON vertraege(last_modified);
 `);
 
 const BELEG_DIR = path.join(ATTACH_DIR, 'auslagen');
@@ -295,6 +308,20 @@ function deleteBelegFile(id) {
   return f;
 }
 
+// --- Modul Verträge und Pacht ---
+const vertragspartnerStore = makePayloadStore('vertragspartner');
+const vertraegeStore = makePayloadStore('vertraege');
+
+const listVertragspartner = () => vertragspartnerStore.list();
+const getVertragspartner = (id) => vertragspartnerStore.get(id);
+const saveVertragspartner = (p) => vertragspartnerStore.save(p);
+const deleteVertragspartner = (id) => vertragspartnerStore.delete(id);
+
+const listVertraege = () => vertraegeStore.list();
+const getVertrag = (id) => vertraegeStore.get(id);
+const saveVertrag = (v) => vertraegeStore.save(v);
+const deleteVertrag = (id) => vertraegeStore.delete(id);
+
 // Beim ersten Start die beiden Standard-Objekte anlegen (Preise aus den Vorlagen).
 function seedRaeume() {
   if (raeumeStore.list().length > 0) return;
@@ -371,4 +398,6 @@ module.exports = {
   listAuslagen, getAuslage, saveAuslage, deleteAuslage,
   listBelegFiles, getBelegFile, belegFilePath, ensureBelegDir,
   insertBelegFile, deleteBelegFile,
+  listVertragspartner, getVertragspartner, saveVertragspartner, deleteVertragspartner,
+  listVertraege, getVertrag, saveVertrag, deleteVertrag,
 };

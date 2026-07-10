@@ -290,6 +290,52 @@ die übrigen Unterschriftsfelder bleiben leer.
 > `bonjour-service` (Deploy zieht sie per `npm install`). Frontend nach dem Update
 > mit **Strg+F5** neu laden.
 
+## Modul „Verträge und Pacht"
+
+Überblick über die laufenden Verträge und Pachtverhältnisse der Gemeinde: Kosten
+und Einnahmen sowie – im Fokus – die **Kündigungs- und Verlängerungsfristen**.
+Erreichbar über den Navigationspunkt **Verträge & Pacht**.
+
+**Startbildschirm/Übersicht** (`#/vertraege`):
+- **Fristen-Block** mit Ampel: aktive Verträge, deren spätester Kündigungstermin
+  ansteht (überfällig / akut = innerhalb des vertraglichen Vorlaufs / bald =
+  ≤ 90 Tage), sortiert nach Termin. Je Eintrag ein `.ics`-Download und Sprung ins Detail.
+- **Kennzahlen**: jährliche Kosten (Ausgaben) und jährliche Einnahmen aktiver Verträge.
+- **Vollständige Tabelle** aller Verträge, „**+ Neuer Vertrag**" und „**Übersicht als PDF**".
+
+**Vertrag** (Detail): Bezeichnung, Kategorie (aus den Einstellungen), **Art**
+(Ausgabe/Einnahme), Vertragspartner, **Betrag + Intervall** (einmalig / monatlich /
+quartalsweise / jährlich – die App rechnet Jahresbeträge), Beginn, Laufzeit
+(befristet mit festem Ende *oder* automatische Verlängerung), Vertragsende bzw.
+nächster Verlängerungsstichtag, **Kündigungsfrist** (Monate) → daraus wird der
+**spätester Kündigungstermin** live berechnet, **Erinnerungsvorlauf** (Tage, pro
+Vertrag frei), Status (aktiv/gekündigt/ausgelaufen) und Notiz.
+
+**Vertragspartner** (`#/vertragspartner`): wiederverwendbare Stammdaten (Name,
+Ansprechpartner, Kontakt, Anschrift), die bei jedem Vertrag zur Auswahl stehen.
+
+**Paperless-Verknüpfung:** Zu jedem Vertrag können **mehrere** bestehende Dokumente
+aus **Paperless-ngx** verknüpft werden (Dokument-Picker mit Volltextsuche über den
+vorhandenen `/api/dokumente`-Proxy). Es werden **keine** neuen Dokumente angelegt –
+nur die Paperless-ID + Titel gespeichert; die Vorschau läuft über den Backend-Proxy.
+
+**Erinnerungen:** Bewusst **ohne** Google-/E-Mail-Anbindung. Fristen erscheinen im
+Startbildschirm; zusätzlich lässt sich je Vertrag eine **`.ics`-Kalenderdatei** (mit
+Alarm um den Vorlauf vor dem Kündigungstermin) herunterladen und in den eigenen
+Kalender importieren.
+
+**Datenhaltung:** wie die anderen Module – Container-SQLite (Tabellen
+`vertragspartner`, `vertraege`), Live-Sync per WebSocket und Auto-Sync nach NocoDB
+(Tabellen `Vertragspartner`, `Vertraege`, jeweils mit vollständigem `Payload`).
+Zieltabellen legt „Schema initialisieren" in den Einstellungen an.
+
+**Einstellungen** (*Einstellungen → Verträge und Pacht*): Standard-Erinnerungsvorlauf,
+Standard-Kündigungsfrist und die editierbare Kategorienliste.
+
+> **Migration:** Neue Tabellen entstehen per `CREATE TABLE IF NOT EXISTS` beim
+> Backend-Start; neue Settings-Defaults werden für Bestandsinstallationen nachgezogen.
+> Frontend nach dem Update mit **Strg+F5** neu laden.
+
 ## Lizenz
 
 Creative Commons **CC BY-NC-SA 4.0** — siehe `LICENSE`.
