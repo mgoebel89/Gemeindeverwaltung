@@ -175,6 +175,11 @@
   async function listTaskProjects() { return jsonFetch('/api/aufgaben/projects'); }
   async function completeTask(id, done = true) { return jsonFetch(`/api/aufgaben/tasks/${encodeURIComponent(id)}/done`, { method: 'POST', body: { done } }); }
   async function createTask(projectId, payload) { return jsonFetch(`/api/aufgaben/projects/${encodeURIComponent(projectId)}/tasks`, { method: 'POST', body: payload }); }
+  async function getTask(id) { return jsonFetch(`/api/aufgaben/tasks/${encodeURIComponent(id)}`); }
+  async function updateTask(id, patch) { return jsonFetch(`/api/aufgaben/tasks/${encodeURIComponent(id)}`, { method: 'POST', body: patch }); }
+  async function listTaskLabels() { return jsonFetch('/api/aufgaben/labels'); }
+  async function addTaskLabel(id, labelId) { return jsonFetch(`/api/aufgaben/tasks/${encodeURIComponent(id)}/labels`, { method: 'PUT', body: { labelId } }); }
+  async function removeTaskLabel(id, labelId) { return jsonFetch(`/api/aufgaben/tasks/${encodeURIComponent(id)}/labels/${encodeURIComponent(labelId)}`, { method: 'DELETE' }); }
 
   async function listDocNotes(id) { return jsonFetch(`/api/dokumente/${encodeURIComponent(id)}/notes`); }
   async function addDocNote(id, note) { return jsonFetch(`/api/dokumente/${encodeURIComponent(id)}/notes`, { method: 'POST', body: { note } }); }
@@ -228,6 +233,7 @@
     getDocConfig, putDocConfig,
     getCalConfig, putCalConfig, testCalUrl, listCalEvents,
     getTaskConfig, putTaskConfig, taskHealth, listOpenTasks, listTaskProjects, completeTask, createTask,
+    getTask, updateTask, listTaskLabels, addTaskLabel, removeTaskLabel,
     listDocNotes, addDocNote, deleteDocNote,
     putMieter, deleteMieterRemote,
     putRaum, deleteRaumRemote,

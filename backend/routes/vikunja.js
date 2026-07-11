@@ -40,12 +40,38 @@ router.get('/projects', async (_req, res) => {
   try { res.json({ projects: await vikunja.listProjects() }); } catch (err) { sendError(res, err); }
 });
 
-// Aufgabe abhaken / wieder öffnen.
+// In Vikunja definierte Labels (für die Zuordnung in der Detailkarte).
+router.get('/labels', async (_req, res) => {
+  try { res.json({ labels: await vikunja.listLabels() }); } catch (err) { sendError(res, err); }
+});
+
+// Aufgabe abhaken / wieder öffnen. (Vor dem generischen /tasks/:id-Update.)
 router.post('/tasks/:id/done', async (req, res) => {
   try {
     const done = req.body && req.body.done != null ? !!req.body.done : true;
     res.json(await vikunja.setTaskDone(req.params.id, done));
   } catch (err) { sendError(res, err); }
+});
+
+// Label an eine Aufgabe hängen / entfernen. (Vor dem generischen /tasks/:id.)
+router.put('/tasks/:id/labels', async (req, res) => {
+  try {
+    const labelId = req.body && req.body.labelId;
+    res.json(await vikunja.addTaskLabel(req.params.id, labelId));
+  } catch (err) { sendError(res, err); }
+});
+router.delete('/tasks/:id/labels/:labelId', async (req, res) => {
+  try { res.json(await vikunja.removeTaskLabel(req.params.id, req.params.labelId)); } catch (err) { sendError(res, err); }
+});
+
+// Eine Aufgabe im Detail laden (Beschreibung als Markdown).
+router.get('/tasks/:id', async (req, res) => {
+  try { res.json(await vikunja.getTask(req.params.id)); } catch (err) { sendError(res, err); }
+});
+
+// Aufgabe aktualisieren (Titel, Beschreibung, Fälligkeit, Priorität).
+router.post('/tasks/:id', async (req, res) => {
+  try { res.json(await vikunja.updateTask(req.params.id, req.body || {})); } catch (err) { sendError(res, err); }
 });
 
 // Neue Aufgabe in einem Projekt anlegen.

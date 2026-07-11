@@ -13,6 +13,25 @@
 
 const db = require('./db');
 
+// Markdown ⇄ HTML. Vikunja speichert Beschreibungen als HTML (eigener WYSIWYG-
+// Editor); die App arbeitet mit Markdown. Konvertierung liegt zentral hier im
+// Backend: Laden = HTML→Markdown (turndown), Speichern = Markdown→HTML (marked).
+const markedLib = require('marked');
+const TurndownService = require('turndown');
+const _td = new TurndownService({ headingStyle: 'atx', bulletListMarker: '-', codeBlockStyle: 'fenced' });
+
+function mdToHtml(md) {
+  if (md == null || String(md).trim() === '') return '';
+  const fn = markedLib.parse || markedLib.marked || markedLib;
+  try { return String(fn(String(md), { breaks: true, gfm: true })).trim(); }
+  catch (_) { return String(md); }
+}
+function htmlToMd(html) {
+  if (html == null || String(html).trim() === '') return '';
+  try { return String(_td.turndown(String(html))).trim(); }
+  catch (_) { return String(html); }
+}
+
 const ENV_URL = (process.env.VIKUNJA_URL || '').replace(/\/+$/, '');
 const ENV_TOKEN = process.env.VIKUNJA_TOKEN || '';
 
@@ -112,11 +131,15 @@ function cleanDate(v) {
   return Number.isFinite(t) ? v : null;
 }
 
-function normalizeTask(t) {
+// opts.descAsMarkdown: HTML-Beschreibung nach Markdown wandeln (für die
+// Detailansicht). In der Liste unnötig (Beschreibung wird dort nicht angezeigt),
+// darum standardmäßig aus, um die Konvertierung nicht pro Task zu zahlen.
+function normalizeTask(t, opts = {}) {
+  const rawDesc = t.description || '';
   return {
     id: t.id,
     title: t.title || '(ohne Titel)',
-    description: t.description || '',
+    description: opts.descAsMarkdown ? htmlToMd(rawDesc) : rawDesc,
     done: !!t.done,
     dueDate: cleanDate(t.due_date),
     priority: typeof t.priority === 'number' ? t.priority : 0,
@@ -200,6 +223,63 @@ async function setTaskDone(id, done) {
   return data ? normalizeTask(data) : { id, done: !!done };
 }
 
+// Eine einzelne Aufgabe laden (für die Detailkarte). Beschreibung als Markdown.
+async function getTask(id) {
+  const { data } = await apiJson(`/api/v1/tasks/${encodeURIComponent(id)}`);
+  if (!data) throw new VikunjaError('Aufgabe nicht gefunden.', 404);
+  return normalizeTask(data, { descAsMarkdown: true });
+}
+
+// Aufgabe aktualisieren. `patch` kann title, description (Markdown), dueDate
+// (datetime-local ODER ''), priority enthalten — nur gesetzte Felder werden
+// geändert. Vikunjas Update ersetzt das Modell, darum den aktuellen Roh-Task
+// laden, die Felder daraufsetzen und das ganze Objekt zurückschreiben (sonst
+// würden nicht mitgesendete Felder geleert). Labels laufen über eigene Routen.
+async function updateTask(id, patch = {}) {
+  const cur = await apiJson(`/api/v1/tasks/${encodeURIComponent(id)}`);
+  const raw = cur.data;
+  if (!raw) throw new VikunjaError('Aufgabe nicht gefunden.', 404);
+
+  if (patch.title != null) {
+    const t = String(patch.title).trim();
+    if (!t) throw new VikunjaError('Titel darf nicht leer sein.', 400);
+    raw.title = t;
+  }
+  if (patch.description != null) raw.description = mdToHtml(patch.description);
+  if (patch.priority != null) raw.priority = parseInt(patch.priority, 10) || 0;
+  if (patch.dueDate != null) raw.due_date = toVikunjaDateTime(patch.dueDate);
+
+  const { data } = await apiJson(`/api/v1/tasks/${encodeURIComponent(id)}`, {}, { method: 'POST', body: raw });
+  return data ? normalizeTask(data, { descAsMarkdown: true }) : null;
+}
+
+// Alle in Vikunja definierten Labels (für die Auswahl). Blättert wie Aufgaben.
+async function listLabels() {
+  const all = [];
+  let page = 1, totalPages = 1;
+  do {
+    const { data, headers } = await apiJson('/api/v1/labels', { page });
+    const arr = Array.isArray(data) ? data : [];
+    for (const l of arr) all.push({ id: l.id, title: l.title || ('Label ' + l.id), hexColor: l.hex_color || '' });
+    const tp = parseInt(headers.get('x-pagination-total-pages') || '1', 10);
+    totalPages = Number.isFinite(tp) ? tp : 1;
+    page++;
+  } while (page <= totalPages && page <= MAX_PAGES);
+  return all;
+}
+
+// Label an eine Aufgabe hängen bzw. entfernen (eigene Vikunja-Endpunkte).
+async function addTaskLabel(taskId, labelId) {
+  const lid = parseInt(labelId, 10);
+  if (!Number.isFinite(lid) || lid <= 0) throw new VikunjaError('Ungültiges Label.', 400);
+  await apiJson(`/api/v1/tasks/${encodeURIComponent(taskId)}/labels`, {}, { method: 'PUT', body: { label_id: lid } });
+  return { ok: true };
+}
+async function removeTaskLabel(taskId, labelId) {
+  await apiJson(`/api/v1/tasks/${encodeURIComponent(taskId)}/labels/${encodeURIComponent(labelId)}`, {}, { method: 'DELETE' });
+  return { ok: true };
+}
+
 // Neue Aufgabe in einem Projekt anlegen. `payload` = { title, dueDate?, description?, priority? }.
 async function createTask(projectId, payload = {}) {
   const pid = parseInt(projectId, 10);
@@ -221,11 +301,28 @@ function toVikunjaDate(v) {
   return Number.isFinite(t) ? new Date(t).toISOString() : s;
 }
 
+// datetime-local ("YYYY-MM-DDTHH:MM", auch nur Datum) → ISO 8601 (UTC).
+// Die Eingabe ist lokale Wandzeit des Bedieners; wir bilden sie als lokale
+// Komponenten und lassen toISOString den echten Zeitpunkt (UTC) bestimmen.
+// Leere Eingabe = Fälligkeit entfernen → Vikunjas Null-Datum.
+function toVikunjaDateTime(v) {
+  if (v == null || String(v).trim() === '') return '0001-01-01T00:00:00Z';
+  const s = String(v).trim();
+  const m = s.match(/^(\d{4})-(\d{2})-(\d{2})(?:[T ](\d{2}):(\d{2}))?/);
+  if (m) {
+    const dt = new Date(+m[1], +m[2] - 1, +m[3], +(m[4] || 0), +(m[5] || 0), 0, 0);
+    return dt.toISOString();
+  }
+  const t = Date.parse(s);
+  return Number.isFinite(t) ? new Date(t).toISOString() : s;
+}
+
 module.exports = {
   VikunjaError,
   isConfigured,
   publicConfig, setConfig,
   health, listOpenTasks, listProjects, setTaskDone, createTask,
+  getTask, updateTask, listLabels, addTaskLabel, removeTaskLabel,
   // für Tests:
-  normalizeTask, cleanDate, toVikunjaDate,
+  normalizeTask, cleanDate, toVikunjaDate, toVikunjaDateTime, mdToHtml, htmlToMd,
 };

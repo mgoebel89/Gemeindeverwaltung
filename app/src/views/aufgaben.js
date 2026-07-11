@@ -113,14 +113,20 @@
     if (t.identifier) meta.push(t.identifier);
     for (const l of (t.labels || [])) meta.push('🏷 ' + l.title);
 
-    li.appendChild(cb);
-    li.appendChild(el('span', { class: 'aufg-main' }, [
+    const main = el('span', {
+      class: 'aufg-main',
+      title: 'Zum Bearbeiten öffnen',
+      onClick: () => openTaskDetail(t, reload),
+    }, [
       el('span', { class: 'aufg-title' }, [
         priorityFlag(t.priority),
         el('span', {}, t.title),
       ]),
       meta.length ? el('span', { class: 'help', style: 'margin:0; display:block;' }, meta.join(' · ')) : null,
-    ]));
+    ]);
+
+    li.appendChild(cb);
+    li.appendChild(main);
     return li;
   }
 
@@ -180,6 +186,175 @@
       el('div', { class: 'toolbar', style: 'margin-top:10px;' }, [saveBtn]),
       status,
     ]);
+  }
+
+  // --- Detailkarte (Aufgabe bearbeiten) ---
+  const PRIO_OPTS = [
+    ['0', 'Keine Priorität'], ['1', 'Niedrig'], ['2', 'Mittel'],
+    ['3', 'Hoch'], ['4', 'Dringend'], ['5', 'Sofort'],
+  ];
+
+  // ISO (UTC, aus Vikunja) → Wert fürs <input type=datetime-local> (lokale Zeit).
+  function isoToLocalInput(iso) {
+    if (!iso) return '';
+    const d = new Date(iso);
+    if (isNaN(d.getTime())) return '';
+    const p = n => String(n).padStart(2, '0');
+    return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`;
+  }
+
+  // Markdown → HTML für die reine Vorschau (maßgeblich konvertiert das Backend).
+  function mdRender(md) {
+    const m = window.marked;
+    const fn = m && (m.parse || m);
+    if (typeof fn !== 'function') return '<p class="help">Vorschau nicht verfügbar.</p>';
+    try { return fn(String(md || ''), { breaks: true, gfm: true }); } catch (_) { return ''; }
+  }
+
+  function openTaskDetail(taskStub, reload) {
+    const overlay = el('div', { class: 'modal-overlay' });
+    const close = () => overlay.remove();
+    overlay.addEventListener('click', e => { if (e.target === overlay) close(); });
+    document.addEventListener('keydown', function esc(e) {
+      if (e.key === 'Escape') { close(); document.removeEventListener('keydown', esc); }
+    });
+
+    const body = el('div', {}, el('p', { class: 'help' }, 'Aufgabe wird geladen…'));
+    const box = el('div', { class: 'modal aufg-detail', style: 'max-width:640px; width:94vw;' }, [
+      el('h3', {}, 'Aufgabe bearbeiten'),
+      body,
+    ]);
+    overlay.appendChild(box);
+    document.body.appendChild(overlay);
+
+    // Frische Vollansicht (Beschreibung als Markdown, aktuelle Labels) + Labelliste.
+    Promise.all([
+      GR.api.getTask(taskStub.id),
+      GR.api.listTaskLabels().catch(() => ({ labels: [] })),
+    ]).then(([task, labelRes]) => {
+      renderDetail(box, body, task, (labelRes && labelRes.labels) || [], close, reload);
+    }).catch(err => {
+      body.innerHTML = '';
+      body.appendChild(el('div', { class: 'warn' }, 'Aufgabe konnte nicht geladen werden: ' + err.message));
+      body.appendChild(el('div', { class: 'toolbar', style: 'margin-top:12px;' }, [
+        el('div', { class: 'spacer' }),
+        el('button', { onClick: close }, 'Schließen'),
+      ]));
+    });
+  }
+
+  function renderDetail(box, body, task, allLabels, close, reload) {
+    body.innerHTML = '';
+    if (task.identifier) box.querySelector('h3').textContent = 'Aufgabe bearbeiten · ' + task.identifier;
+
+    // Titel
+    const titleI = el('input', { type: 'text', value: task.title || '' });
+
+    // Beschreibung (Markdown) + Vorschau
+    const descI = el('textarea', { rows: '6', class: 'aufg-desc', placeholder: 'Beschreibung (Markdown)…' }, task.description || '');
+    const preview = el('div', { class: 'aufg-preview md-body', hidden: true });
+    let previewOn = false;
+    const previewBtn = el('button', { type: 'button', class: 'btn-sm' }, 'Vorschau');
+    previewBtn.onclick = () => {
+      previewOn = !previewOn;
+      if (previewOn) { preview.innerHTML = mdRender(descI.value); preview.hidden = false; descI.hidden = true; previewBtn.textContent = 'Bearbeiten'; }
+      else { preview.hidden = true; descI.hidden = false; previewBtn.textContent = 'Vorschau'; }
+    };
+
+    // Fälligkeit + Priorität
+    const dueI = el('input', { type: 'datetime-local', value: isoToLocalInput(task.dueDate) });
+    const prioSel = el('select', {});
+    PRIO_OPTS.forEach(([v, l]) => prioSel.appendChild(el('option', { value: v, selected: String(task.priority || 0) === v }, l)));
+
+    // Labels (zuweisen/entfernen aus den vorhandenen)
+    const staged = (task.labels || []).map(l => ({ id: l.id, title: l.title, hexColor: l.hexColor }));
+    const originalIds = new Set(staged.map(l => l.id));
+    const chipsBox = el('div', { class: 'aufg-chips' });
+    const addSel = el('select', { class: 'aufg-label-add' });
+    function renderChips() {
+      chipsBox.innerHTML = '';
+      if (!staged.length) chipsBox.appendChild(el('span', { class: 'help', style: 'margin:0;' }, 'Keine Labels.'));
+      staged.forEach(l => {
+        const chip = el('span', { class: 'chip' }, [
+          l.hexColor ? el('span', { class: 'chip-dot', style: 'background:' + l.hexColor + ';' }) : null,
+          el('span', {}, l.title),
+          el('button', { type: 'button', class: 'chip-x', title: 'Entfernen', onClick: () => { const i = staged.findIndex(x => x.id === l.id); if (i >= 0) staged.splice(i, 1); renderChips(); renderAddOptions(); } }, '×'),
+        ]);
+        chipsBox.appendChild(chip);
+      });
+    }
+    function renderAddOptions() {
+      addSel.innerHTML = '';
+      const stagedIds = new Set(staged.map(l => l.id));
+      const avail = allLabels.filter(l => !stagedIds.has(l.id));
+      addSel.appendChild(el('option', { value: '' }, avail.length ? '+ Label hinzufügen…' : 'Keine weiteren Labels'));
+      avail.forEach(l => addSel.appendChild(el('option', { value: l.id }, l.title)));
+      addSel.disabled = !avail.length;
+    }
+    addSel.onchange = () => {
+      const id = parseInt(addSel.value, 10);
+      if (!Number.isFinite(id)) return;
+      const lab = allLabels.find(l => l.id === id);
+      if (lab && !staged.some(x => x.id === id)) staged.push({ id: lab.id, title: lab.title, hexColor: lab.hexColor });
+      renderChips(); renderAddOptions();
+    };
+    renderChips(); renderAddOptions();
+
+    const status = el('div', { class: 'help', style: 'margin-top:6px;' }, '');
+    const saveBtn = el('button', { class: 'btn-primary' }, 'Speichern');
+    const cancelBtn = el('button', { onClick: close }, 'Abbrechen');
+
+    saveBtn.onclick = async () => {
+      const title = titleI.value.trim();
+      if (!title) { status.textContent = 'Bitte einen Titel eingeben.'; status.style.color = '#c53030'; return; }
+      saveBtn.disabled = true; cancelBtn.disabled = true;
+      status.style.color = ''; status.textContent = 'Wird gespeichert…';
+      try {
+        await GR.api.updateTask(task.id, {
+          title,
+          description: descI.value,
+          dueDate: dueI.value || '',
+          priority: prioSel.value,
+        });
+        // Label-Diff
+        const nowIds = new Set(staged.map(l => l.id));
+        const toAdd = [...nowIds].filter(id => !originalIds.has(id));
+        const toRemove = [...originalIds].filter(id => !nowIds.has(id));
+        for (const id of toAdd) await GR.api.addTaskLabel(task.id, id);
+        for (const id of toRemove) await GR.api.removeTaskLabel(task.id, id);
+        toast('Aufgabe gespeichert');
+        close();
+        reload();
+      } catch (err) {
+        saveBtn.disabled = false; cancelBtn.disabled = false;
+        status.textContent = 'Fehler: ' + err.message; status.style.color = '#c53030';
+      }
+    };
+
+    body.appendChild(el('div', {}, [el('label', {}, 'Titel'), titleI]));
+    body.appendChild(el('div', { style: 'margin-top:10px;' }, [
+      el('div', { style: 'display:flex; align-items:center; gap:8px;' }, [
+        el('label', { style: 'margin:0;' }, 'Beschreibung'),
+        el('span', { class: 'help', style: 'margin:0;' }, 'Markdown'),
+        el('div', { class: 'spacer' }),
+        previewBtn,
+      ]),
+      descI, preview,
+    ]));
+    body.appendChild(el('div', { class: 'grid-2', style: 'margin-top:10px;' }, [
+      el('div', {}, [el('label', {}, 'Fällig am'), dueI]),
+      el('div', {}, [el('label', {}, 'Priorität'), prioSel]),
+    ]));
+    body.appendChild(el('div', { style: 'margin-top:10px;' }, [
+      el('label', {}, 'Labels'),
+      chipsBox,
+      el('div', { style: 'margin-top:6px;' }, addSel),
+    ]));
+    body.appendChild(el('div', { class: 'toolbar', style: 'margin-top:16px; margin-bottom:0;' }, [
+      el('div', { class: 'spacer' }),
+      cancelBtn, saveBtn,
+    ]));
+    body.appendChild(status);
   }
 
   GR.views = GR.views || {};
