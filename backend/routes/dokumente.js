@@ -5,8 +5,12 @@
 
 const express = require('express');
 const multer = require('multer');
+const fs = require('fs');
+const path = require('path');
+const crypto = require('crypto');
 const { Readable } = require('stream');
 const { PDFDocument } = require('pdf-lib');
+const db = require('../db');
 const paperless = require('../paperless');
 const { scanPages, esclBase } = require('./scan');
 
@@ -14,6 +18,29 @@ const router = express.Router();
 
 const MAX_UPLOAD = parseInt(process.env.MAX_UPLOAD_BYTES || (25 * 1024 * 1024), 10);
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: MAX_UPLOAD } });
+
+// Zwischenspeicher für gescannte Seiten (Scan → Vorschau → Speichern). Die Seiten
+// liegen bis zum "commit" unter DATA_DIR/scan_tmp/<scanId>/<idx>.jpg.
+const SCAN_TMP = path.join(db.DATA_DIR, 'scan_tmp');
+const SCAN_TTL_MS = 60 * 60 * 1000; // verwaiste Scans nach 1 h aufräumen
+const isScanId = s => /^[0-9a-f-]{36}$/i.test(String(s || ''));
+
+function scanDir(scanId) { return path.join(SCAN_TMP, scanId); }
+
+// Räumt Scan-Ordner auf, die älter als SCAN_TTL_MS sind (opportunistisch bei jedem neuen Scan).
+function cleanupOldScans() {
+  try {
+    if (!fs.existsSync(SCAN_TMP)) return;
+    const now = Date.now();
+    for (const name of fs.readdirSync(SCAN_TMP)) {
+      const p = path.join(SCAN_TMP, name);
+      try {
+        const st = fs.statSync(p);
+        if (now - st.mtimeMs > SCAN_TTL_MS) fs.rmSync(p, { recursive: true, force: true });
+      } catch (_) { /* ignore */ }
+    }
+  } catch (_) { /* ignore */ }
+}
 
 // Beim PATCH erlaubte Felder (alles andere wird ignoriert).
 const PATCH_WHITELIST = ['title', 'created', 'correspondent', 'document_type', 'tags', 'archive_serial_number', 'custom_fields'];
@@ -124,17 +151,59 @@ router.post('/upload', upload.single('file'), async (req, res) => {
   }
 });
 
-// --- Upload per Scanner: scannt, bündelt die Seiten zu einem PDF, lädt hoch ---
-router.post('/scan-upload', async (req, res) => {
+// --- Scannen (Schritt 1): scannt, legt die Seiten in den Zwischenspeicher,
+//     liefert scanId + Seitenanzahl zurück (noch KEIN Upload nach Paperless) ---
+router.post('/scan', async (req, res) => {
   try {
+    cleanupOldScans();
     const base = esclBase((req.body || {}).scannerUrl);
     if (!base) return res.status(400).json({ error: 'Scanner-URL fehlt.' });
     const pages = await scanPages(base, (req.body || {}).source);
     if (!pages.length) return res.status(502).json({ error: 'Scanner lieferte keine Seite. Papier eingelegt?' });
-    const pdf = await imagesToPdf(pages);
+    const scanId = crypto.randomUUID();
+    const dir = scanDir(scanId);
+    fs.mkdirSync(dir, { recursive: true });
+    pages.forEach((buf, i) => fs.writeFileSync(path.join(dir, `${i}.jpg`), buf));
+    res.status(201).json({ scanId, count: pages.length, pages: pages.map((_, i) => ({ index: i })) });
+  } catch (err) {
+    res.status(err.status || 502).json({ error: 'Scan fehlgeschlagen: ' + err.message });
+  }
+});
+
+// --- Scan-Seite als Bild ausliefern (für die Vorschau im Assistenten) ---
+router.get('/scan/:scanId/page/:idx', (req, res) => {
+  const { scanId, idx } = req.params;
+  if (!isScanId(scanId) || !/^\d+$/.test(idx)) return res.status(400).end();
+  const file = path.join(scanDir(scanId), `${Number(idx)}.jpg`);
+  if (!file.startsWith(SCAN_TMP) || !fs.existsSync(file)) return res.status(404).end();
+  res.setHeader('Content-Type', 'image/jpeg');
+  res.setHeader('Cache-Control', 'no-store');
+  fs.createReadStream(file).pipe(res);
+});
+
+// --- Scan verwerfen (z. B. "neu scannen") ---
+router.delete('/scan/:scanId', (req, res) => {
+  const { scanId } = req.params;
+  if (!isScanId(scanId)) return res.status(400).end();
+  fs.rmSync(scanDir(scanId), { recursive: true, force: true });
+  res.status(204).end();
+});
+
+// --- Scannen (Schritt 2): Seiten zu einem PDF bündeln und mit Metadaten hochladen ---
+router.post('/scan/:scanId/commit', async (req, res) => {
+  try {
+    const { scanId } = req.params;
+    if (!isScanId(scanId)) return res.status(400).json({ error: 'Ungültige Scan-ID.' });
+    const dir = scanDir(scanId);
+    if (!fs.existsSync(dir)) return res.status(404).json({ error: 'Scan nicht gefunden oder abgelaufen.' });
+    const files = fs.readdirSync(dir).filter(f => /^\d+\.jpg$/.test(f)).sort((a, b) => parseInt(a) - parseInt(b));
+    if (!files.length) return res.status(400).json({ error: 'Keine Seiten im Scan.' });
+    const buffers = files.map(f => fs.readFileSync(path.join(dir, f)));
+    const pdf = await imagesToPdf(buffers);
     const meta = parseMeta(req.body);
     const filename = (meta.title ? meta.title.replace(/[^\w.\- ]+/g, '_') : 'Scan') + '.pdf';
     const result = await paperless.uploadDocument({ buffer: pdf, filename, mimetype: 'application/pdf' }, meta);
+    fs.rmSync(dir, { recursive: true, force: true });
     res.status(202).json(result); // { taskId }
   } catch (err) {
     sendError(res, err);

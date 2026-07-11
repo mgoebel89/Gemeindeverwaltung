@@ -151,7 +151,10 @@
     if (!res.ok) { const t = await res.text().catch(() => ''); throw new Error(`Upload ${res.status}: ${t.slice(0, 200)}`); }
     return res.json();
   }
-  async function scanUploadDocument(meta) { return jsonFetch('/api/dokumente/scan-upload', { method: 'POST', body: meta }); }
+  async function scanDocument(scannerUrl, source) { return jsonFetch('/api/dokumente/scan', { method: 'POST', body: { scannerUrl, source } }); }
+  function scanPageUrl(scanId, idx) { return `/api/dokumente/scan/${encodeURIComponent(scanId)}/page/${idx}`; }
+  async function discardScan(scanId) { return jsonFetch(`/api/dokumente/scan/${encodeURIComponent(scanId)}`, { method: 'DELETE' }); }
+  async function commitScan(scanId, meta) { return jsonFetch(`/api/dokumente/scan/${encodeURIComponent(scanId)}/commit`, { method: 'POST', body: meta }); }
   async function getDocTask(id) { return jsonFetch(`/api/dokumente/tasks/${encodeURIComponent(id)}`); }
   async function createCorrespondent(name) { return jsonFetch('/api/dokumente/correspondents', { method: 'POST', body: { name } }); }
   async function createDocumentType(name) { return jsonFetch('/api/dokumente/document-types', { method: 'POST', body: { name } }); }
@@ -206,7 +209,7 @@
     listAttachments, uploadAttachment, deleteAttachment, attachmentUrl,
     importAll,
     docHealth, docMeta, searchDocuments, getDocument, patchDocument, docFileUrl,
-    uploadDocument, scanUploadDocument, getDocTask, createCorrespondent, createDocumentType, createTag,
+    uploadDocument, scanDocument, scanPageUrl, discardScan, commitScan, getDocTask, createCorrespondent, createDocumentType, createTag,
     getDocConfig, putDocConfig,
     listDocNotes, addDocNote, deleteDocNote,
     putMieter, deleteMieterRemote,

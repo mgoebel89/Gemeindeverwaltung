@@ -7,92 +7,232 @@
   const POLL_INTERVAL = 2500;
   const POLL_MAX = 48; // ~2 Minuten
 
-  // Upload-Dialog für ein neues Paperless-Dokument.
+  // Vollbild-Assistent für ein neues Paperless-Dokument.
   // opts: { prefillTitle, onUploaded({ id, title }) }
   function uploadPaperlessDocument(opts = {}) {
-    const meta = { correspondents: [], documentTypes: [], tags: [] };
+    const meta = { correspondents: [], documentTypes: [], tags: [], customFields: [] };
+    let step = 1;
+    let mode = null;            // 'file' | 'scan'
     let selectedFile = null;
-    let source = 'file'; // 'file' | 'scanner'
+    let fileUrl = null;         // ObjectURL der lokalen Datei (Vorschau)
+    let scan = null;            // { scanId, count }
     let busy = false;
 
     const scannerUrl = ((GR.store.getSettings().auslagen) || {}).scannerUrl || '';
 
-    const overlay = el('div', { class: 'modal-overlay' });
-    const close = () => { if (!busy) overlay.remove(); };
-
-    // --- Quelle ---
-    const fileNameLabel = el('span', { class: 'help', style: 'margin:0;' }, 'keine Datei gewählt');
-    const chooseFileBtn = el('button', { class: 'btn-sm', onClick: async () => {
-      const f = await pickFile('application/pdf,image/*');
-      if (f) { selectedFile = f; fileNameLabel.textContent = f.name; }
-    } }, 'Datei wählen…');
-    const fileRow = el('div', { style: 'display:flex; gap:8px; align-items:center; margin:6px 0;' }, [chooseFileBtn, fileNameLabel]);
-
-    const scannerHint = el('span', { class: 'help', style: 'margin:0;' }, scannerUrl ? scannerUrl : '(keine Scanner-URL in den Einstellungen)');
-    const scannerRow = el('div', { style: 'margin:6px 0;' }, [scannerHint]);
-    scannerRow.style.display = 'none';
-
-    const srcFile = el('input', { type: 'radio', name: 'docsrc', checked: true });
-    const srcScan = el('input', { type: 'radio', name: 'docsrc' });
-    if (!scannerUrl) srcScan.disabled = true;
-    const applySource = () => {
-      source = srcScan.checked ? 'scanner' : 'file';
-      fileRow.style.display = source === 'file' ? 'flex' : 'none';
-      scannerRow.style.display = source === 'scanner' ? 'block' : 'none';
+    // ---------- Grundgerüst ----------
+    const overlay = el('div', { class: 'wiz-overlay' });
+    const stepEls = {
+      1: el('div', { class: 'step' }, [el('span', { class: 'num' }, '1'), el('span', { class: 'label' }, 'Quelle')]),
+      2: el('div', { class: 'step' }, [el('span', { class: 'num' }, '2'), el('span', { class: 'label' }, 'Eigenschaften')]),
     };
-    srcFile.addEventListener('change', applySource);
-    srcScan.addEventListener('change', applySource);
+    const body = el('div', { class: 'wiz-body' });
+    const foot = el('div', { class: 'wiz-foot' });
+    const box = el('div', { class: 'wiz' }, [
+      el('div', { class: 'wiz-head' }, [
+        el('h3', {}, 'Neues Dokument'),
+        el('div', { class: 'wiz-steps' }, [stepEls[1], stepEls[2]]),
+        el('button', { class: 'wiz-close', title: 'Abbrechen', onClick: () => close() }, '×'),
+      ]),
+      body, foot,
+    ]);
+    overlay.appendChild(box);
+    document.body.appendChild(overlay);
 
-    const sourceBox = el('div', {}, [
-      el('label', { style: 'display:inline-flex; gap:6px; align-items:center; margin-right:16px;' }, [srcFile, 'Datei hochladen']),
-      el('label', { style: 'display:inline-flex; gap:6px; align-items:center;' }, [srcScan, scannerUrl ? 'Scannen' : 'Scannen (nicht konfiguriert)']),
-      fileRow,
-      scannerRow,
+    async function close() {
+      if (busy) return;
+      if (fileUrl) { URL.revokeObjectURL(fileUrl); fileUrl = null; }
+      if (scan && scan.scanId) { api.discardScan(scan.scanId).catch(() => {}); scan = null; }
+      overlay.remove();
+    }
+
+    // ---------- Metadaten laden (nicht-fatal) ----------
+    api.docMeta().then(m => {
+      meta.correspondents = m.correspondents || [];
+      meta.documentTypes = m.documentTypes || [];
+      meta.tags = m.tags || [];
+      meta.customFields = m.customFields || [];
+      fillSelect(corrSel, meta.correspondents);
+      fillSelect(typeSel, meta.documentTypes);
+      renderTagChecks();
+      renderCFAdd();
+    }).catch(e => toast('Paperless-Listen nicht geladen: ' + e.message, 4000));
+
+    // ================= Schritt 1: Quelle =================
+    const dzText = el('div', {}, [
+      el('div', { class: 'dz-icon' }, '⬆'),
+      el('div', {}, 'Datei hierher ziehen'),
+      el('div', { class: 'dz-hint' }, 'oder tippen zum Auswählen (PDF oder Bild)'),
+    ]);
+    const dropzone = el('div', { class: 'dropzone', onClick: chooseFile }, [dzText]);
+    ['dragenter', 'dragover'].forEach(ev => dropzone.addEventListener(ev, e => { e.preventDefault(); dropzone.classList.add('drag'); }));
+    ['dragleave', 'dragend'].forEach(ev => dropzone.addEventListener(ev, () => dropzone.classList.remove('drag')));
+    dropzone.addEventListener('drop', e => {
+      e.preventDefault(); dropzone.classList.remove('drag');
+      const f = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
+      if (f) setFile(f);
+    });
+
+    const scanBtn = el('button', { class: 'btn-sm', onClick: doScan }, '🖨 Scannen');
+    if (!scannerUrl) { scanBtn.disabled = true; scanBtn.title = 'Kein Scanner in den Einstellungen hinterlegt'; }
+    const sourceBtns = el('div', { class: 'wiz-source-btns' }, [
+      el('button', { class: 'btn-primary', onClick: chooseFile }, 'Datei wählen…'),
+      scanBtn,
     ]);
 
-    // --- Metadaten ---
-    const titleInput = el('input', { type: 'text', value: opts.prefillTitle || '', style: 'width:100%;' });
+    const sourceInfo = el('div', { style: 'margin-top:16px;' }); // zeigt gewählte Datei / Scan-Ergebnis
+    const step1El = el('div', {}, [
+      el('p', { class: 'help', style: 'margin-top:0;' }, 'Wähle eine Datei (Ziehen & Ablegen möglich) oder scanne ein Dokument. Die Vorschau siehst du im nächsten Schritt.'),
+      dropzone,
+      sourceBtns,
+      sourceInfo,
+    ]);
 
+    async function chooseFile() {
+      const f = await pickFile('application/pdf,image/*');
+      if (f) setFile(f);
+    }
+    function setFile(f) {
+      if (scan && scan.scanId) { api.discardScan(scan.scanId).catch(() => {}); scan = null; }
+      if (fileUrl) { URL.revokeObjectURL(fileUrl); }
+      selectedFile = f; mode = 'file'; fileUrl = URL.createObjectURL(f);
+      if (!titleInput.value.trim()) titleInput.value = f.name.replace(/\.[^.]+$/, '');
+      renderSourceInfo();
+      updateNav();
+    }
+
+    async function doScan() {
+      if (busy) return;
+      setBusy(true, 'Scanne… (Papier im Einzug?)');
+      try {
+        if (scan && scan.scanId) { await api.discardScan(scan.scanId).catch(() => {}); scan = null; }
+        const r = await api.scanDocument(scannerUrl, 'feeder');
+        scan = { scanId: r.scanId, count: r.count };
+        selectedFile = null; mode = 'scan';
+        if (fileUrl) { URL.revokeObjectURL(fileUrl); fileUrl = null; }
+        renderSourceInfo();
+        updateNav();
+        setBusy(false, '');
+      } catch (e) {
+        setBusy(false, '');
+        setStatus('Scan fehlgeschlagen: ' + e.message, 'error');
+      }
+    }
+
+    function renderSourceInfo() {
+      sourceInfo.innerHTML = '';
+      if (mode === 'file' && selectedFile) {
+        sourceInfo.appendChild(el('div', { class: 'attachment-row' }, [
+          el('div', {}, [el('strong', {}, selectedFile.name), el('div', { class: 'att-meta' }, fmtSize(selectedFile.size))]),
+          el('div', { class: 'spacer', style: 'flex:1;' }),
+          el('button', { class: 'btn-sm', onClick: clearSource }, 'Entfernen'),
+        ]));
+      } else if (mode === 'scan' && scan) {
+        const thumbs = el('div', { class: 'scan-thumbs' });
+        for (let i = 0; i < scan.count; i++) {
+          thumbs.appendChild(el('div', { class: 'thumb' }, [
+            el('img', { src: api.scanPageUrl(scan.scanId, i), alt: 'Seite ' + (i + 1) }),
+            el('div', { class: 'cap' }, 'Seite ' + (i + 1)),
+          ]));
+        }
+        sourceInfo.appendChild(el('div', {}, [
+          el('p', { class: 'help', style: 'margin:0 0 6px;' }, scan.count + ' Seite(n) gescannt.'),
+          thumbs,
+          el('div', { style: 'display:flex; gap:8px;' }, [
+            el('button', { class: 'btn-sm', onClick: doScan }, '↻ Neu scannen'),
+            el('button', { class: 'btn-sm', onClick: clearSource }, 'Verwerfen'),
+          ]),
+        ]));
+      }
+    }
+    function clearSource() {
+      if (scan && scan.scanId) { api.discardScan(scan.scanId).catch(() => {}); }
+      if (fileUrl) { URL.revokeObjectURL(fileUrl); fileUrl = null; }
+      selectedFile = null; scan = null; mode = null;
+      renderSourceInfo(); updateNav();
+    }
+
+    // ================= Schritt 2: Eigenschaften =================
+    const titleInput = el('input', { type: 'text', value: opts.prefillTitle || '', style: 'width:100%;' });
     const corrSel = el('select', { style: 'flex:1;' });
     const typeSel = el('select', { style: 'flex:1;' });
-    const tagBox = el('div', { style: 'display:flex; flex-wrap:wrap; gap:6px; max-height:110px; overflow:auto; border:1px solid rgba(0,0,0,0.15); border-radius:6px; padding:8px;' });
+    const tagBox = el('div', { style: 'display:flex; flex-wrap:wrap; gap:6px; max-height:120px; overflow:auto; border:1px solid var(--border); border-radius:6px; padding:8px;' });
+    const cfContainer = el('div', {});
+    const cfAddRow = el('div', { style: 'margin-top:4px;' });
+    const previewPane = el('div', { class: 'wiz-preview' });
 
-    function fillSelect(sel, items, allLabel) {
+    function fillSelect(sel, items) {
       sel.innerHTML = '';
-      sel.appendChild(el('option', { value: '' }, allLabel));
+      sel.appendChild(el('option', { value: '' }, '— kein —'));
       for (const it of items) sel.appendChild(el('option', { value: it.id }, it.name));
     }
-    function addTagCheckbox(t, checked) {
-      const cb = el('input', { type: 'checkbox', checked: !!checked, value: String(t.id) });
-      tagBox.appendChild(el('label', { class: 'tag', style: 'display:inline-flex; align-items:center; gap:4px; cursor:pointer;' }, [cb, t.name]));
-    }
-    function renderTags() {
+    function renderTagChecks() {
       tagBox.innerHTML = '';
       if (!meta.tags.length) { tagBox.appendChild(el('span', { class: 'help', style: 'margin:0;' }, 'Keine Tags.')); return; }
-      for (const t of meta.tags) addTagCheckbox(t, false);
+      for (const t of meta.tags) {
+        const cb = el('input', { type: 'checkbox', value: String(t.id) });
+        tagBox.appendChild(el('label', { class: 'tag', style: 'display:inline-flex; align-items:center; gap:4px; cursor:pointer;' }, [cb, t.name]));
+      }
     }
 
-    const addCorr = el('button', { class: 'btn-sm', onClick: () => addNew('Korrespondent', api.createCorrespondent, o => { meta.correspondents.push(o); fillSelect(corrSel, meta.correspondents, '— kein —'); corrSel.value = o.id; }) }, '＋ neu');
-    const addType = el('button', { class: 'btn-sm', onClick: () => addNew('Dokumenttyp', api.createDocumentType, o => { meta.documentTypes.push(o); fillSelect(typeSel, meta.documentTypes, '— kein —'); typeSel.value = o.id; }) }, '＋ neu');
-    const addTag = el('button', { class: 'btn-sm', onClick: () => addNew('Tag', api.createTag, o => { meta.tags.push(o); if (tagBox.querySelector('.help')) tagBox.innerHTML = ''; addTagCheckbox(o, true); }) }, '＋ Tag');
+    // Custom Fields (zuweisen/entfernen) — Werte werden im PATCH nach dem Upload gesetzt.
+    const cfState = [];
+    const cfInputType = dt => (dt === 'integer' || dt === 'float' || dt === 'monetary') ? 'number'
+      : dt === 'date' ? 'date' : dt === 'boolean' ? 'checkbox' : 'text';
+    function renderCF() {
+      cfContainer.innerHTML = '';
+      cfState.forEach(item => {
+        const def = meta.customFields.find(d => String(d.id) === String(item.field));
+        const label = def ? def.name : ('Feld ' + item.field);
+        const inputType = cfInputType(def ? def.data_type : 'string');
+        const input = el('input', { type: inputType, style: inputType === 'checkbox' ? '' : 'width:100%;' });
+        if (inputType === 'checkbox') { input.checked = !!item.value; input.addEventListener('change', () => { item.value = input.checked; }); }
+        else { input.value = item.value == null ? '' : item.value; input.addEventListener('input', () => { item.value = input.value; }); }
+        const rm = el('button', { class: 'btn-sm', title: 'Feld entfernen', onClick: () => { const i = cfState.indexOf(item); if (i >= 0) cfState.splice(i, 1); renderCF(); renderCFAdd(); } }, '✕');
+        cfContainer.appendChild(el('div', { style: 'display:flex; gap:8px; align-items:flex-end; margin-bottom:8px;' }, [
+          el('div', { style: 'flex:1;' }, field(label, input)), rm,
+        ]));
+      });
+    }
+    function renderCFAdd() {
+      cfAddRow.innerHTML = '';
+      const used = new Set(cfState.map(c => String(c.field)));
+      const avail = (meta.customFields || []).filter(d => !used.has(String(d.id)));
+      if (!avail.length) return;
+      const sel = el('select', { style: 'flex:1;' }, [
+        el('option', { value: '' }, '— Feld hinzufügen —'),
+        ...avail.map(d => el('option', { value: d.id }, d.name)),
+      ]);
+      const btn = el('button', { class: 'btn-sm', onClick: () => {
+        if (!sel.value) return;
+        const def = meta.customFields.find(d => String(d.id) === String(sel.value));
+        cfState.push({ field: Number(sel.value), value: (def && def.data_type === 'boolean') ? false : '' });
+        renderCF(); renderCFAdd();
+      } }, '＋');
+      cfAddRow.appendChild(el('div', { style: 'display:flex; gap:8px; align-items:center;' }, [sel, btn]));
+    }
+
+    const addCorr = el('button', { class: 'btn-sm', onClick: () => addNew('Korrespondent', api.createCorrespondent, o => { meta.correspondents.push(o); fillSelect(corrSel, meta.correspondents); corrSel.value = o.id; }) }, '＋ neu');
+    const addType = el('button', { class: 'btn-sm', onClick: () => addNew('Dokumenttyp', api.createDocumentType, o => { meta.documentTypes.push(o); fillSelect(typeSel, meta.documentTypes); typeSel.value = o.id; }) }, '＋ neu');
+    const addTag = el('button', { class: 'btn-sm', onClick: () => addNew('Tag', api.createTag, o => { meta.tags.push(o); renderTagCheckKeepSelection(o); }) }, '＋ Tag');
+
+    function renderTagCheckKeepSelection(o) {
+      // neuen Tag ergänzen und direkt anhaken, vorhandene Auswahl erhalten
+      if (tagBox.querySelector('.help')) tagBox.innerHTML = '';
+      const cb = el('input', { type: 'checkbox', value: String(o.id), checked: true });
+      tagBox.appendChild(el('label', { class: 'tag', style: 'display:inline-flex; align-items:center; gap:4px; cursor:pointer;' }, [cb, o.name]));
+    }
 
     async function addNew(label, fn, after) {
-      const name = (window.prompt(`Name des neuen ${label}s:`) || '').trim();
+      const name = (window.prompt('Name des neuen ' + label + 's:') || '').trim();
       if (!name) return;
-      try { after(await fn(name)); toast(`${label} „${name}" angelegt`); }
-      catch (e) { toast(`${label} anlegen fehlgeschlagen: ${e.message}`, 4000); }
+      try { after(await fn(name)); toast(label + ' „' + name + '" angelegt'); }
+      catch (e) { toast(label + ' anlegen fehlgeschlagen: ' + e.message, 4000); }
     }
-
-    const statusBox = el('div', { style: 'margin-top:10px; min-height:20px;' });
-    const uploadBtn = el('button', { class: 'btn-primary', onClick: onSubmit }, 'Hochladen');
-    const cancelBtn = el('button', { onClick: close }, 'Abbrechen');
 
     function field(label, node) { return el('div', { style: 'margin-bottom:10px;' }, [el('label', {}, label), node]); }
 
-    const box = el('div', { class: 'modal', style: 'max-width:600px; width:92vw;' }, [
-      el('h3', {}, 'Dokument nach Paperless hochladen'),
-      sourceBox,
-      el('hr', { style: 'border:none; border-top:1px solid rgba(0,0,0,0.1); margin:10px 0;' }),
+    const formCol = el('div', {}, [
       field('Titel', titleInput),
       field('Korrespondent', el('div', { style: 'display:flex; gap:8px; align-items:center;' }, [corrSel, addCorr])),
       field('Dokumenttyp', el('div', { style: 'display:flex; gap:8px; align-items:center;' }, [typeSel, addType])),
@@ -100,93 +240,140 @@
         el('div', { style: 'display:flex; justify-content:space-between; align-items:center;' }, [el('label', { style: 'margin:0;' }, 'Tags'), addTag]),
         tagBox,
       ]),
-      statusBox,
-      el('div', { class: 'toolbar', style: 'margin-top:14px; margin-bottom:0;' }, [
-        uploadBtn, cancelBtn,
-      ]),
+      el('div', { style: 'margin-bottom:6px;' }, [el('label', { style: 'margin:0;' }, 'Weitere Felder'), cfContainer, cfAddRow]),
     ]);
-    overlay.appendChild(box);
-    overlay.addEventListener('click', e => { if (e.target === overlay) close(); });
-    document.body.appendChild(overlay);
+    const step2El = el('div', { class: 'wiz-split' }, [previewPane, formCol]);
 
-    // Meta laden (nicht-fatal: ohne Paperless kann man trotzdem einen Titel setzen).
-    fillSelect(corrSel, [], '— kein —');
-    fillSelect(typeSel, [], '— kein —');
-    tagBox.appendChild(el('span', { class: 'help', style: 'margin:0;' }, 'Lade…'));
-    api.docMeta().then(m => {
-      meta.correspondents = m.correspondents || [];
-      meta.documentTypes = m.documentTypes || [];
-      meta.tags = m.tags || [];
-      fillSelect(corrSel, meta.correspondents, '— kein —');
-      fillSelect(typeSel, meta.documentTypes, '— kein —');
-      renderTags();
-    }).catch(e => {
-      tagBox.innerHTML = '';
-      tagBox.appendChild(el('span', { class: 'help', style: 'margin:0;' }, '⚠ Paperless-Listen nicht geladen: ' + e.message));
-    });
-
-    function collectMeta() {
-      const meta_ = {};
-      const title = titleInput.value.trim();
-      if (title) meta_.title = title;
-      if (corrSel.value) meta_.correspondent = corrSel.value;
-      if (typeSel.value) meta_.document_type = typeSel.value;
-      const tags = Array.from(tagBox.querySelectorAll('input[type=checkbox]')).filter(c => c.checked).map(c => c.value);
-      if (tags.length) meta_.tags = tags;
-      return meta_;
+    function refreshPreview() {
+      previewPane.innerHTML = '';
+      if (mode === 'file' && selectedFile) {
+        if (selectedFile.type.startsWith('image/')) {
+          previewPane.appendChild(el('img', { src: fileUrl, alt: 'Vorschau' }));
+        } else if (selectedFile.type === 'application/pdf') {
+          previewPane.appendChild(el('embed', { src: fileUrl, type: 'application/pdf' }));
+        } else {
+          previewPane.appendChild(el('div', { class: 'ph' }, ['Keine Vorschau für diesen Dateityp.', el('br'), selectedFile.name]));
+        }
+      } else if (mode === 'scan' && scan) {
+        // erste Seite groß + weitere als Thumbnails
+        const wrap = el('div', { style: 'width:100%; overflow:auto; max-height:66vh;' });
+        for (let i = 0; i < scan.count; i++) {
+          wrap.appendChild(el('img', { src: api.scanPageUrl(scan.scanId, i), alt: 'Seite ' + (i + 1), style: 'width:100%; display:block; margin-bottom:6px; background:#f1f3f5;' }));
+        }
+        previewPane.appendChild(wrap);
+      } else {
+        previewPane.appendChild(el('div', { class: 'ph' }, 'Keine Quelle gewählt.'));
+      }
     }
 
+    // ================= Navigation / Footer =================
+    const statusEl = el('div', { class: 'wiz-status' }, '');
     function setStatus(text, kind) {
-      statusBox.innerHTML = '';
-      statusBox.appendChild(el('div', { class: kind === 'error' ? '' : 'help', style: 'margin:0;' + (kind === 'error' ? 'color:#c0392b;' : '') }, text));
+      statusEl.textContent = text || '';
+      statusEl.style.color = kind === 'error' ? 'var(--danger)' : '';
     }
-    function setBusy(b) {
+    function setBusy(b, text) {
       busy = b;
-      uploadBtn.disabled = b; cancelBtn.disabled = b;
-      uploadBtn.textContent = b ? 'Lädt…' : 'Hochladen';
+      if (text !== undefined) setStatus(text || '');
+      Array.from(foot.querySelectorAll('button')).forEach(btn => { btn.disabled = b; });
+    }
+
+    let weiterBtn, backBtn, uploadBtn;
+    function updateNav() {
+      if (weiterBtn) weiterBtn.disabled = !(selectedFile || scan);
+    }
+
+    function showStep(n) {
+      step = n;
+      body.innerHTML = '';
+      foot.innerHTML = '';
+      stepEls[1].className = 'step' + (n === 1 ? ' active' : ' done');
+      stepEls[2].className = 'step' + (n === 2 ? ' active' : '');
+      if (n === 1) {
+        body.appendChild(step1El);
+        weiterBtn = el('button', { class: 'btn-primary', onClick: () => showStep(2) }, 'Weiter →');
+        foot.appendChild(el('div', { class: 'spacer' }));
+        foot.appendChild(statusEl);
+        foot.appendChild(weiterBtn);
+        updateNav();
+      } else {
+        refreshPreview();
+        body.appendChild(step2El);
+        backBtn = el('button', { onClick: () => showStep(1) }, '‹ Zurück');
+        uploadBtn = el('button', { class: 'btn-primary', onClick: onSubmit }, 'Hochladen');
+        foot.appendChild(backBtn);
+        foot.appendChild(el('div', { class: 'spacer' }));
+        foot.appendChild(statusEl);
+        foot.appendChild(uploadBtn);
+      }
+    }
+
+    // ================= Absenden =================
+    function collectMeta() {
+      const m = {};
+      const title = titleInput.value.trim();
+      if (title) m.title = title;
+      if (corrSel.value) m.correspondent = corrSel.value;
+      if (typeSel.value) m.document_type = typeSel.value;
+      const tags = Array.from(tagBox.querySelectorAll('input[type=checkbox]')).filter(c => c.checked).map(c => c.value);
+      if (tags.length) m.tags = tags;
+      return m;
+    }
+    function collectCustomFields() {
+      return cfState.map(c => {
+        const def = meta.customFields.find(d => String(d.id) === String(c.field));
+        const dt = def ? def.data_type : 'string';
+        let value = c.value;
+        if (dt === 'boolean') value = !!value;
+        else if (dt === 'integer' || dt === 'float' || dt === 'monetary') value = (value === '' || value == null) ? null : Number(value);
+        else value = (value === '' ? null : value);
+        return { field: c.field, value };
+      });
     }
 
     async function onSubmit() {
       const m = collectMeta();
+      const cfs = collectCustomFields();
       try {
-        setBusy(true);
+        setBusy(true, mode === 'scan' ? 'Scan wird hochgeladen…' : 'Datei wird hochgeladen…');
         let taskId;
-        if (source === 'scanner') {
-          setStatus('Scanne… (Papier im Einzug?)');
-          const r = await api.scanUploadDocument({ scannerUrl, source: 'feeder', ...m });
-          taskId = r.taskId;
+        if (mode === 'scan') {
+          if (!scan) { setBusy(false, ''); return toast('Kein Scan vorhanden.'); }
+          taskId = (await api.commitScan(scan.scanId, m)).taskId;
+          scan = null; // vom Server nach commit gelöscht
         } else {
-          if (!selectedFile) { setBusy(false); return toast('Bitte eine Datei wählen.'); }
-          setStatus('Datei wird hochgeladen…');
-          const r = await api.uploadDocument(selectedFile, m);
-          taskId = r.taskId;
+          if (!selectedFile) { setBusy(false, ''); return toast('Bitte eine Datei wählen.'); }
+          taskId = (await api.uploadDocument(selectedFile, m)).taskId;
         }
         if (!taskId) {
-          setStatus('Hochgeladen. Paperless verarbeitet das Dokument — es erscheint in Kürze und kann dann verknüpft werden.');
-          setBusy(false);
-          setTimeout(close, 2500);
+          setStatus('Hochgeladen. Paperless verarbeitet das Dokument — es erscheint in Kürze.');
+          setBusy(false); setTimeout(() => close(), 2500);
           return;
         }
-        await pollTask(taskId, m.title);
+        await pollTask(taskId, m.title, cfs);
       } catch (e) {
         setStatus('Fehlgeschlagen: ' + e.message, 'error');
         setBusy(false);
       }
     }
 
-    async function pollTask(taskId, title) {
+    async function pollTask(taskId, title, cfs) {
       setStatus('Paperless verarbeitet das Dokument (OCR)…');
       for (let i = 0; i < POLL_MAX; i++) {
         await new Promise(r => setTimeout(r, POLL_INTERVAL));
         let t;
         try { t = await api.getDocTask(taskId); }
-        catch (_) { continue; } // transient — weiter versuchen
+        catch (_) { continue; }
         if (t.status === 'SUCCESS' && t.documentId) {
-          setStatus('Fertig.');
+          if (cfs && cfs.length) {
+            setStatus('Zusatzfelder werden gesetzt…');
+            try { await api.patchDocument(t.documentId, { custom_fields: cfs }); }
+            catch (e) { toast('Zusatzfelder konnten nicht gesetzt werden: ' + e.message, 4000); }
+          }
           toast('Dokument hochgeladen');
           if (opts.onUploaded) opts.onUploaded({ id: t.documentId, title: title || ('Dokument ' + t.documentId) });
-          setBusy(false);
-          close();
+          busy = false;
+          overlay.remove();
           return;
         }
         if (t.status === 'FAILURE') {
@@ -195,9 +382,24 @@
           return;
         }
       }
-      setStatus('Verarbeitung dauert länger als erwartet. Das Dokument erscheint gleich in Paperless und kann dann manuell verknüpft werden.');
+      setStatus('Verarbeitung dauert länger als erwartet. Das Dokument erscheint gleich in Paperless und kann dann verknüpft werden.');
       setBusy(false);
     }
+
+    function fmtSize(n) {
+      if (n == null) return '';
+      if (n < 1024) return n + ' B';
+      if (n < 1024 * 1024) return (n / 1024).toFixed(0) + ' KB';
+      return (n / 1024 / 1024).toFixed(1) + ' MB';
+    }
+
+    overlay.addEventListener('click', e => { if (e.target === overlay) close(); });
+    document.addEventListener('keydown', function esc(e) {
+      if (e.key === 'Escape' && document.body.contains(overlay)) { if (!busy) close(); }
+      if (!document.body.contains(overlay)) document.removeEventListener('keydown', esc);
+    });
+
+    showStep(1);
   }
 
   GR.ui.uploadPaperlessDocument = uploadPaperlessDocument;

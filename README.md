@@ -162,14 +162,25 @@ Sitzungsprotokoll gibt es das Modul **Dokumente**, das die in **Paperless-ngx**
 Metadaten** erlaubt (Titel, Datum, Korrespondent, Dokumenttyp, Tags, Archiv-Nr., Custom Fields)
 und **neue Dokumente hochladen** kann.
 
-**Dokument hochladen (nach Paperless):** Über „＋ Dokument hochladen" wird eine **Datei**
-(PDF/Bild, auf dem Handy auch direkt aus der Kamera) oder ein **Scan** vom Netzwerkscanner
-nach Paperless gelegt. Mehrseitige Scans werden serverseitig zu **einem PDF** gebündelt
-(Dependency `pdf-lib`). Im Upload-Dialog lassen sich **Titel, Korrespondent, Dokumenttyp und
-Tags** setzen – neue Korrespondenten/Typen/Tags können dabei **direkt angelegt** werden.
-Paperless verarbeitet den Upload asynchron (OCR); die App **wartet** über die Paperless-Task
-und meldet die Fertigstellung. Wird aus einem **Vertrag** heraus hochgeladen (Modul „Verträge
-und Pacht"), verknüpft die App das fertige Dokument **automatisch** mit dem Vertrag.
+**Dokument hochladen (geführter Assistent):** „＋ Dokument hochladen" öffnet einen
+**Vollbild-Assistenten** in zwei Schritten:
+1. **Quelle** – eine **Datei per Drag & Drop** oder Auswahl (PDF/Bild, auf dem Handy auch
+   direkt aus der Kamera) **oder** ein **Scan** vom Netzwerkscanner. Gescannte Seiten werden
+   **erst als Vorschau gezeigt** und können verworfen/neu gescannt werden, bevor etwas
+   gespeichert wird. Bei einer lokalen Datei erscheint sofort eine **Vorschau im Browser**.
+2. **Eigenschaften** – Titel (aus dem Dateinamen vorbelegt), Korrespondent, Dokumenttyp, Tags
+   **und Custom Fields**; neue Korrespondenten/Typen/Tags lassen sich direkt anlegen.
+   „Hochladen" lädt Datei bzw. Scan-PDF **mit** den Metadaten hoch. Mehrseitige Scans werden
+   serverseitig zu **einem PDF** gebündelt (Dependency `pdf-lib`).
+
+Paperless verarbeitet den Upload asynchron (OCR); die App **wartet** über die Paperless-Task,
+**setzt danach die Custom Fields** (die beim Upload selbst noch nicht möglich sind) und meldet
+die Fertigstellung. Wird aus einem **Vertrag** heraus hochgeladen (Modul „Verträge und Pacht"),
+verknüpft die App das fertige Dokument **automatisch** mit dem Vertrag.
+
+Der Scan läuft serverseitig in drei Schritten (`POST …/scan` → Seiten im Zwischenspeicher,
+`GET …/scan/:id/page/:idx` für die Vorschau, `POST …/scan/:id/commit` bündelt + lädt hoch;
+verwaiste Scans werden nach 1 h aufgeräumt).
 
 **Custom Fields:** Im Detailbereich lassen sich die **Zusatzfelder** eines Dokuments nicht
 nur ändern, sondern auch **neu zuweisen** (Auswahl aus den in Paperless definierten Feldern)
@@ -179,6 +190,12 @@ Ja-Nein). Die Felddefinitionen selbst werden weiterhin in Paperless angelegt.
 **Notizen:** Zu jedem Dokument können **Notizen** angezeigt, **hinzugefügt** und **gelöscht**
 werden (Paperless-Notes-API `…/documents/{id}/notes/`). Der Notiz-Bereich speichert unabhängig
 vom „Speichern"-Button der Metadaten.
+
+**Detailansicht & Bedienung:** Der Detailbereich ist in **Reiter** gegliedert –
+**Vorschau · Eigenschaften · Notizen** – statt einer langen Scroll-Spalte. Die Vorschau bekommt
+den vollen Platz und lässt sich per **Vollbild** öffnen. Auf **Mobilgeräten** arbeitet das Modul
+als **Master-Detail**: erst die Trefferliste, ein Tipp öffnet das Dokument als eigene Ansicht mit
+„‹ Zurück". Der Assistent wird auf schmalen Displays randlos/vollflächig dargestellt.
 
 **Architektur:** Das Frontend spricht ausschließlich das eigene Node-Backend an
 (`/api/dokumente/...`). Das Backend (`backend/paperless.js` + `backend/routes/dokumente.js`)

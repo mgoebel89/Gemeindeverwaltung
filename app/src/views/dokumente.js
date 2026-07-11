@@ -30,12 +30,14 @@
   function renderDokumente(mount) {
     state.selectedId = null;
 
-    const listPanel = el('div', { class: 'card', style: 'padding:0; flex:1 1 420px; min-width:340px; max-height:72vh; overflow:auto;' },
+    const listPanel = el('div', { class: 'card doc-list-panel', style: 'padding:0; flex:1 1 420px; min-width:340px; max-height:72vh; overflow:auto;' },
       el('div', { class: 'empty' }, 'Lade…'));
-    const detailPanel = el('div', { class: 'card', style: 'flex:1 1 480px; min-width:340px; max-height:72vh; overflow:auto;' },
+    const detailPanel = el('div', { class: 'card doc-detail-panel', style: 'flex:1 1 480px; min-width:340px; max-height:72vh; overflow:auto;' },
       el('div', { class: 'empty' }, 'Kein Dokument ausgewählt.'));
+    const split = el('div', { class: 'doc-split', style: 'display:flex; gap:16px; flex-wrap:wrap; align-items:flex-start;' }, [listPanel, detailPanel]);
     state._listPanel = listPanel;
     state._detailPanel = detailPanel;
+    state._split = split;
 
     mount.appendChild(el('div', { class: 'toolbar' }, [
       el('div', { class: 'spacer' }),
@@ -44,7 +46,7 @@
     mount.appendChild(el('h2', {}, 'Dokumente'));
     mount.appendChild(el('p', { class: 'help' }, 'Dokumente aus Paperless-ngx durchsuchen, hochladen und Metadaten bearbeiten.'));
     mount.appendChild(buildToolbar());
-    mount.appendChild(el('div', { class: 'doc-split', style: 'display:flex; gap:16px; flex-wrap:wrap; align-items:flex-start;' }, [listPanel, detailPanel]));
+    mount.appendChild(split);
 
     loadMetaThenSearch();
   }
@@ -211,7 +213,9 @@
   // ---------- Detail / Bearbeiten ----------
   async function selectDoc(id) {
     state.selectedId = id;
+    state._detailTab = 'preview'; // neues Dokument immer mit der Vorschau öffnen
     renderResults(); // Markierung aktualisieren
+    if (state._split) state._split.classList.add('show-detail'); // Handy: Detail in den Vordergrund
     const panel = state._detailPanel;
     panel.innerHTML = '';
     panel.appendChild(el('div', { class: 'empty' }, 'Lade Dokument…'));
@@ -348,38 +352,82 @@
       return el('div', { style: 'margin-bottom:10px;' }, [el('label', {}, label), node]);
     }
 
-    // Vorschau
     const previewUrl = api.docFileUrl(doc.id, 'preview');
     const downloadUrl = api.docFileUrl(doc.id, 'download');
-    const preview = el('iframe', { src: previewUrl, title: 'Vorschau', style: 'width:100%; height:340px; border:1px solid rgba(0,0,0,0.15); border-radius:6px;' });
 
-    panel.appendChild(el('div', { style: 'display:flex; justify-content:space-between; align-items:center; gap:10px; margin-bottom:8px;' }, [
-      el('h3', { style: 'margin:0;' }, doc.title || '(ohne Titel)'),
+    // ----- Kopf: Zurück (nur Handy), Titel, Download -----
+    panel.appendChild(el('div', { style: 'display:flex; align-items:center; gap:10px; margin-bottom:10px;' }, [
+      el('button', { class: 'btn-sm doc-back', onClick: () => { if (state._split) state._split.classList.remove('show-detail'); } }, '‹ Zurück'),
+      el('h3', { style: 'margin:0; flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;' }, doc.title || '(ohne Titel)'),
       el('a', { href: downloadUrl, target: '_blank', rel: 'noopener', class: 'btn-sm' }, 'Download'),
     ]));
-    panel.appendChild(preview);
-    panel.appendChild(el('div', { style: 'height:12px;' }));
 
-    panel.appendChild(field('Titel', titleInput));
-    panel.appendChild(el('div', { class: 'row', style: 'display:flex; gap:12px; flex-wrap:wrap;' }, [
-      el('div', { style: 'flex:1 1 160px;' }, field('Dokumentdatum', dateInput)),
-      el('div', { style: 'flex:1 1 160px;' }, field('Archiv-Nr. (ASN)', asnInput)),
-    ]));
-    panel.appendChild(field('Korrespondent', corrSel));
-    panel.appendChild(field('Dokumenttyp', typeSel));
-    panel.appendChild(field('Tags', tagBox));
-    panel.appendChild(el('h4', { style: 'margin:14px 0 6px;' }, 'Weitere Felder'));
-    panel.appendChild(cfContainer);
-    panel.appendChild(cfAddRow);
+    // ----- Reiter -----
+    const tabPreview = el('div', { class: 'doc-preview-wrap' }, [
+      el('div', { class: 'doc-preview-bar' }, [
+        el('button', { class: 'btn-sm btn-primary', onClick: () => openLightbox(previewUrl, downloadUrl, doc.title) }, '⛶ Vollbild'),
+        el('a', { href: downloadUrl, target: '_blank', rel: 'noopener', class: 'btn-sm' }, 'Herunterladen'),
+      ]),
+      el('iframe', { src: previewUrl, title: 'Vorschau' }),
+    ]);
+
+    const tabProps = el('div', {}, [
+      field('Titel', titleInput),
+      el('div', { class: 'row', style: 'display:flex; gap:12px; flex-wrap:wrap;' }, [
+        el('div', { style: 'flex:1 1 160px;' }, field('Dokumentdatum', dateInput)),
+        el('div', { style: 'flex:1 1 160px;' }, field('Archiv-Nr. (ASN)', asnInput)),
+      ]),
+      field('Korrespondent', corrSel),
+      field('Dokumenttyp', typeSel),
+      field('Tags', tagBox),
+      el('h4', { style: 'margin:14px 0 6px;' }, 'Weitere Felder'),
+      cfContainer, cfAddRow,
+      el('div', { style: 'display:flex; gap:8px; margin-top:12px;' }, [saveBtn]),
+    ]);
     renderCF();
 
-    panel.appendChild(el('div', { style: 'display:flex; gap:8px; margin-top:12px;' }, [saveBtn]));
-
-    // Notizen (eigener Bereich, unabhängig vom Metadaten-Speichern)
-    panel.appendChild(el('h4', { style: 'margin:20px 0 6px;' }, 'Notizen'));
     const notesBox = el('div', {});
-    panel.appendChild(notesBox);
+    const tabNotes = el('div', {}, [notesBox]);
     renderNotesSection(notesBox, doc.id, doc.notes);
+
+    const tabs = [
+      { key: 'preview', label: 'Vorschau', node: tabPreview },
+      { key: 'props', label: 'Eigenschaften', node: tabProps },
+      { key: 'notes', label: 'Notizen', node: tabNotes },
+    ];
+    const content = el('div', {});
+    const tabBar = el('div', { class: 'doc-tabs' });
+    let active = state._detailTab || 'preview';
+    function showTab(key) {
+      active = key; state._detailTab = key;
+      Array.from(tabBar.children).forEach(b => b.classList.toggle('active', b.dataset.key === key));
+      content.innerHTML = '';
+      const t = tabs.find(x => x.key === key) || tabs[0];
+      content.appendChild(t.node);
+    }
+    tabs.forEach(t => {
+      const b = el('button', { onClick: () => showTab(t.key) }, t.label);
+      b.dataset.key = t.key;
+      tabBar.appendChild(b);
+    });
+    panel.appendChild(tabBar);
+    panel.appendChild(content);
+    showTab(active);
+  }
+
+  // Vollbild-Vorschau (Lightbox)
+  function openLightbox(url, downloadUrl, title) {
+    const lb = el('div', { class: 'doc-lightbox' });
+    const closeLb = () => lb.remove();
+    lb.appendChild(el('div', { class: 'lb-bar' }, [
+      el('strong', { style: 'font-weight:600;' }, title || 'Vorschau'),
+      el('div', { class: 'spacer' }),
+      el('a', { href: downloadUrl, target: '_blank', rel: 'noopener' }, 'Herunterladen'),
+      el('button', { class: 'btn-sm', onClick: closeLb }, '✕ Schließen'),
+    ]));
+    lb.appendChild(el('iframe', { src: url, title: 'Vollbild-Vorschau' }));
+    lb.addEventListener('click', e => { if (e.target === lb) closeLb(); });
+    document.body.appendChild(lb);
   }
 
   // ---------- Notizen ----------

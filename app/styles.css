@@ -296,3 +296,113 @@ tr:hover td { background: #fafbfc; }
   button, .btn { padding: 10px 14px; }
   .btn-sm { padding: 6px 10px; }
 }
+
+/* ===== Dokumente: Vollbild-Assistent (neues Dokument) ===== */
+.wiz-overlay {
+  position: fixed; inset: 0; background: rgba(15,23,42,0.55); z-index: 1100;
+  display: flex; align-items: stretch; justify-content: center;
+}
+.wiz {
+  background: var(--surface); width: 100%; max-width: 1040px; margin: 24px;
+  border-radius: var(--radius); box-shadow: 0 20px 60px rgba(0,0,0,0.35);
+  display: flex; flex-direction: column; overflow: hidden; max-height: calc(100vh - 48px);
+}
+.wiz-head {
+  display: flex; align-items: center; gap: 14px; padding: 14px 20px;
+  border-bottom: 1px solid var(--border); flex: 0 0 auto;
+}
+.wiz-head h3 { margin: 0; }
+.wiz-steps { display: flex; gap: 8px; margin-left: auto; }
+.wiz-steps .step {
+  display: flex; align-items: center; gap: 6px; font-size: 0.82rem; color: var(--muted);
+  padding: 4px 10px; border-radius: 999px; border: 1px solid var(--border); white-space: nowrap;
+}
+.wiz-steps .step .num {
+  width: 20px; height: 20px; border-radius: 50%; background: #e5e7eb; color: var(--muted);
+  display: inline-flex; align-items: center; justify-content: center; font-size: 0.75rem; font-weight: 600;
+}
+.wiz-steps .step.active { color: var(--primary); border-color: var(--primary); }
+.wiz-steps .step.active .num { background: var(--primary); color: white; }
+.wiz-steps .step.done .num { background: var(--success); color: white; }
+.wiz-close {
+  border: none; background: transparent; font-size: 1.5rem; line-height: 1; cursor: pointer;
+  color: var(--muted); padding: 2px 6px;
+}
+.wiz-body { padding: 20px; overflow: auto; flex: 1 1 auto; }
+.wiz-foot {
+  display: flex; gap: 10px; align-items: center; padding: 14px 20px;
+  border-top: 1px solid var(--border); flex: 0 0 auto;
+}
+.wiz-foot .spacer { flex: 1; }
+.wiz-status { color: var(--muted); font-size: 0.88rem; }
+
+/* Drop-Zone */
+.dropzone {
+  border: 2px dashed var(--border); border-radius: var(--radius); padding: 40px 20px;
+  text-align: center; color: var(--muted); cursor: pointer; background: #fafbfc;
+  transition: border-color 0.15s, background 0.15s;
+}
+.dropzone.drag { border-color: var(--primary); background: #eef4fb; color: var(--primary); }
+.dropzone .dz-icon { font-size: 2.4rem; line-height: 1; margin-bottom: 8px; }
+.dropzone .dz-hint { font-size: 0.85rem; margin-top: 6px; }
+.wiz-source-btns { display: flex; gap: 10px; justify-content: center; margin-top: 14px; flex-wrap: wrap; }
+
+/* Zwei-Spalten-Layout Schritt 2: Vorschau + Formular */
+.wiz-split { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; align-items: start; }
+.wiz-preview {
+  position: sticky; top: 0; border: 1px solid var(--border); border-radius: var(--radius);
+  background: #f1f3f5; overflow: hidden; min-height: 260px;
+  display: flex; align-items: center; justify-content: center;
+}
+.wiz-preview img, .wiz-preview embed, .wiz-preview iframe { width: 100%; height: 62vh; border: 0; object-fit: contain; background: #f1f3f5; }
+.wiz-preview .ph { color: var(--muted); padding: 30px; text-align: center; }
+
+/* Scan-Seiten-Vorschau (Thumbnails) */
+.scan-thumbs { display: flex; gap: 10px; flex-wrap: wrap; margin: 12px 0; }
+.scan-thumbs .thumb {
+  width: 110px; border: 1px solid var(--border); border-radius: 6px; overflow: hidden; background: white;
+}
+.scan-thumbs .thumb img { width: 100%; height: 150px; object-fit: cover; display: block; }
+.scan-thumbs .thumb .cap { font-size: 0.72rem; color: var(--muted); text-align: center; padding: 3px 0; }
+
+/* ===== Dokumente: Reiter im Detailbereich ===== */
+.doc-tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--border); margin-bottom: 14px; }
+.doc-tabs button {
+  border: none; background: transparent; padding: 10px 14px; cursor: pointer; color: var(--muted);
+  border-bottom: 2px solid transparent; border-radius: 0; font-size: 0.92rem;
+}
+.doc-tabs button.active { color: var(--primary); border-bottom-color: var(--primary); font-weight: 600; }
+.doc-preview-wrap { position: relative; }
+.doc-preview-wrap iframe { width: 100%; height: 66vh; border: 1px solid var(--border); border-radius: 6px; background: #f1f3f5; }
+.doc-preview-bar { display: flex; gap: 8px; margin-bottom: 8px; align-items: center; flex-wrap: wrap; }
+
+/* Vollbild-Vorschau (Lightbox) */
+.doc-lightbox {
+  position: fixed; inset: 0; background: rgba(0,0,0,0.85); z-index: 1200;
+  display: flex; flex-direction: column;
+}
+.doc-lightbox .lb-bar { display: flex; gap: 10px; align-items: center; padding: 10px 16px; color: white; }
+.doc-lightbox .lb-bar .spacer { flex: 1; }
+.doc-lightbox iframe { flex: 1; width: 100%; border: 0; background: #222; }
+.doc-lightbox a { color: #cfe0f5; }
+
+/* Master-Detail-Navigation im Dokumente-Modul */
+.doc-back { display: none; }
+
+@media (max-width: 860px) {
+  .wiz { margin: 0; max-height: 100vh; border-radius: 0; }
+  .wiz-overlay { align-items: stretch; }
+  .wiz-split { grid-template-columns: 1fr; }
+  .wiz-preview { position: static; }
+  .wiz-preview img, .wiz-preview embed, .wiz-preview iframe { height: 40vh; }
+  .wiz-steps .step .label { display: none; }
+
+  .doc-preview-wrap iframe { height: 52vh; }
+
+  /* Liste und Detail als umschaltbare Vollbild-Ansichten statt nebeneinander. */
+  .doc-split { display: block !important; }
+  .doc-split .doc-list-panel, .doc-split .doc-detail-panel { max-height: none !important; }
+  .doc-split.show-detail .doc-list-panel { display: none; }
+  .doc-split:not(.show-detail) .doc-detail-panel { display: none; }
+  .doc-back { display: inline-flex; }
+}
