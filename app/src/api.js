@@ -167,6 +167,15 @@
   async function testCalUrl(url) { return jsonFetch('/api/kalender/test', { method: 'POST', body: { url } }); }
   async function listCalEvents(days = 90) { return jsonFetch(`/api/kalender/events?days=${encodeURIComponent(days)}`); }
 
+  // --- Aufgaben (Vikunja, Backend-Proxy) ---
+  async function getTaskConfig() { return jsonFetch('/api/aufgaben/config'); }
+  async function putTaskConfig(cfg) { return jsonFetch('/api/aufgaben/config', { method: 'PUT', body: cfg }); }
+  async function taskHealth() { return jsonFetch('/api/aufgaben/health'); }
+  async function listOpenTasks() { return jsonFetch('/api/aufgaben/tasks'); }
+  async function listTaskProjects() { return jsonFetch('/api/aufgaben/projects'); }
+  async function completeTask(id, done = true) { return jsonFetch(`/api/aufgaben/tasks/${encodeURIComponent(id)}/done`, { method: 'POST', body: { done } }); }
+  async function createTask(projectId, payload) { return jsonFetch(`/api/aufgaben/projects/${encodeURIComponent(projectId)}/tasks`, { method: 'POST', body: payload }); }
+
   async function listDocNotes(id) { return jsonFetch(`/api/dokumente/${encodeURIComponent(id)}/notes`); }
   async function addDocNote(id, note) { return jsonFetch(`/api/dokumente/${encodeURIComponent(id)}/notes`, { method: 'POST', body: { note } }); }
   async function deleteDocNote(id, noteId) { return jsonFetch(`/api/dokumente/${encodeURIComponent(id)}/notes/${encodeURIComponent(noteId)}`, { method: 'DELETE' }); }
@@ -218,6 +227,7 @@
     uploadDocument, scanDocument, scanPageUrl, discardScan, commitScan, getDocTask, createCorrespondent, createDocumentType, createTag,
     getDocConfig, putDocConfig,
     getCalConfig, putCalConfig, testCalUrl, listCalEvents,
+    getTaskConfig, putTaskConfig, taskHealth, listOpenTasks, listTaskProjects, completeTask, createTask,
     listDocNotes, addDocNote, deleteDocNote,
     putMieter, deleteMieterRemote,
     putRaum, deleteRaumRemote,

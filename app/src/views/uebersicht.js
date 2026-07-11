@@ -22,7 +22,7 @@
     grid.appendChild(cardVermietungen(heute));
     grid.appendChild(cardFristen(heute));
     grid.appendChild(cardTermine());
-    grid.appendChild(cardPlaceholder('Offene Aufgaben', '✅', 'Vikunja-Anbindung folgt (Phase 3): offene To-dos erscheinen hier.'));
+    grid.appendChild(cardAufgaben(heute));
     mount.appendChild(grid);
   }
 
@@ -130,6 +130,36 @@
     });
     return card;
   }
+
+  // --- Offene Aufgaben (Vikunja, serverseitig geladen) ---
+  function cardAufgaben(heute) {
+    const bodyBox = el('div', {}, [emptyLine('Aufgaben werden geladen…')]);
+    const card = dashCard('Offene Aufgaben', '✅', [bodyBox],
+      el('a', { href: '#/aufgaben' }, 'Zu den Aufgaben →'));
+
+    GR.api.listOpenTasks().then(res => {
+      bodyBox.innerHTML = '';
+      const tasks = (res.tasks || []).slice(0, 6);
+      if (!tasks.length) { bodyBox.appendChild(emptyLine('Keine offenen Aufgaben. 🎉')); return; }
+      bodyBox.appendChild(el('ul', { class: 'dash-list' }, tasks.map(t => {
+        let datum = '—', overdue = false;
+        if (t.dueDate) {
+          const d = new Date(t.dueDate); d.setHours(0, 0, 0, 0);
+          overdue = d < heute;
+          datum = formatDatum(`${d.getFullYear()}-${p2(d.getMonth() + 1)}-${p2(d.getDate())}`);
+        }
+        return el('li', {}, [
+          el('span', { class: 'dash-date', style: overdue ? 'color:#c53030;font-weight:600;' : '' }, (overdue ? '⚠ ' : '') + datum),
+          el('span', { class: 'dash-main' }, [el('strong', {}, t.title)]),
+        ]);
+      })));
+    }).catch(() => {
+      bodyBox.innerHTML = '';
+      bodyBox.appendChild(emptyLine('Aufgaben konnten nicht geladen werden.'));
+    });
+    return card;
+  }
+  function p2(n) { return String(n).padStart(2, '0'); }
 
   function cardPlaceholder(title, icon, text) {
     return dashCard(title, icon, [

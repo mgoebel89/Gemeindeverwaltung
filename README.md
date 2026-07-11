@@ -44,12 +44,12 @@ Die Navigation wird aus einer zentralen Config in `app/src/app.js` (`NAV`) aufge
 neues Modul ist dort ein Eintrag.
 
 Die Startseite (`#/`) ist ein **Dashboard** (`app/src/views/uebersicht.js`) mit Karten für
-anstehende Saalvermietungen, Vertrags-Kündigungsfristen und **anstehende Termine** (aus den
-abonnierten Kalendern); Vikunja-Aufgaben folgen als eigene Phase. Die frühere Sitzungsliste liegt
-unter `#/sitzungen`, die vollständige Terminliste unter `#/termine`.
+anstehende Saalvermietungen, Vertrags-Kündigungsfristen, **anstehende Termine** (aus den
+abonnierten Kalendern) und **offene Aufgaben** (aus Vikunja). Die frühere Sitzungsliste liegt
+unter `#/sitzungen`, die vollständige Terminliste unter `#/termine`, die Aufgaben unter `#/aufgaben`.
 
 Die **Einstellungen** sind in Kategorien gegliedert (Unter-Navigation): Allgemein, Darstellung,
-Dokumente, Kalender, Vermietung, Verträge & Pacht, Bargeldauslagen, Datensicherung.
+Dokumente, Kalender, Aufgaben, Vermietung, Verträge & Pacht, Bargeldauslagen, Datensicherung.
 
 ## Struktur
 
@@ -428,6 +428,30 @@ scheitern und die Abo-URL ein Geheimnis enthalten kann. Der Zugriff ist **nur le
 
 > **Tipp Google Kalender:** *Einstellungen → Kalender → Integration →* „Geheime Adresse im
 > iCal-Format". Diese URL enthält ein Token und bleibt deshalb serverseitig.
+
+> **Migration:** Kein neues Schema nötig (nutzt die bestehende `settings`-Tabelle). Frontend
+> nach dem Update mit **Strg+F5** neu laden.
+
+## Modul „Aufgaben" (Vikunja)
+
+Aufgaben werden aus einer **Vikunja**-Instanz (Open-Source-Aufgabenverwaltung) über deren
+REST-API angebunden. Der Zugriff läuft **serverseitig** (`backend/vikunja.js`, Route
+`/api/aufgaben`), damit CORS und der API-Token im Backend bleiben. Authentifizierung per
+**Bearer-Token**.
+
+- **Konfiguration** unter *Einstellungen → Aufgaben*: Vikunja-URL (ohne `/api/v1`) und
+  API-Token. Gespeichert wird serverseitig unter dem DB-Key `vikunja` (eigener Key, **nicht**
+  im Snapshot/NocoDB-Sync); Env-Fallback `VIKUNJA_URL`/`VIKUNJA_TOKEN`. Leeres Token-Feld beim
+  Speichern = bestehenden Token behalten. „Verbindung testen" prüft Erreichbarkeit + Token.
+- **Token in Vikunja** unter *Einstellungen → API-Tokens* anlegen – mit **Lese- und
+  Schreibrecht** für Aufgaben/Projekte, damit Anzeigen, Abhaken und Anlegen funktionieren.
+- **Anzeige**: Dashboard-Karte *Offene Aufgaben* (überfällige hervorgehoben) und die
+  vollständige Liste unter `#/aufgaben`, nach Zeitbucket gruppiert (Überfällig / Heute /
+  Diese Woche / Später / Ohne Datum), fällige zuerst.
+- **Interaktion**: Aufgaben direkt **abhaken** (`POST /api/v1/tasks/{id}` mit `done=true`)
+  und **neue Aufgaben anlegen** (`PUT /api/v1/projects/{id}/tasks`) mit Titel, Projektwahl,
+  optionalem Fälligkeitsdatum und Priorität. Aufgaben werden per Filter `done = false`,
+  sortiert nach `due_date`, geladen (durchblättert bis 10 Seiten).
 
 > **Migration:** Kein neues Schema nötig (nutzt die bestehende `settings`-Tabelle). Frontend
 > nach dem Update mit **Strg+F5** neu laden.

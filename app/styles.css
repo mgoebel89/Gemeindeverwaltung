@@ -511,6 +511,32 @@ tr:hover td { background: #fafbfc; }
   .termine-time { min-width: 72px; }
 }
 
+/* ===== Aufgaben (Vikunja) ===== */
+.aufg-group { margin-top: 18px; }
+.aufg-group-head {
+  display: flex; align-items: center; gap: 8px; margin-bottom: 6px;
+  padding-bottom: 4px; border-bottom: 2px solid var(--border);
+  font-weight: 600; color: var(--primary);
+}
+.aufg-group-head.is-overdue { color: #c53030; }
+.aufg-group-head.is-today { color: #b7791f; }
+.aufg-count {
+  font-size: 0.75rem; font-weight: 600; color: var(--muted);
+  background: #eef2f7; border-radius: 999px; padding: 1px 8px;
+}
+.aufg-list { list-style: none; margin: 0; padding: 0; }
+.aufg-item {
+  display: flex; gap: 12px; align-items: baseline; padding: 9px 2px;
+  border-bottom: 1px solid var(--border);
+}
+.aufg-item:last-child { border-bottom: none; }
+.aufg-item.is-done { opacity: 0.5; }
+.aufg-item.is-done .aufg-title { text-decoration: line-through; }
+.aufg-check { flex: 0 0 auto; width: 18px; height: 18px; cursor: pointer; align-self: center; }
+.aufg-main { flex: 1; min-width: 0; }
+.aufg-title { font-weight: 500; }
+.aufg-prio { font-size: 0.85em; }
+
 /* ===== Einstellungen: Kategorie-Unternavigation ===== */
 .settings-layout { display: grid; grid-template-columns: 220px 1fr; gap: 20px; align-items: start; }
 .settings-nav { display: flex; flex-direction: column; gap: 2px; position: sticky; top: 16px; }

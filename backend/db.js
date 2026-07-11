@@ -208,6 +208,21 @@ function saveKalenderConfig(c) {
   return c;
 }
 
+// Vikunja-Zugangsdaten (URL + API-Token): eigener Key, damit sie NICHT im
+// allgemeinen Settings-Blob (Snapshot/NocoDB-Sync) landen. Token im Klartext –
+// bleibt serverseitig, wird nie im Snapshot ausgegeben.
+function getVikunjaConfig() {
+  const r = db.prepare("SELECT value FROM settings WHERE key = 'vikunja'").get();
+  return r ? JSON.parse(r.value) : null;
+}
+function saveVikunjaConfig(c) {
+  db.prepare(`
+    INSERT INTO settings (key, value) VALUES ('vikunja', ?)
+    ON CONFLICT(key) DO UPDATE SET value = excluded.value
+  `).run(JSON.stringify(c));
+  return c;
+}
+
 // --- Generischer Payload-Store (für Vermietung-Entitäten) ---
 function makePayloadStore(table) {
   return {
@@ -418,6 +433,7 @@ module.exports = {
   getSettings, saveSettings,
   getPaperlessConfig, savePaperlessConfig,
   getKalenderConfig, saveKalenderConfig,
+  getVikunjaConfig, saveVikunjaConfig,
   listAttachments, getAttachment, attachmentPath, ensureAttachmentDir,
   insertAttachment, deleteAttachment,
   listMieter, getMieter, saveMieter, deleteMieter,

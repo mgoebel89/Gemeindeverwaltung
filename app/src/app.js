@@ -1,6 +1,6 @@
 (function () {
   'use strict';
-  const { renderDashboard, renderSitzungen, renderDokumente, renderTermine, renderStammdaten, renderEinstellungen, renderVorbereitung, renderLive, renderVermietung, renderMieter, renderAuslagen, renderAuslagenStammdaten, renderVertraege, renderVertragspartner } = GR.views;
+  const { renderDashboard, renderSitzungen, renderDokumente, renderTermine, renderAufgaben, renderStammdaten, renderEinstellungen, renderVorbereitung, renderLive, renderVermietung, renderMieter, renderAuslagen, renderAuslagenStammdaten, renderVertraege, renderVertragspartner } = GR.views;
 
   const mount = document.getElementById('app');
   const shell = document.getElementById('appShell');
@@ -11,6 +11,7 @@
     { items: [
       { path: '/', label: 'Übersicht', icon: 'home' },
       { path: '/termine', label: 'Termine', icon: 'calendar' },
+      { path: '/aufgaben', label: 'Aufgaben', icon: 'check' },
     ] },
     { label: 'Gremien', items: [
       { path: '/sitzungen', label: 'Sitzungen', icon: 'gavel' },
@@ -32,6 +33,7 @@
   const ICONS = {
     home: '<path d="M3 11l9-8 9 8"/><path d="M5 10v10h14V10"/>',
     calendar: '<rect x="3" y="4" width="18" height="17" rx="2"/><path d="M3 9h18M8 2v4M16 2v4"/>',
+    check: '<path d="M9 11l3 3 8-8"/><path d="M20 12v6a2 2 0 01-2 2H6a2 2 0 01-2-2V6a2 2 0 012-2h9"/>',
     gavel: '<path d="M14 4l6 6"/><path d="M4 20l7-7"/><path d="M9 8l4 4"/><path d="M15 14l4 4"/>',
     doc: '<path d="M14 3H6v18h12V7z"/><path d="M14 3v4h4"/>',
     key: '<circle cx="8" cy="8" r="4"/><path d="M11 11l9 9"/><path d="M17 17l2-2"/>',
@@ -110,6 +112,7 @@
     if (path === '/sitzungen') return renderSitzungen(mount);
     if (path === '/dokumente') return renderDokumente(mount, params);
     if (path === '/termine') return renderTermine(mount, params);
+    if (path === '/aufgaben') return renderAufgaben(mount, params);
     if (path === '/stammdaten') return renderStammdaten(mount);
     if (path === '/einstellungen') return renderEinstellungen(mount);
     if (path === '/sitzung/vorbereitung') return renderVorbereitung(mount, params.id);

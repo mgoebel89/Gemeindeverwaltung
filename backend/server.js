@@ -11,6 +11,7 @@ const { WebSocketServer } = require('ws');
 const db = require('./db');
 const dokumenteRouter = require('./routes/dokumente');
 const kalenderRouter = require('./routes/kalender');
+const aufgabenRouter = require('./routes/vikunja');
 const createVermietungRouter = require('./routes/vermietung');
 const createAuslagenRouter = require('./routes/auslagen');
 const createScanRouter = require('./routes/scan');
@@ -46,6 +47,9 @@ app.use('/api/dokumente', dokumenteRouter);
 
 // --- Modul: Kalender (iCal-Abo-Proxy) ---
 app.use('/api/kalender', kalenderRouter);
+
+// --- Modul: Aufgaben (Vikunja-Proxy) ---
+app.use('/api/aufgaben', aufgabenRouter);
 
 // --- Modul: Vermietung (Gemeindehaus & Jugendraum) ---
 app.use('/api', createVermietungRouter(broadcast));

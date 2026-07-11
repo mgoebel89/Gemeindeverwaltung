@@ -81,7 +81,7 @@
 
     // Einstellungen nach Kategorien gegliedert – je Bereich ein eigener Container.
     const C = {
-      allgemein: el('div'), darstellung: el('div'), dokumente: el('div'), kalender: el('div'),
+      allgemein: el('div'), darstellung: el('div'), dokumente: el('div'), kalender: el('div'), aufgaben: el('div'),
       vermietung: el('div'), vertraege: el('div'), auslagen: el('div'), daten: el('div'),
     };
 
@@ -355,6 +355,60 @@
     ]));
     loadCalConfig();
 
+    // --- Aufgaben / Vikunja-Zugang (serverseitig gespeichert) ---
+    const vkUrlInput = el('input', { type: 'text', placeholder: 'http://192.168.1.40:3456' });
+    const vkTokenInput = el('input', { type: 'password', placeholder: 'API-Token…', autocomplete: 'new-password' });
+    const vkStatus = el('div', { class: 'help', style: 'margin-top:6px;' }, '');
+    const setVkStatus = (t, c) => { vkStatus.textContent = t; vkStatus.style.color = c || ''; };
+    const vkTokenPlaceholder = has => (has ? '•••••••• (gesetzt – leer lassen = behalten)' : 'API-Token aus Vikunja einfügen');
+
+    function loadVkConfig() {
+      api.getTaskConfig().then(cfg => {
+        vkUrlInput.value = cfg.url || '';
+        vkTokenInput.value = '';
+        vkTokenInput.placeholder = vkTokenPlaceholder(cfg.hasToken);
+        setVkStatus(cfg.source === 'env' ? 'Aktuell aus der Server-Umgebung (Env). Speichern hier überschreibt sie dauerhaft.' : '', '');
+      }).catch(e => setVkStatus('Konfiguration konnte nicht geladen werden: ' + e.message, '#c53030'));
+    }
+
+    const onVkSave = async () => {
+      try {
+        const body = { url: vkUrlInput.value.trim() };
+        const tok = vkTokenInput.value.trim();
+        if (tok) body.token = tok;
+        const cfg = await api.putTaskConfig(body);
+        toast('Vikunja-Zugang gespeichert');
+        vkTokenInput.value = '';
+        vkTokenInput.placeholder = vkTokenPlaceholder(cfg.hasToken);
+        setVkStatus('Gespeichert. Mit „Verbindung testen" prüfen.', '#2f855a');
+      } catch (e) { setVkStatus('Speichern fehlgeschlagen: ' + e.message, '#c53030'); }
+    };
+
+    const onVkTest = async () => {
+      setVkStatus('Teste Verbindung…', '');
+      try {
+        const h = await api.taskHealth();
+        if (h && h.ok) setVkStatus('Verbindung OK — Vikunja erreichbar (' + (h.url || '') + ').', '#2f855a');
+        else setVkStatus('Fehler: ' + ((h && h.error) || 'unbekannt'), '#c53030');
+      } catch (e) { setVkStatus('Fehler: ' + e.message, '#c53030'); }
+    };
+
+    C.aufgaben.appendChild(el('div', { class: 'card' }, [
+      el('h3', {}, 'Aufgaben (Vikunja)'),
+      el('p', { class: 'help' }, 'Zugang zur Vikunja-Instanz. URL und API-Token werden serverseitig im Container gespeichert (nicht im Browser) und ausschließlich vom Backend verwendet.'),
+      el('div', { class: 'help', style: 'margin-bottom:8px;' }, 'Token in Vikunja unter „Einstellungen → API-Tokens" anlegen – mit Lese- UND Schreibrecht für Aufgaben/Projekte, damit Abhaken und Anlegen funktionieren.'),
+      el('div', { class: 'grid-2' }, [
+        el('div', {}, [el('label', {}, 'Vikunja-URL (ohne /api/v1)'), vkUrlInput]),
+        el('div', {}, [el('label', {}, 'API-Token'), vkTokenInput]),
+      ]),
+      el('div', { class: 'toolbar', style: 'margin-top:10px;' }, [
+        el('button', { class: 'btn-primary', onClick: onVkSave }, 'Speichern'),
+        el('button', { onClick: onVkTest }, 'Verbindung testen'),
+      ]),
+      vkStatus,
+    ]));
+    loadVkConfig();
+
     // --- Vermietung: Preise & Absenderdaten ---
     const numInput = (obj, key, step = '0.01') => {
       const i = el('input', { type: 'number', step, value: obj[key] ?? 0 });
@@ -570,6 +624,7 @@
       ['darstellung', 'Darstellung'],
       ['dokumente', 'Dokumente'],
       ['kalender', 'Kalender'],
+      ['aufgaben', 'Aufgaben'],
       ['vermietung', 'Vermietung'],
       ['vertraege', 'Verträge & Pacht'],
       ['auslagen', 'Bargeldauslagen'],
