@@ -223,6 +223,60 @@
       queueContainer,
     ]));
 
+    // --- Dokumente / Paperless-Zugang (serverseitig gespeichert) ---
+    const api = GR.api;
+    const ppUrlInput = el('input', { type: 'text', placeholder: 'http://192.168.1.20:8000' });
+    const ppTokenInput = el('input', { type: 'password', placeholder: 'Token laden…', autocomplete: 'new-password' });
+    const ppStatus = el('div', { class: 'help', style: 'margin-top:6px;' }, '');
+    const setPpStatus = (t, c) => { ppStatus.textContent = t; ppStatus.style.color = c || ''; };
+    const tokenPlaceholder = has => (has ? '•••••••• (gesetzt – leer lassen = behalten)' : 'API-Token aus Paperless einfügen');
+
+    function loadPpConfig() {
+      api.getDocConfig().then(cfg => {
+        ppUrlInput.value = cfg.url || '';
+        ppTokenInput.value = '';
+        ppTokenInput.placeholder = tokenPlaceholder(cfg.hasToken);
+        setPpStatus(cfg.source === 'env' ? 'Aktuell aus der Server-Umgebung (Env). Speichern hier überschreibt sie dauerhaft.' : '', '');
+      }).catch(e => setPpStatus('Konfiguration konnte nicht geladen werden: ' + e.message, '#c53030'));
+    }
+
+    const onPpSave = async () => {
+      try {
+        const body = { url: ppUrlInput.value.trim() };
+        const tok = ppTokenInput.value.trim();
+        if (tok) body.token = tok; // leer => bestehenden Token behalten
+        const cfg = await api.putDocConfig(body);
+        toast('Paperless-Zugang gespeichert');
+        ppTokenInput.value = '';
+        ppTokenInput.placeholder = tokenPlaceholder(cfg.hasToken);
+        setPpStatus('Gespeichert. Mit „Verbindung testen" prüfen.', '#2f855a');
+      } catch (e) { setPpStatus('Speichern fehlgeschlagen: ' + e.message, '#c53030'); }
+    };
+
+    const onPpTest = async () => {
+      setPpStatus('Teste Verbindung…', '');
+      try {
+        const h = await api.docHealth();
+        if (h && h.ok) setPpStatus('Verbindung OK — Paperless erreichbar (' + (h.url || '') + ').', '#2f855a');
+        else setPpStatus('Fehler: ' + ((h && h.error) || 'unbekannt'), '#c53030');
+      } catch (e) { setPpStatus('Fehler: ' + e.message, '#c53030'); }
+    };
+
+    mount.appendChild(el('div', { class: 'card' }, [
+      el('h3', {}, 'Dokumente (Paperless-ngx)'),
+      el('p', { class: 'help' }, 'Zugang zur Paperless-Instanz. URL und Token werden serverseitig im Container gespeichert (nicht im Browser) und ausschließlich vom Backend verwendet.'),
+      el('div', { class: 'grid-2' }, [
+        el('div', {}, [el('label', {}, 'Paperless-URL (vom Container erreichbar)'), ppUrlInput]),
+        el('div', {}, [el('label', {}, 'API-Token (Paperless: Mein Profil → API-Token)'), ppTokenInput]),
+      ]),
+      el('div', { class: 'toolbar', style: 'margin-top:10px;' }, [
+        el('button', { class: 'btn-primary', onClick: onPpSave }, 'Speichern'),
+        el('button', { onClick: onPpTest }, 'Verbindung testen'),
+      ]),
+      ppStatus,
+    ]));
+    loadPpConfig();
+
     // --- Vermietung: Preise & Absenderdaten ---
     const numInput = (obj, key, step = '0.01') => {
       const i = el('input', { type: 'number', step, value: obj[key] ?? 0 });

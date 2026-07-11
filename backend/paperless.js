@@ -6,12 +6,50 @@
 //   PAPERLESS_TOKEN API-Token (Paperless: Einstellungen → "API-Token")
 // Node ≥18 ⇒ globales fetch verfügbar.
 
-const RAW_URL = process.env.PAPERLESS_URL || '';
-const TOKEN = process.env.PAPERLESS_TOKEN || '';
-const BASE = RAW_URL.replace(/\/+$/, '');
+const db = require('./db');
+
+// Env dient als Vorgabe/Fallback; in der App (Einstellungen) gesetzte Werte
+// überschreiben sie und werden serverseitig in der DB gehalten.
+const ENV_URL = (process.env.PAPERLESS_URL || '').replace(/\/+$/, '');
+const ENV_TOKEN = process.env.PAPERLESS_TOKEN || '';
+
+let cfg = { url: ENV_URL, token: ENV_TOKEN };
+
+// Lädt die aktive Konfiguration (DB vor Env). Bei fehlenden DB-Feldern greift Env.
+function loadConfig() {
+  let stored = null;
+  try { stored = db.getPaperlessConfig(); } catch (_) { stored = null; }
+  cfg = {
+    url: ((stored && stored.url != null && stored.url !== '') ? String(stored.url) : ENV_URL).replace(/\/+$/, ''),
+    token: (stored && stored.token) ? String(stored.token) : ENV_TOKEN,
+  };
+  return cfg;
+}
+loadConfig();
+
+// Speichert neue Werte. Leerer/fehlender Token lässt den bestehenden unangetastet,
+// sodass die URL geändert werden kann, ohne den Token neu eintippen zu müssen.
+function setConfig({ url, token } = {}) {
+  const cur = (() => { try { return db.getPaperlessConfig() || {}; } catch (_) { return {}; } })();
+  const next = {
+    url: (url != null ? String(url).trim() : (cur.url || '')).replace(/\/+$/, ''),
+    token: (token != null && String(token) !== '') ? String(token) : (cur.token || ''),
+  };
+  db.savePaperlessConfig(next);
+  loadConfig();
+  return publicConfig();
+}
+
+// Für das Frontend: Token NIE herausgeben — nur ob einer gesetzt ist und woher.
+function publicConfig() {
+  let stored = null;
+  try { stored = db.getPaperlessConfig(); } catch (_) { stored = null; }
+  const source = (stored && (stored.url || stored.token)) ? 'app' : ((ENV_URL || ENV_TOKEN) ? 'env' : 'none');
+  return { url: cfg.url || '', hasToken: !!cfg.token, source };
+}
 
 function isConfigured() {
-  return !!(BASE && TOKEN);
+  return !!(cfg.url && cfg.token);
 }
 
 class PaperlessError extends Error {
@@ -24,7 +62,7 @@ class PaperlessError extends Error {
 
 function authHeaders(extra = {}) {
   return {
-    Authorization: `Token ${TOKEN}`,
+    Authorization: `Token ${cfg.token}`,
     Accept: 'application/json',
     ...extra,
   };
@@ -33,8 +71,8 @@ function authHeaders(extra = {}) {
 // Baut eine Paperless-URL inkl. Query-Parameter. `params` ist ein Objekt;
 // leere/undefinierte Werte werden weggelassen.
 function buildUrl(pathname, params = {}) {
-  if (!isConfigured()) throw new PaperlessError('Paperless ist nicht konfiguriert (PAPERLESS_URL/PAPERLESS_TOKEN).', 503);
-  const u = new URL(BASE + pathname);
+  if (!isConfigured()) throw new PaperlessError('Paperless ist nicht konfiguriert (URL/Token unter Einstellungen → Dokumente hinterlegen).', 503);
+  const u = new URL(cfg.url + pathname);
   for (const [k, v] of Object.entries(params)) {
     if (v === undefined || v === null || v === '') continue;
     u.searchParams.set(k, String(v));
@@ -93,7 +131,7 @@ async function updateDocument(id, patch) {
 // gibt eine Task-ID zurück; das fertige Dokument wird über getTask() ermittelt.
 // `file` = { buffer, filename, mimetype }, `meta` = { title, correspondent, document_type, tags[], created }.
 async function uploadDocument(file, meta = {}) {
-  if (!isConfigured()) throw new PaperlessError('Paperless nicht konfiguriert (PAPERLESS_URL/PAPERLESS_TOKEN).', 503);
+  if (!isConfigured()) throw new PaperlessError('Paperless nicht konfiguriert (URL/Token unter Einstellungen → Dokumente hinterlegen).', 503);
   const form = new FormData();
   const blob = new Blob([file.buffer], { type: file.mimetype || 'application/octet-stream' });
   form.append('document', blob, file.filename || 'upload');
@@ -231,13 +269,15 @@ async function listCustomFields() {
 async function health() {
   // Günstiger Aufruf, der Erreichbarkeit + Token validiert.
   await apiJson('/api/documents/', { page_size: 1 });
-  return { ok: true, url: BASE };
+  return { ok: true, url: cfg.url };
 }
 
 module.exports = {
   PaperlessError,
   isConfigured,
-  baseUrl: () => BASE,
+  baseUrl: () => cfg.url,
+  publicConfig,
+  setConfig,
   searchDocuments,
   getDocument,
   updateDocument,

@@ -156,6 +156,8 @@
   async function createCorrespondent(name) { return jsonFetch('/api/dokumente/correspondents', { method: 'POST', body: { name } }); }
   async function createDocumentType(name) { return jsonFetch('/api/dokumente/document-types', { method: 'POST', body: { name } }); }
   async function createTag(name) { return jsonFetch('/api/dokumente/tags', { method: 'POST', body: { name } }); }
+  async function getDocConfig() { return jsonFetch('/api/dokumente/config'); }
+  async function putDocConfig(cfg) { return jsonFetch('/api/dokumente/config', { method: 'PUT', body: cfg }); }
   async function listDocNotes(id) { return jsonFetch(`/api/dokumente/${encodeURIComponent(id)}/notes`); }
   async function addDocNote(id, note) { return jsonFetch(`/api/dokumente/${encodeURIComponent(id)}/notes`, { method: 'POST', body: { note } }); }
   async function deleteDocNote(id, noteId) { return jsonFetch(`/api/dokumente/${encodeURIComponent(id)}/notes/${encodeURIComponent(noteId)}`, { method: 'DELETE' }); }
@@ -205,6 +207,7 @@
     importAll,
     docHealth, docMeta, searchDocuments, getDocument, patchDocument, docFileUrl,
     uploadDocument, scanUploadDocument, getDocTask, createCorrespondent, createDocumentType, createTag,
+    getDocConfig, putDocConfig,
     listDocNotes, addDocNote, deleteDocNote,
     putMieter, deleteMieterRemote,
     putRaum, deleteRaumRemote,

@@ -185,14 +185,27 @@ vom „Speichern"-Button der Metadaten.
 proxyt zu Paperless und hält den **API-Token serverseitig** — der Token landet nie im Browser,
 CORS muss in Paperless **nicht** geöffnet werden.
 
-**Konfiguration (Env-Variablen):**
+**Konfiguration – zwei Wege:**
+
+1. **In der App (empfohlen, einfachster Weg):** **Einstellungen → Dokumente (Paperless-ngx)** →
+   URL + API-Token eintragen, **Speichern**, **Verbindung testen**. Die Werte werden
+   **serverseitig** in der Datenbank des Containers gehalten (Key `paperless` in der
+   `settings`-Tabelle) und **nur vom Backend** verwendet — der Token wird nie im Snapshot
+   ausgegeben, nicht nach NocoDB gesynct und beim Laden der Einstellungen **nicht** an den
+   Browser zurückgegeben (das Feld zeigt nur „gesetzt"). Leeres Token-Feld beim Speichern
+   lässt den bestehenden Token unverändert. Diese App-Konfiguration **überschreibt** die Env-Werte.
+   > Hinweis: Der Token liegt damit im Browser-Formular zum Eintippen und serverseitig im
+   > Klartext in der DB — bewusst gewählt für den Einsatz in einem **isolierten, privaten
+   > Heimnetz mit einem einzigen Nutzer**. In einem Mehrbenutzer-/offenen Netz stattdessen den Env-Weg nutzen.
+
+2. **Über Env-Variablen (Fallback / für automatisiertes Deployment):**
 
 | Variable          | Bedeutung                                                        |
 |-------------------|------------------------------------------------------------------|
 | `PAPERLESS_URL`   | Basis-URL der Paperless-Instanz, vom Container erreichbar, z. B. `http://192.168.1.20:8000` |
-| `PAPERLESS_TOKEN` | API-Token (Paperless: **Einstellungen → API-Token**)             |
+| `PAPERLESS_TOKEN` | API-Token (Paperless: **Mein Profil → API-Token**)              |
 
-Im LXC kommen die Werte aus `/etc/gemeindeverwaltung.env` (root-only, `chmod 600`), die von
+Im LXC kommen die Env-Werte aus `/etc/gemeindeverwaltung.env` (root-only, `chmod 600`), die von
 der systemd-Unit via `EnvironmentFile=-/etc/gemeindeverwaltung.env` geladen wird:
 
 ```bash

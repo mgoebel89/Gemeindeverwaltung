@@ -178,6 +178,21 @@ function saveSettings(s) {
   return s;
 }
 
+// Paperless-Zugangsdaten: eigener Key, damit sie NICHT im allgemeinen
+// Settings-Blob (Snapshot/NocoDB-Sync) landen. Enthält den Token im Klartext –
+// bleibt serverseitig, wird nie im Snapshot ausgegeben.
+function getPaperlessConfig() {
+  const r = db.prepare("SELECT value FROM settings WHERE key = 'paperless'").get();
+  return r ? JSON.parse(r.value) : null;
+}
+function savePaperlessConfig(c) {
+  db.prepare(`
+    INSERT INTO settings (key, value) VALUES ('paperless', ?)
+    ON CONFLICT(key) DO UPDATE SET value = excluded.value
+  `).run(JSON.stringify(c));
+  return c;
+}
+
 // --- Generischer Payload-Store (für Vermietung-Entitäten) ---
 function makePayloadStore(table) {
   return {
@@ -386,6 +401,7 @@ module.exports = {
   listSitzungen, getSitzung, saveSitzung, deleteSitzung,
   listMitglieder, getMitglied, saveMitglied, deleteMitglied,
   getSettings, saveSettings,
+  getPaperlessConfig, savePaperlessConfig,
   listAttachments, getAttachment, attachmentPath, ensureAttachmentDir,
   insertAttachment, deleteAttachment,
   listMieter, getMieter, saveMieter, deleteMieter,

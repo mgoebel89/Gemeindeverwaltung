@@ -63,7 +63,7 @@ function sendError(res, err) {
 // --- Health / Verbindungstest ---
 router.get('/health', async (_req, res) => {
   if (!paperless.isConfigured()) {
-    return res.status(503).json({ ok: false, error: 'Paperless nicht konfiguriert (PAPERLESS_URL/PAPERLESS_TOKEN).' });
+    return res.status(503).json({ ok: false, error: 'Paperless nicht konfiguriert. Bitte URL/Token unter Einstellungen → Dokumente hinterlegen.' });
   }
   try {
     res.json(await paperless.health());
@@ -85,6 +85,20 @@ router.get('/meta', async (_req, res) => {
   } catch (err) {
     sendError(res, err);
   }
+});
+
+// --- Paperless-Zugang (URL/Token) aus der App verwalten ---
+// GET gibt den Token NIE zurück, nur ob einer gesetzt ist.
+router.get('/config', (_req, res) => {
+  try {
+    res.json(paperless.publicConfig());
+  } catch (err) { sendError(res, err); }
+});
+router.put('/config', (req, res) => {
+  try {
+    const { url, token } = req.body || {};
+    res.json(paperless.setConfig({ url, token }));
+  } catch (err) { sendError(res, err); }
 });
 
 // --- Liste / Suche ---
