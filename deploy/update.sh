@@ -17,6 +17,15 @@ git fetch --depth=1 origin
 BRANCH=$(git rev-parse --abbrev-ref HEAD)
 git reset --hard "origin/${BRANCH}"
 
+# Scanner-Unterstützung (SANE) sicherstellen – nötig für Netzwerkscanner ohne
+# eSCL (nur WSD), z. B. Epson ES-580W. Idempotent: nur wenn scanimage fehlt.
+if ! command -v scanimage >/dev/null 2>&1; then
+  echo "Installiere Scanner-Unterstützung (sane-utils, sane-airscan)…"
+  DEBIAN_FRONTEND=noninteractive apt-get update -qq \
+    && DEBIAN_FRONTEND=noninteractive apt-get install -y -qq sane-utils sane-airscan \
+    || echo "Hinweis: SANE-Installation fehlgeschlagen — ggf. manuell 'apt install sane-utils sane-airscan'." >&2
+fi
+
 # Backend-Abhängigkeiten installieren, falls package.json sich geändert hat
 if [[ -f backend/package.json ]]; then
   if [[ ! -d backend/node_modules ]] || ! diff -q backend/package.json backend/node_modules/.package.json.last >/dev/null 2>&1; then

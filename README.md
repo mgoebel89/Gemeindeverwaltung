@@ -355,9 +355,10 @@ unterschieden):
   **WSD** (z. B. **Epson ES-580W**). Das Backend (`backend/sane.js`) ruft `scanimage`
   auf; `sane-airscan` wählt automatisch eSCL oder WSD. Solche Geräte erscheinen in der
   Suche mit „(SANE)" und tragen intern die Kennung `sane:<device>` (z. B.
-  `sane:airscan:w1:EPSON ES-580W`). **Voraussetzung auf dem LXC:**
-  `apt install sane-utils sane-airscan`; die Geräteliste liefert `scanimage -L`.
-  Ist `scanimage` nicht installiert, bleibt nur der eSCL-Weg (keine Fehler).
+  `sane:airscan:w1:EPSON ES-580W`); die Geräteliste liefert `scanimage -L`.
+  Die Pakete `sane-utils` + `sane-airscan` installieren `container-setup.sh` und –
+  idempotent, falls `scanimage` fehlt – auch `sitzungsapp-update` automatisch. Ist
+  `scanimage` nicht vorhanden, bleibt nur der eSCL-Weg (ohne Fehler).
 
 **Bürgermeister-Unterschrift:** Ein in den Einstellungen hochgeladenes Bild (PNG
 mit Transparenz empfohlen) wird automatisch über die Bürgermeister-Linie gesetzt;

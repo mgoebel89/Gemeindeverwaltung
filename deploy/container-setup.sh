@@ -11,7 +11,9 @@ set -euo pipefail
 
 export DEBIAN_FRONTEND=noninteractive
 apt-get update -qq
-apt-get install -y -qq nginx git ca-certificates curl sqlite3 cron
+# sane-utils + sane-airscan: Netzwerkscanner über SANE/scanimage (auch WSD-only
+# wie Epson ES-580W). Ohne diese Pakete funktioniert nur der eSCL-Weg.
+apt-get install -y -qq nginx git ca-certificates curl sqlite3 cron sane-utils sane-airscan
 
 if ! command -v node >/dev/null 2>&1; then
   curl -fsSL https://deb.nodesource.com/setup_20.x | bash -
