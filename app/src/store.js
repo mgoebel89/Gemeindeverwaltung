@@ -88,6 +88,15 @@
     return m;
   }
 
+  // Bestandsobjekte ohne Übergabe-Checkliste einmalig mit der Startvorlage
+  // versehen (in-memory; persistiert beim ersten Speichern des Objekts).
+  function migrateRaum(r) {
+    if (r && r.uebergabeCheckliste === undefined && GR.models && GR.models.defaultUebergabeCheckliste) {
+      r.uebergabeCheckliste = GR.models.defaultUebergabeCheckliste();
+    }
+    return r;
+  }
+
   function defaultSettings() {
     return {
       ortsname: 'Hörschhausen',
@@ -154,7 +163,7 @@
       cache.settings = snap.settings || defaultSettings();
       cache.attachments = snap.attachments || {};
       cache.mieter = snap.mieter || [];
-      cache.raeume = snap.raeume || [];
+      cache.raeume = (snap.raeume || []).map(migrateRaum);
       cache.vermietungen = snap.vermietungen || [];
       cache.vermietungFiles = snap.vermietungFiles || {};
       cache.empfaenger = snap.empfaenger || [];

@@ -92,6 +92,23 @@
     return [m.strasse, [m.plz, m.ort].filter(Boolean).join(' ')].filter(Boolean).join(', ');
   }
 
+  // Bild von einer URL als Data-URL + Maße laden (für Beanstandungsfotos).
+  function loadImage(url, mimetype) {
+    return new Promise((resolve, reject) => {
+      fetch(url).then(r => r.blob()).then(blob => {
+        const fr = new FileReader();
+        fr.onload = () => {
+          const img = new Image();
+          img.onload = () => resolve({ dataUrl: fr.result, w: img.naturalWidth, h: img.naturalHeight, format: (mimetype || blob.type || '').includes('png') ? 'PNG' : 'JPEG' });
+          img.onerror = reject;
+          img.src = fr.result;
+        };
+        fr.onerror = reject;
+        fr.readAsDataURL(blob);
+      }).catch(reject);
+    });
+  }
+
   // Bürgermeister-Unterschrift (aus den Bargeldauslagen-Einstellungen)
   // mittig über eine Signaturlinie legen. Ohne hinterlegtes Bild passiert nichts.
   function drawBuergermeisterSignatur(doc, centerX, lineY) {
@@ -337,5 +354,80 @@
     }
   }
 
-  GR.vermietungPdf = { buildMietvertrag, buildKostenabrechnung };
+  // ============================================= Übergabe-/Abnahmeprotokoll
+  // type: 'uebergabe' | 'abnahme'. opts.target='paperless' legt direkt ab.
+  async function buildUebergabeprotokoll(v, type, opts = {}) {
+    const doc = newDoc(); if (!doc) return;
+    const proto = v.protokolle && v.protokolle[type];
+    if (!proto) { toast('Für diese Vermietung ist kein Protokoll angelegt.'); return; }
+    const s = store.getSettings();
+    const vm = s.vermietung || {};
+    const ortsname = s.ortsname || '';
+    const raum = store.getRaum(v.raumId);
+    const mieter = store.getMieter(v.mieterId);
+    const state = { y: MARGIN_TOP };
+
+    const wappen = getWappenDataUrl();
+    if (wappen) { try { doc.addImage(wappen, 'PNG', RIGHT_X - 22, MARGIN_TOP - 6, 22, 22, undefined, 'SLOW'); } catch (_) {} }
+
+    const titel = type === 'uebergabe' ? 'Übergabeprotokoll' : 'Abnahmeprotokoll';
+    line(doc, state, titel, { size: 16, bold: true });
+    line(doc, state, ortsname ? 'Ortsgemeinde ' + ortsname : 'Ortsgemeinde', { size: 10, color: C_MUTED, gap: 6 });
+    gap(state, 2);
+    line(doc, state, 'Objekt: ' + (raum ? raum.name : '—'), { size: 11 });
+    line(doc, state, 'Mieter: ' + (mieter ? fullNameMieter(mieter) : '—') + (mieterAnschrift(mieter) ? ', ' + mieterAnschrift(mieter) : ''), { size: 11 });
+    line(doc, state, 'Nutzungszeitraum: ' + (zeitraumText(v) || '—'), { size: 11 });
+    line(doc, state, 'Protokolldatum: ' + (proto.datum ? formatDatum(proto.datum) : '—'), { size: 11 });
+    gap(state, 3);
+
+    const beanstandungen = [];
+    (proto.punkte || []).forEach(p => {
+      if (state.y > PAGE_H - 28) { doc.addPage(); state.y = MARGIN_TOP; }
+      const y0 = state.y - 3.2;
+      checkbox(doc, MARGIN_X, y0, 3.6, p.status === 'ok');
+      setFont(doc, 9, false); doc.text('OK', MARGIN_X + 5, state.y - 0.4);
+      checkbox(doc, MARGIN_X + 15, y0, 3.6, p.status === 'nichtok');
+      setFont(doc, 9, false); doc.text('nicht OK', MARGIN_X + 20, state.y - 0.4);
+      line(doc, state, p.text || '', { size: 10.5, indent: 42, gap: 5.4, maxWidth: CONTENT_W - 42 });
+      if (p.status === 'nichtok' && p.notiz) line(doc, state, '↳ ' + p.notiz, { size: 9.5, italic: true, color: C_MUTED, indent: 42 });
+      if (p.status === 'nichtok' && p.fotoId) beanstandungen.push(p);
+      gap(state, 1.4);
+    });
+
+    if (state.y > PAGE_H - 42) { doc.addPage(); state.y = MARGIN_TOP; }
+    gap(state, 14);
+    const lineY = state.y;
+    const colW = 66;
+    drawBuergermeisterSignatur(doc, MARGIN_X + colW / 2, lineY);
+    doc.setDrawColor(0, 0, 0); doc.setLineWidth(0.4);
+    doc.line(MARGIN_X, lineY, MARGIN_X + colW, lineY);
+    doc.line(RIGHT_X - colW, lineY, RIGHT_X, lineY);
+    setFont(doc, 9, false, false, C_MUTED);
+    doc.text('Ortsgemeinde (' + (vm.buergermeister || 'Bürgermeister/in') + ')', MARGIN_X, lineY + 5);
+    doc.text(mieter ? fullNameMieter(mieter) : 'Mieter/in', RIGHT_X - colW, lineY + 5);
+
+    for (const p of beanstandungen) {
+      try {
+        const img = await loadImage(store.vermietungFotoUrl(p.fotoId));
+        doc.addPage();
+        setFont(doc, 10.5, true); doc.text('Beanstandung: ' + (p.text || ''), MARGIN_X, MARGIN_TOP);
+        let yTop = MARGIN_TOP + 6;
+        if (p.notiz) { setFont(doc, 9.5, false, true, C_MUTED); for (const ln of doc.splitTextToSize(p.notiz, CONTENT_W)) { doc.text(ln, MARGIN_X, yTop); yTop += 5; } }
+        const availW = CONTENT_W, availH = PAGE_H - yTop - 12;
+        const ratio = Math.min(availW / img.w, availH / img.h);
+        const w = img.w * ratio, h = img.h * ratio;
+        doc.addImage(img.dataUrl, img.format, MARGIN_X + (availW - w) / 2, yTop + 4, w, h, undefined, 'SLOW');
+      } catch (e) { console.warn('Beanstandungsfoto nicht eingebettet', e); }
+    }
+
+    const safeRaum = raum ? raum.name.replace(/\s+/g, '_') : 'Objekt';
+    const filename = `${titel}-${safeRaum}-${v.startDatum || ''}.pdf`;
+    if (opts.target === 'paperless') {
+      GR.ui.savePdfToPaperless(doc, filename, { prefillTitle: opts.prefillTitle, onUploaded: opts.onUploaded });
+    } else {
+      openPdf(doc, filename);
+    }
+  }
+
+  GR.vermietungPdf = { buildMietvertrag, buildKostenabrechnung, buildUebergabeprotokoll };
 })();

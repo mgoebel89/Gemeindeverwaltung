@@ -1,6 +1,6 @@
 (function () {
   'use strict';
-  const { renderDashboard, renderSitzungen, renderDokumente, renderTermine, renderAufgaben, renderStammdaten, renderEinstellungen, renderVorbereitung, renderLive, renderVermietung, renderMieter, renderAuslagen, renderAuslagenStammdaten, renderVertraege, renderVertragspartner } = GR.views;
+  const { renderDashboard, renderSitzungen, renderDokumente, renderTermine, renderAufgaben, renderStammdaten, renderEinstellungen, renderVorbereitung, renderLive, renderVermietung, renderMieter, renderProtokolle, renderAuslagen, renderAuslagenStammdaten, renderVertraege, renderVertragspartner } = GR.views;
 
   const mount = document.getElementById('app');
   const shell = document.getElementById('appShell');
@@ -119,6 +119,7 @@
     if (path === '/sitzung/live') return renderLive(mount, params.id);
     if (path === '/vermietung') return renderVermietung(mount, params);
     if (path === '/mieter') return renderMieter(mount);
+    if (path === '/protokolle') return renderProtokolle(mount);
     if (path === '/vertraege') return renderVertraege(mount, params);
     if (path === '/vertragspartner') return renderVertragspartner(mount);
     if (path === '/auslagen') return renderAuslagen(mount, params);

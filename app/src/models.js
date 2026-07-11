@@ -111,8 +111,23 @@
   //  'pauschal'  – ein fester Betrag je Herkunft, Strom/Gas inklusive (Jugendraum)
   const RAUM_ABRECHNUNGSARTEN = ['verbrauch', 'pauschal'];
 
+  // Standard-Punkte für die Übergabe-/Abnahme-Checkliste eines neuen Objekts.
+  // Jeder Punkt bekommt eine eigene id (frische Kopie).
+  function defaultUebergabeCheckliste() {
+    return [
+      'Küche / Kochbereich (sauber, vollständig)',
+      'Sanitäranlagen / WC',
+      'Tische und Stühle (Anzahl, Zustand)',
+      'Böden gereinigt',
+      'Müll entsorgt / Behälter',
+      'Geschirr / Inventar vollständig',
+      'Heizung / Licht / Fenster',
+      'Schlüssel zurückgegeben',
+    ].map(text => ({ id: uuid(), text }));
+  }
+
   function emptyRaum() {
-    return { id: uuid(), name: '', aktiv: true, abrechnungsart: 'verbrauch', preise: emptyRaumPreise(), kostenbogenTyp: 'gemeindehaus' };
+    return { id: uuid(), name: '', aktiv: true, abrechnungsart: 'verbrauch', preise: emptyRaumPreise(), kostenbogenTyp: 'gemeindehaus', uebergabeCheckliste: defaultUebergabeCheckliste() };
   }
 
   function istPauschal(raum) { return !!raum && raum.abrechnungsart === 'pauschal'; }
@@ -131,6 +146,9 @@
       zaehlerFotos: { stromStart: null, stromEnde: null, gasStart: null, gasEnde: null }, // fileId je Zählerstand-Foto (Beweisführung)
       preisSnapshot: null, // { grundMiete, stromProKwh, gasProCbm } — eingefroren ab Status 'vertrag'
       zusatzposten: [],    // [{ bezeichnung, betrag }]
+      // Übergabe-/Abnahmeprotokoll; Punkte werden beim Start aus der Objekt-
+      // Vorlage eingefroren: { datum, punkte:[{id,text,status,notiz,fotoId}] }
+      protokolle: { uebergabe: null, abnahme: null },
       vertragDatum: '',
       abrechnungDatum: '',
     };
@@ -376,7 +394,7 @@
     ergebnisAbstimmung, isEinstimmig, einstimmigRichtung,
     MITGLIED_FUNKTIONEN, fullName, emptyMitglied,
     KOSTENBOGEN_TYPEN, RAUM_ABRECHNUNGSARTEN, istPauschal,
-    emptyMieter, emptyRaum, emptyRaumPreise, emptyVermietung,
+    emptyMieter, emptyRaum, emptyRaumPreise, emptyVermietung, defaultUebergabeCheckliste,
     fullNameMieter, anzahlTage, berechneGrundmiete, berechneVerbrauch, berechneGesamt,
     AUSLAGE_STATUS, emptyEmpfaenger, fullNameEmpfaenger, formatIban, emptyHaushaltsstelle,
     emptyBeleg, emptyAuslage, gesamtbetrag, budgetVerbrauch,

@@ -538,6 +538,23 @@ tr:hover td { background: #fafbfc; }
 .aufg-title { font-weight: 500; }
 .aufg-prio { font-size: 0.85em; }
 
+/* Übergabeprotokoll: Checklisten-Konfiguration */
+.prot-edit-row { display: flex; align-items: center; gap: 6px; margin-bottom: 6px; }
+
+/* Übergabeprotokoll: Ausfüllen */
+.prot-head { margin: 14px 0 4px; }
+.prot-section { margin-bottom: 8px; }
+.prot-row { padding: 8px 0; border-bottom: 1px solid var(--border); }
+.prot-row:last-child { border-bottom: none; }
+.prot-row-head { display: flex; align-items: center; gap: 10px; }
+.prot-text { flex: 1; min-width: 0; }
+.prot-btns { flex: 0 0 auto; display: flex; gap: 6px; }
+.prot-ok.active { background: #2f855a; border-color: #2f855a; color: #fff; }
+.prot-nok.active { background: #c53030; border-color: #c53030; color: #fff; }
+.prot-row.status-nichtok { background: rgba(197,48,48,0.06); border-radius: 6px; padding-left: 8px; padding-right: 8px; }
+.prot-beanstand { margin-top: 8px; }
+.prot-beanstand input { width: 100%; }
+
 /* Verknüpfte Paperless-Dokumente (geteilter Abschnitt) */
 .doc-link-row {
   display: flex; align-items: center; gap: 10px;

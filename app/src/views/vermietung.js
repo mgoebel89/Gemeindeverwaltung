@@ -43,6 +43,7 @@
     mount.appendChild(el('div', { class: 'toolbar' }, [
       el('button', { class: 'btn-primary', onClick: onNew }, '+ Neue Vermietung'),
       el('a', { class: 'btn', href: '#/mieter' }, 'Mieter verwalten'),
+      el('a', { class: 'btn', href: '#/protokolle' }, 'Protokolle (Checklisten)'),
     ]));
     mount.appendChild(el('h2', {}, 'Vermietungen'));
 
@@ -95,6 +96,7 @@
     v.zaehler = v.zaehler || { stromStart: null, stromEnde: null, gasStart: null, gasEnde: null };
     v.zaehlerFotos = v.zaehlerFotos || { stromStart: null, stromEnde: null, gasStart: null, gasEnde: null };
     v.zusatzposten = v.zusatzposten || [];
+    v.protokolle = v.protokolle || { uebergabe: null, abnahme: null };
 
     function persist() { store.saveVermietung(v); }
     function refresh() { mount.innerHTML = ''; renderDetail(mount, id); }
@@ -133,6 +135,135 @@
       }
       render();
       return box;
+    }
+
+    // ---- Übergabe-/Abnahmeprotokoll (Checkliste ausfüllen) ----
+    function buildProtokollCard() {
+      const raum = store.getRaum(v.raumId);
+      const newId = () => (crypto.randomUUID && crypto.randomUUID()) || ('p-' + Math.random().toString(36).slice(2) + Date.now().toString(36));
+      const TYPES = [['uebergabe', 'Übergabe (Ausgabe)'], ['abnahme', 'Abnahme (Rückgabe)']];
+      const content = el('div', {});
+
+      function startProtokoll(type) {
+        // Punkte einfrieren: Abnahme übernimmt die Punkte der Übergabe (falls
+        // vorhanden), sonst die aktuelle Objekt-Vorlage.
+        let source;
+        if (type === 'abnahme' && v.protokolle.uebergabe && (v.protokolle.uebergabe.punkte || []).length) {
+          source = v.protokolle.uebergabe.punkte.map(p => ({ text: p.text }));
+        } else {
+          source = ((raum && raum.uebergabeCheckliste) || []).map(p => ({ text: p.text }));
+        }
+        v.protokolle[type] = {
+          datum: todayIso(),
+          punkte: source.map(p => ({ id: newId(), text: p.text, status: 'offen', notiz: '', fotoId: null })),
+        };
+        persist(); render();
+      }
+
+      async function resetProtokoll(type) {
+        const proto = v.protokolle[type];
+        if (!proto) return;
+        if (!confirmDialog('Dieses Protokoll wirklich zurücksetzen? Bewertungen, Notizen und Fotos gehen verloren.')) return;
+        for (const p of (proto.punkte || [])) {
+          if (p.fotoId) { try { await store.deleteVermietungFoto(id, p.fotoId); } catch (_) {} }
+        }
+        v.protokolle[type] = null; persist(); render();
+      }
+
+      function punktFotoControl(punkt, type) {
+        const box = el('div', { style: 'display:flex; gap:8px; align-items:center; margin-top:4px;' });
+        function draw() {
+          box.innerHTML = '';
+          const file = punkt.fotoId ? store.getVermietungFoto(id, punkt.fotoId) : null;
+          if (file) {
+            const url = store.vermietungFotoUrl(punkt.fotoId);
+            box.appendChild(el('a', { href: url, target: '_blank', rel: 'noopener' }, [
+              el('img', { src: url, style: 'height:40px; width:40px; object-fit:cover; border:1px solid var(--border); border-radius:4px;' }),
+            ]));
+            box.appendChild(el('button', { class: 'btn-sm btn-danger', type: 'button', onClick: async () => {
+              try { await store.deleteVermietungFoto(id, punkt.fotoId); } catch (e) { return toast('Löschen fehlgeschlagen: ' + e.message); }
+              punkt.fotoId = null; persist(); draw();
+            } }, 'Foto entfernen'));
+          } else {
+            box.appendChild(el('button', { class: 'btn-sm', type: 'button', onClick: async () => {
+              const f = await GR.ui.pickFile('image/*');
+              if (!f) return;
+              try {
+                const rec = await store.uploadVermietungFoto(id, f, 'protokoll_' + type + '_' + punkt.id);
+                punkt.fotoId = rec.id; persist(); draw();
+                toast('Foto gespeichert');
+              } catch (e) { toast('Upload fehlgeschlagen: ' + e.message); }
+            } }, '📷 Beanstandungsfoto'));
+          }
+        }
+        draw();
+        return box;
+      }
+
+      function renderProto(type, proto) {
+        const section = el('div', { class: 'prot-section' });
+        const datumI = el('input', { type: 'date', value: proto.datum || '' });
+        datumI.onchange = () => { proto.datum = datumI.value; persist(); };
+        const nokCount = proto.punkte.filter(p => p.status === 'nichtok').length;
+        const okCount = proto.punkte.filter(p => p.status === 'ok').length;
+        section.appendChild(el('div', { class: 'toolbar', style: 'align-items:center; margin-bottom:8px; flex-wrap:wrap;' }, [
+          el('label', { style: 'margin:0;' }, 'Datum:'), datumI,
+          el('span', { class: 'help', style: 'margin:0;' }, `${okCount} OK · ${nokCount} Beanstandung${nokCount === 1 ? '' : 'en'} · ${proto.punkte.length} Punkte`),
+          el('div', { class: 'spacer' }),
+          el('button', { class: 'btn-sm', onClick: () => GR.vermietungPdf.buildUebergabeprotokoll(v, type) }, 'Als PDF'),
+          GR.ui.savePdfToPaperless ? el('button', { class: 'btn-sm', onClick: () => GR.vermietungPdf.buildUebergabeprotokoll(v, type, {
+            target: 'paperless',
+            prefillTitle: (type === 'uebergabe' ? 'Übergabeprotokoll ' : 'Abnahmeprotokoll ') + raumName(v.raumId) + ' ' + (v.startDatum || ''),
+            onUploaded: (doc) => { if (docsSection) docsSection.linkDoc(doc); },
+          }) }, '📥 Paperless') : null,
+          el('button', { class: 'btn-sm btn-danger', onClick: () => resetProtokoll(type) }, 'Zurücksetzen'),
+        ]));
+
+        if (!proto.punkte.length) {
+          section.appendChild(el('p', { class: 'help' }, 'Keine Punkte in der Vorlage – unter „Protokolle (Checklisten)" anlegen und Protokoll neu starten.'));
+        }
+        proto.punkte.forEach(p => {
+          const row = el('div', { class: 'prot-row status-' + p.status });
+          const setStatus = (s) => { p.status = (p.status === s ? 'offen' : s); persist(); render(); };
+          const okBtn = el('button', { class: 'btn-sm prot-ok' + (p.status === 'ok' ? ' active' : ''), type: 'button', onClick: () => setStatus('ok') }, 'OK');
+          const nokBtn = el('button', { class: 'btn-sm prot-nok' + (p.status === 'nichtok' ? ' active' : ''), type: 'button', onClick: () => setStatus('nichtok') }, 'nicht OK');
+          row.appendChild(el('div', { class: 'prot-row-head' }, [
+            el('span', { class: 'prot-text' }, p.text || '(ohne Text)'),
+            el('span', { class: 'prot-btns' }, [okBtn, nokBtn]),
+          ]));
+          if (p.status === 'nichtok') {
+            const notiz = el('input', { type: 'text', value: p.notiz || '', placeholder: 'Was ist zu beanstanden?' });
+            notiz.oninput = () => { p.notiz = notiz.value; };
+            notiz.onchange = persist;
+            row.appendChild(el('div', { class: 'prot-beanstand' }, [notiz, punktFotoControl(p, type)]));
+          }
+          section.appendChild(row);
+        });
+        return section;
+      }
+
+      function render() {
+        content.innerHTML = '';
+        for (const [type, label] of TYPES) {
+          const proto = v.protokolle[type];
+          content.appendChild(el('div', { class: 'prot-head' }, [el('h4', { style: 'margin:0;' }, label)]));
+          if (!proto) {
+            content.appendChild(el('div', { style: 'margin:6px 0 16px;' }, [
+              el('button', { class: 'btn-sm btn-primary', onClick: () => startProtokoll(type) }, 'Protokoll starten'),
+              el('span', { class: 'help', style: 'margin-left:10px;' }, 'Übernimmt die aktuelle Checkliste des Objekts.'),
+            ]));
+          } else {
+            content.appendChild(renderProto(type, proto));
+          }
+        }
+      }
+      render();
+
+      return el('div', { class: 'card' }, [
+        el('h3', { style: 'margin-top:0;' }, 'Übergabe-/Abnahmeprotokoll'),
+        el('p', { class: 'help' }, 'Checkliste bei Ausgabe (Übergabe) und Rückgabe (Abnahme). Bei „nicht OK" sind Notiz und Foto möglich. Punkte-Vorlage je Objekt unter „Protokolle (Checklisten)".'),
+        content,
+      ]);
     }
 
     const raeume = store.listRaeume().filter(r => r.aktiv || r.id === v.raumId);
@@ -403,6 +534,8 @@
         ]),
       ]));
     }
+
+    mount.appendChild(buildProtokollCard());
 
     if (docsSection) mount.appendChild(el('div', { class: 'card' }, [
       el('h3', {}, 'In Paperless abgelegt'),
