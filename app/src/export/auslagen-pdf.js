@@ -189,7 +189,9 @@
     doc.text('(Unterschrift)', 30, 296);
   }
 
-  async function buildGesamtPdf(auslage) {
+  // opts.target: 'download' (Standard) oder 'paperless' (direkt ablegen).
+  // opts.prefillTitle / opts.onUploaded werden bei 'paperless' durchgereicht.
+  async function buildGesamtPdf(auslage, opts = {}) {
     const doc = newDoc(); if (!doc) return;
     drawFormular(doc, auslage);
 
@@ -221,7 +223,12 @@
     if (skippedPdf > 0) {
       toast(`${skippedPdf} PDF-Beleg(e) nicht eingebettet – als Bild scannen oder separat anhängen.`, 5000);
     }
-    openPdf(doc, `Bargeldauslage-${auslage.datum || ''}.pdf`);
+    const filename = `Bargeldauslage-${auslage.datum || ''}.pdf`;
+    if (opts.target === 'paperless') {
+      GR.ui.savePdfToPaperless(doc, filename, { prefillTitle: opts.prefillTitle, onUploaded: opts.onUploaded });
+    } else {
+      openPdf(doc, filename);
+    }
   }
 
   GR.auslagenPdf = { buildGesamtPdf };

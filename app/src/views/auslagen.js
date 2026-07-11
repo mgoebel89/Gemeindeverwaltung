@@ -462,12 +462,27 @@
     ]));
 
     // ---- Abschnitt 3: PDF ----
+    const emp = store.getEmpfaenger(a.empfaengerId);
+    const pdfPrefillTitle = ('Bargeldauslage ' + (emp ? fullNameEmpfaenger(emp) + ' ' : '') + (a.datum || '')).trim();
+    const docsSection = GR.ui.renderPaperlessDocsSection
+      ? GR.ui.renderPaperlessDocsSection(a, persist, { showAdd: false, emptyText: 'Noch kein PDF in Paperless abgelegt.' })
+      : null;
+
     mount.appendChild(el('div', { class: 'card' }, [
       el('h3', {}, '3 · Gesamt-PDF'),
-      el('p', { class: 'help' }, 'Erzeugt das ausgefüllte Formular mit angehängten Bild-Scans als ein PDF zum Herunterladen/Versenden.'),
+      el('p', { class: 'help' }, 'Erzeugt das ausgefüllte Formular mit angehängten Bild-Scans als ein PDF zum Herunterladen/Versenden – oder direkt in Paperless ablegen.'),
       el('div', { class: 'toolbar', style: 'margin-bottom:0;' }, [
         el('button', { class: 'btn-primary', onClick: () => GR.auslagenPdf.buildGesamtPdf(a) }, 'Gesamt-PDF erzeugen'),
+        GR.ui.savePdfToPaperless ? el('button', { onClick: () => GR.auslagenPdf.buildGesamtPdf(a, {
+          target: 'paperless', prefillTitle: pdfPrefillTitle,
+          onUploaded: (doc) => { if (docsSection) docsSection.linkDoc(doc); },
+        }) }, '📥 In Paperless speichern') : null,
       ]),
+    ]));
+
+    if (docsSection) mount.appendChild(el('div', { class: 'card' }, [
+      el('h3', {}, 'In Paperless abgelegt'),
+      docsSection,
     ]));
 
     updateLive();

@@ -307,6 +307,11 @@
       refresh();
     };
 
+    // Rück-Verknüpfung: in Paperless abgelegte PDFs dieser Vermietung (nur Liste).
+    const docsSection = GR.ui.renderPaperlessDocsSection
+      ? GR.ui.renderPaperlessDocsSection(v, persist, { showAdd: false, emptyText: 'Noch kein PDF in Paperless abgelegt.' })
+      : null;
+
     const vertragCard = el('div', { class: 'card' }, [
       el('h3', {}, '2 · Mietvertrag (Tag vor der Nutzung)'),
       el('p', { class: 'help' }, pauschal
@@ -321,6 +326,10 @@
           ? [el('button', { class: 'btn-primary', onClick: onVertrag }, 'Vertrag erstellen & Preise einfrieren')]
           : [
               el('button', { class: 'btn-primary', onClick: () => GR.vermietungPdf.buildMietvertrag(v) }, 'Mietvertrag als PDF'),
+              GR.ui.savePdfToPaperless ? el('button', { onClick: () => GR.vermietungPdf.buildMietvertrag(v, {
+                target: 'paperless', prefillTitle: ('Mietvertrag ' + (v.startDatum || '')).trim(),
+                onUploaded: (doc) => { if (docsSection) docsSection.linkDoc(doc); },
+              }) }, '📥 In Paperless speichern') : null,
               v.vertragDatum ? el('span', { class: 'help', style: 'align-self:center;' }, 'erstellt am ' + formatDatum(v.vertragDatum)) : null,
             ]
       ),
@@ -385,11 +394,20 @@
         el('div', { class: 'verm-total', style: 'margin-top:16px;' }, ['Gesamtbetrag: ', liveGesamt]),
         el('div', { class: 'toolbar', style: 'margin-top:14px; margin-bottom:0;' }, [
           el('button', { class: 'btn-primary', onClick: () => GR.vermietungPdf.buildKostenabrechnung(v) }, 'Kostenabrechnungsbogen als PDF'),
+          GR.ui.savePdfToPaperless ? el('button', { onClick: () => GR.vermietungPdf.buildKostenabrechnung(v, {
+            target: 'paperless', prefillTitle: ('Kostenabrechnung ' + (v.startDatum || '')).trim(),
+            onUploaded: (doc) => { if (docsSection) docsSection.linkDoc(doc); },
+          }) }, '📥 In Paperless speichern') : null,
           v.status === 'vertrag' ? el('button', { onClick: onAbrechnen }, 'Als abgerechnet markieren') : null,
           v.abrechnungDatum ? el('span', { class: 'help', style: 'align-self:center;' }, 'abgerechnet am ' + formatDatum(v.abrechnungDatum)) : null,
         ]),
       ]));
     }
+
+    if (docsSection) mount.appendChild(el('div', { class: 'card' }, [
+      el('h3', {}, 'In Paperless abgelegt'),
+      docsSection,
+    ]));
 
     updateLive();
   }

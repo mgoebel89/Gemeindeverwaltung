@@ -652,6 +652,11 @@
     mount.appendChild(anwesenheitsCard());
     if (GR.ui.renderAntraegeCard) mount.appendChild(GR.ui.renderAntraegeCard(sitzung, save));
     if (GR.ui.renderAttachmentsCard) mount.appendChild(GR.ui.renderAttachmentsCard(sitzung.id));
+    if (GR.ui.renderPaperlessDocsSection) mount.appendChild(el('div', { class: 'card' }, [
+      el('h3', { style: 'margin-top:0;' }, 'Sitzungsunterlagen (Paperless)'),
+      el('p', { class: 'help' }, 'Bestehende Paperless-Dokumente mit dieser Sitzung verknüpfen (oder ein neues hochladen). Erscheint nicht im Protokoll-PDF.'),
+      GR.ui.renderPaperlessDocsSection(sitzung, save, { prefillTitle: 'Sitzungsunterlage ' + (sitzung.datum || '') }),
+    ]));
     mount.appendChild(el('div', { class: 'live-layout' }, [sidebar(), topDetail()]));
   }
 

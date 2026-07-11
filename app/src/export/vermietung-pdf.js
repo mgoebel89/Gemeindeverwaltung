@@ -123,7 +123,9 @@
   }
 
   // ================================================================ Mietvertrag
-  function buildMietvertrag(v) {
+  // opts.target: 'download' (Standard) oder 'paperless'; opts.prefillTitle/onUploaded
+  // werden bei 'paperless' durchgereicht.
+  function buildMietvertrag(v, opts = {}) {
     const doc = newDoc(); if (!doc) return;
     const settings = store.getSettings();
     const vm = settings.vermietung;
@@ -223,7 +225,12 @@
     doc.text(vm.buergermeister || '', MARGIN_X, state.y + 5);
     doc.text(mieter ? fullNameMieter(mieter) : 'Mieter', RIGHT_X - colW, state.y + 5);
 
-    openPdf(doc, `Mietvertrag-${v.startDatum || ''}.pdf`);
+    const filename = `Mietvertrag-${v.startDatum || ''}.pdf`;
+    if (opts.target === 'paperless') {
+      GR.ui.savePdfToPaperless(doc, filename, { prefillTitle: opts.prefillTitle, onUploaded: opts.onUploaded });
+    } else {
+      openPdf(doc, filename);
+    }
   }
 
   // =================================================== Kostenabrechnungsbogen
@@ -237,7 +244,7 @@
     state.y += g;
   }
 
-  function buildKostenabrechnung(v) {
+  function buildKostenabrechnung(v, opts = {}) {
     const doc = newDoc(); if (!doc) return;
     const settings = store.getSettings();
     const vm = settings.vermietung;
@@ -322,7 +329,12 @@
     setFont(doc, 9, false, false, C_MUTED);
     doc.text(vm.buergermeister || '', MARGIN_X, state.y + 5);
 
-    openPdf(doc, `Kostenabrechnung-${v.startDatum || ''}.pdf`);
+    const filename = `Kostenabrechnung-${v.startDatum || ''}.pdf`;
+    if (opts.target === 'paperless') {
+      GR.ui.savePdfToPaperless(doc, filename, { prefillTitle: opts.prefillTitle, onUploaded: opts.onUploaded });
+    } else {
+      openPdf(doc, filename);
+    }
   }
 
   GR.vermietungPdf = { buildMietvertrag, buildKostenabrechnung };

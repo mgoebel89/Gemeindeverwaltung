@@ -538,6 +538,13 @@ tr:hover td { background: #fafbfc; }
 .aufg-title { font-weight: 500; }
 .aufg-prio { font-size: 0.85em; }
 
+/* Verknüpfte Paperless-Dokumente (geteilter Abschnitt) */
+.doc-link-row {
+  display: flex; align-items: center; gap: 10px;
+  padding: 6px 0; border-bottom: 1px solid rgba(0,0,0,0.08);
+}
+.doc-link-row:last-child { border-bottom: none; }
+
 /* Aufgaben-Detailkarte (Modal) */
 .aufg-detail label { display: block; margin-bottom: 4px; font-weight: 500; }
 .aufg-detail input, .aufg-detail select, .aufg-detail textarea { width: 100%; }

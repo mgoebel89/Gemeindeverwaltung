@@ -136,6 +136,11 @@
     mount.appendChild(kopfCard);
     if (GR.ui.renderAntraegeCard) mount.appendChild(GR.ui.renderAntraegeCard(sitzung, save));
     if (GR.ui.renderAttachmentsCard) mount.appendChild(GR.ui.renderAttachmentsCard(sitzung.id));
+    if (GR.ui.renderPaperlessDocsSection) mount.appendChild(el('div', { class: 'card' }, [
+      el('h3', { style: 'margin-top:0;' }, 'Sitzungsunterlagen (Paperless)'),
+      el('p', { class: 'help' }, 'Bestehende Paperless-Dokumente mit dieser Sitzung verknüpfen (oder ein neues hochladen) – vermeidet doppelte Ablage. Erscheint nicht im Protokoll-PDF.'),
+      GR.ui.renderPaperlessDocsSection(sitzung, save, { prefillTitle: 'Sitzungsunterlage ' + (sitzung.datum || '') }),
+    ]));
     mount.appendChild(topBereichBlock('oeffentlich', 'Öffentlicher Teil'));
     mount.appendChild(topBereichBlock('nicht_oeffentlich', 'Nicht-öffentlicher Teil'));
   }

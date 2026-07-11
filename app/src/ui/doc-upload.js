@@ -8,9 +8,13 @@
   const POLL_MAX = 48; // ~2 Minuten
 
   // Vollbild-Assistent für ein neues Paperless-Dokument.
-  // opts: { prefillTitle, onUploaded({ id, title }) }
+  // opts: { prefillTitle, onUploaded({ id, title }),
+  //         presetFile (File – überspringt die Quellenwahl, startet bei Schritt 2),
+  //         title (Kopfzeile) }
   function uploadPaperlessDocument(opts = {}) {
     const meta = { correspondents: [], documentTypes: [], tags: [], customFields: [] };
+    const presetFile = opts.presetFile || null; // fertige Datei (z. B. erzeugtes PDF)
+    const locked = !!presetFile;                // dann keine Quellenwahl/Zurück
     let step = 1;
     let mode = null;            // 'file' | 'scan'
     let selectedFile = null;
@@ -30,7 +34,7 @@
     const foot = el('div', { class: 'wiz-foot' });
     const box = el('div', { class: 'wiz' }, [
       el('div', { class: 'wiz-head' }, [
-        el('h3', {}, 'Neues Dokument'),
+        el('h3', {}, opts.title || 'Neues Dokument'),
         el('div', { class: 'wiz-steps' }, [stepEls[1], stepEls[2]]),
         el('button', { class: 'wiz-close', title: 'Abbrechen', onClick: () => close() }, '×'),
       ]),
@@ -299,9 +303,11 @@
       } else {
         refreshPreview();
         body.appendChild(step2El);
-        backBtn = el('button', { onClick: () => showStep(1) }, '‹ Zurück');
         uploadBtn = el('button', { class: 'btn-primary', onClick: onSubmit }, 'Hochladen');
-        foot.appendChild(backBtn);
+        if (!locked) {
+          backBtn = el('button', { onClick: () => showStep(1) }, '‹ Zurück');
+          foot.appendChild(backBtn);
+        }
         foot.appendChild(el('div', { class: 'spacer' }));
         foot.appendChild(statusEl);
         foot.appendChild(uploadBtn);
@@ -399,8 +405,26 @@
       if (!document.body.contains(overlay)) document.removeEventListener('keydown', esc);
     });
 
-    showStep(1);
+    if (presetFile) { setFile(presetFile); showStep(2); }
+    else { showStep(1); }
+  }
+
+  // Bequemer Weg für bereits erzeugte PDFs (jsPDF-Doc) → Paperless-Ablage.
+  // Öffnet den Assistenten direkt bei Schritt 2 (Eigenschaften) mit der PDF-Blob.
+  // opts: { prefillTitle, onUploaded({ id, title }) }
+  function savePdfToPaperless(doc, filename, opts = {}) {
+    let blob;
+    try { blob = doc.output('blob'); }
+    catch (e) { toast('PDF konnte nicht erzeugt werden: ' + e.message, 4000); return; }
+    const file = new File([blob], filename || 'dokument.pdf', { type: 'application/pdf' });
+    uploadPaperlessDocument({
+      presetFile: file,
+      title: 'In Paperless ablegen',
+      prefillTitle: opts.prefillTitle || String(filename || '').replace(/\.pdf$/i, ''),
+      onUploaded: opts.onUploaded,
+    });
   }
 
   GR.ui.uploadPaperlessDocument = uploadPaperlessDocument;
+  GR.ui.savePdfToPaperless = savePdfToPaperless;
 })();
