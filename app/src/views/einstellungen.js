@@ -78,13 +78,20 @@
     };
 
     mount.appendChild(el('h2', {}, 'Einstellungen'));
-    mount.appendChild(el('div', { class: 'card' }, [
+
+    // Einstellungen nach Kategorien gegliedert – je Bereich ein eigener Container.
+    const C = {
+      allgemein: el('div'), darstellung: el('div'), dokumente: el('div'),
+      vermietung: el('div'), vertraege: el('div'), auslagen: el('div'), daten: el('div'),
+    };
+
+    C.allgemein.appendChild(el('div', { class: 'card' }, [
       el('h3', {}, 'Allgemein'),
       el('label', {}, 'Ortsname (erscheint im Protokoll-Footer)'),
       ortsInput,
     ]));
 
-    mount.appendChild(el('div', { class: 'card' }, [
+    C.darstellung.appendChild(el('div', { class: 'card' }, [
       el('h3', {}, 'Wappen'),
       el('p', { class: 'help' }, 'Das Wappen kann entweder fest unter assets/wappen.png liegen oder hier hochgeladen werden. Hochgeladene Wappen überschreiben die Datei und werden lokal im Browser gespeichert.'),
       wappenPreview,
@@ -187,7 +194,7 @@
       }
     };
 
-    mount.appendChild(el('div', { class: 'card' }, [
+    C.daten.appendChild(el('div', { class: 'card' }, [
       el('h3', {}, 'NocoDB-Direktexport'),
       el('p', { class: 'help' }, 'Sitzungen können nach Abschluss direkt in eine NocoDB-Instanz gepusht werden (API v2, Upsert per UUID). Token und URL werden ausschließlich im Browser gespeichert.'),
       el('div', { class: 'warn' }, 'Wichtig: Die NocoDB-Instanz muss CORS für diese App erlauben (Env-Variable NC_CORS_ORIGIN=*), sonst blockiert der Browser jeden Request.'),
@@ -262,7 +269,7 @@
       } catch (e) { setPpStatus('Fehler: ' + e.message, '#c53030'); }
     };
 
-    mount.appendChild(el('div', { class: 'card' }, [
+    C.dokumente.appendChild(el('div', { class: 'card' }, [
       el('h3', {}, 'Dokumente (Paperless-ngx)'),
       el('p', { class: 'help' }, 'Zugang zur Paperless-Instanz. URL und Token werden serverseitig im Container gespeichert (nicht im Browser) und ausschließlich vom Backend verwendet.'),
       el('div', { class: 'grid-2' }, [
@@ -337,13 +344,13 @@
       return i;
     };
 
-    mount.appendChild(el('div', { class: 'card' }, [
+    C.vermietung.appendChild(el('div', { class: 'card' }, [
       el('h3', {}, 'Vermietung – Preise'),
       el('p', { class: 'help' }, 'Grundmiete gestaffelt nach 1. Tag / jedem weiteren Tag und getrennt für Anwohner und Ortsfremde. Änderungen gelten nur für neue Verträge – bereits erstellte Verträge behalten ihre eingefrorenen Preise.'),
       raeume.length ? el('div', {}, raumCards) : el('p', { class: 'help' }, 'Keine Objekte vorhanden.'),
     ]));
 
-    mount.appendChild(el('div', { class: 'card' }, [
+    C.vermietung.appendChild(el('div', { class: 'card' }, [
       el('h3', {}, 'Vermietung – Absender & Vertragsdaten'),
       el('p', { class: 'help' }, 'Diese Angaben erscheinen im Mietvertrag und Kostenabrechnungsbogen.'),
       el('div', { class: 'grid-2' }, [
@@ -420,7 +427,7 @@
       } catch (e) { scannerStatus.textContent = 'Fehler: ' + e.message; scannerStatus.style.color = '#c53030'; }
     };
 
-    mount.appendChild(el('div', { class: 'card' }, [
+    C.auslagen.appendChild(el('div', { class: 'card' }, [
       el('h3', {}, 'Bargeldauslagen'),
       el('p', { class: 'help' }, 'Absenderangaben und Namen für das Bar-Auslage-Formular, Bürgermeister-Unterschrift und der Netzwerkscanner.'),
       el('div', { class: 'grid-2' }, [
@@ -462,7 +469,7 @@
     };
     kategorienInput.onchange = () => store.saveSettings(settings);
 
-    mount.appendChild(el('div', { class: 'card' }, [
+    C.vertraege.appendChild(el('div', { class: 'card' }, [
       el('h3', {}, 'Verträge und Pacht'),
       el('p', { class: 'help' }, 'Vorgaben für neue Verträge und die Auswahlliste der Kategorien.'),
       el('div', { class: 'grid-2' }, [
@@ -475,7 +482,7 @@
       ]),
     ]));
 
-    mount.appendChild(el('div', { class: 'card' }, [
+    C.daten.appendChild(el('div', { class: 'card' }, [
       el('h3', {}, 'Backup'),
       el('p', { class: 'help' }, 'Sichern Sie regelmäßig den gesamten Datenbestand als JSON. Sie können diese Datei jederzeit wieder einspielen — z. B. nach Browserwechsel.'),
       el('div', { class: 'toolbar' }, [
@@ -485,6 +492,36 @@
         el('button', { class: 'btn-danger', onClick: onWipe }, 'Alle Daten löschen'),
       ]),
     ]));
+
+    // --- Kategorie-Unternavigation zusammenbauen ---
+    const catDefs = [
+      ['allgemein', 'Allgemein'],
+      ['darstellung', 'Darstellung'],
+      ['dokumente', 'Dokumente'],
+      ['vermietung', 'Vermietung'],
+      ['vertraege', 'Verträge & Pacht'],
+      ['auslagen', 'Bargeldauslagen'],
+      ['daten', 'Datensicherung'],
+    ];
+    const content = el('div', { class: 'settings-content' });
+    const navBox = el('div', { class: 'settings-nav' });
+    const buttons = {};
+    function showCat(key) {
+      content.innerHTML = '';
+      content.appendChild(C[key]);
+      Object.entries(buttons).forEach(([k, b]) => b.classList.toggle('active', k === key));
+      try { sessionStorage.setItem('gr.settingsCat', key); } catch (_) {}
+    }
+    catDefs.forEach(([key, label]) => {
+      const b = el('button', { onClick: () => showCat(key) }, label);
+      buttons[key] = b;
+      navBox.appendChild(b);
+    });
+    mount.appendChild(el('div', { class: 'settings-layout' }, [navBox, content]));
+
+    let initial = 'allgemein';
+    try { const s = sessionStorage.getItem('gr.settingsCat'); if (s && C[s]) initial = s; } catch (_) {}
+    showCat(initial);
   }
 
   GR.views = GR.views || {};

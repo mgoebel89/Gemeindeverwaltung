@@ -53,7 +53,7 @@
 
     let sitzung = store.getSitzung(sitzungId);
     if (!sitzung) {
-      mount.appendChild(el('div', { class: 'card' }, [el('h2', {}, 'Sitzung nicht gefunden'), el('a', { href: '#/' }, 'Zur Übersicht')]));
+      mount.appendChild(el('div', { class: 'card' }, [el('h2', {}, 'Sitzung nicht gefunden'), el('a', { href: '#/sitzungen' }, 'Zu den Sitzungen')]));
       return;
     }
     if (sitzung.status === 'vorbereitung') {
@@ -578,7 +578,7 @@
 
     function exportToolbar() {
       return el('div', { class: 'toolbar' }, [
-        el('a', { href: '#/', class: 'btn' }, '← Übersicht'),
+        el('a', { href: '#/sitzungen', class: 'btn' }, '← Sitzungen'),
         el('a', { href: `#/sitzung/vorbereitung?id=${sitzung.id}`, class: 'btn' }, 'Vorbereitung'),
         el('div', { class: 'spacer' }),
         (() => {

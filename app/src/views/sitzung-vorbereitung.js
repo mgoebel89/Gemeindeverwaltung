@@ -10,7 +10,7 @@
     if (!sitzung) {
       mount.appendChild(el('div', { class: 'card' }, [
         el('h2', {}, 'Sitzung nicht gefunden'),
-        el('a', { href: '#/' }, 'Zur Übersicht'),
+        el('a', { href: '#/sitzungen' }, 'Zu den Sitzungen'),
       ]));
       return;
     }
@@ -128,7 +128,7 @@
     }
 
     mount.appendChild(el('div', { class: 'toolbar' }, [
-      el('a', { href: '#/', class: 'btn' }, '← Übersicht'),
+      el('a', { href: '#/sitzungen', class: 'btn' }, '← Sitzungen'),
       el('h2', { style: 'margin:0' }, 'Sitzung vorbereiten'),
       el('div', { class: 'spacer' }),
       el('a', { href: `#/sitzung/live?id=${sitzung.id}`, class: 'btn btn-primary' }, 'Zur Live-Protokollierung →'),

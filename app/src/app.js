@@ -1,8 +1,45 @@
 (function () {
   'use strict';
-  const { renderDashboard, renderDokumente, renderStammdaten, renderEinstellungen, renderVorbereitung, renderLive, renderVermietung, renderMieter, renderAuslagen, renderAuslagenStammdaten, renderVertraege, renderVertragspartner } = GR.views;
+  const { renderDashboard, renderSitzungen, renderDokumente, renderStammdaten, renderEinstellungen, renderVorbereitung, renderLive, renderVermietung, renderMieter, renderAuslagen, renderAuslagenStammdaten, renderVertraege, renderVertragspartner } = GR.views;
 
   const mount = document.getElementById('app');
+  const shell = document.getElementById('appShell');
+
+  // ---------- Navigations-Config (neues Modul = 1 Eintrag) ----------
+  // icon: Name aus ICONS (schlichte Linien-Icons). Gruppen strukturieren die Seitenleiste.
+  const NAV = [
+    { items: [ { path: '/', label: 'Übersicht', icon: 'home' } ] },
+    { label: 'Gremien', items: [
+      { path: '/sitzungen', label: 'Sitzungen', icon: 'gavel' },
+      { path: '/dokumente', label: 'Dokumente', icon: 'doc' },
+    ] },
+    { label: 'Liegenschaften', items: [
+      { path: '/vermietung', label: 'Vermietung', icon: 'key' },
+      { path: '/vertraege', label: 'Verträge & Pacht', icon: 'file' },
+    ] },
+    { label: 'Finanzen', items: [
+      { path: '/auslagen', label: 'Bargeldauslagen', icon: 'euro' },
+    ] },
+    { footer: true, items: [
+      { path: '/stammdaten', label: 'Stammdaten', icon: 'users' },
+      { path: '/einstellungen', label: 'Einstellungen', icon: 'gear' },
+    ] },
+  ];
+
+  const ICONS = {
+    home: '<path d="M3 11l9-8 9 8"/><path d="M5 10v10h14V10"/>',
+    gavel: '<path d="M14 4l6 6"/><path d="M4 20l7-7"/><path d="M9 8l4 4"/><path d="M15 14l4 4"/>',
+    doc: '<path d="M14 3H6v18h12V7z"/><path d="M14 3v4h4"/>',
+    key: '<circle cx="8" cy="8" r="4"/><path d="M11 11l9 9"/><path d="M17 17l2-2"/>',
+    file: '<path d="M6 3h9l3 3v15H6z"/><path d="M9 9h6M9 13h6M9 17h4"/>',
+    euro: '<path d="M17 6a6 6 0 100 12"/><path d="M4 10h9M4 14h9"/>',
+    users: '<circle cx="9" cy="8" r="3"/><path d="M3 20c0-3 3-5 6-5s6 2 6 5"/><path d="M16 6a3 3 0 010 6"/><path d="M17 15c2 .5 4 2 4 5"/>',
+    gear: '<circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M5 5l2 2M17 17l2 2M19 5l-2 2M7 17l-2 2"/>',
+  };
+
+  function icon(name) {
+    return `<svg viewBox="0 0 24 24" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">${ICONS[name] || ''}</svg>`;
+  }
 
   function parseHash() {
     const h = (location.hash || '#/').replace(/^#/, '');
@@ -11,10 +48,54 @@
     return { path, params };
   }
 
+  function buildSidebar() {
+    const nav = document.getElementById('sidebarNav');
+    if (!nav) return;
+    nav.innerHTML = '';
+    for (const group of NAV) {
+      const wrap = document.createElement('div');
+      if (group.footer) wrap.className = 'nav-spacer';
+      if (group.label) {
+        const gl = document.createElement('div');
+        gl.className = 'nav-group-label';
+        gl.textContent = group.label;
+        wrap.appendChild(gl);
+      }
+      for (const item of group.items) {
+        const a = document.createElement('a');
+        a.className = 'nav-item';
+        a.href = '#' + item.path;
+        a.setAttribute('data-route', item.path);
+        a.title = item.label;
+        a.innerHTML = `<span class="nav-icon">${icon(item.icon)}</span><span class="nav-label">${item.label}</span>`;
+        a.addEventListener('click', () => shell && shell.classList.remove('nav-open')); // Drawer auf dem Handy schließen
+        wrap.appendChild(a);
+      }
+      nav.appendChild(wrap);
+    }
+  }
+
   function setActiveNav(path) {
-    document.querySelectorAll('.mainnav a').forEach(a => {
-      a.classList.toggle('active', a.getAttribute('data-route') === path);
+    // längste passende Route markieren (z. B. /sitzung/live → Sitzungen)
+    document.querySelectorAll('.sidebar-nav .nav-item').forEach(a => {
+      const route = a.getAttribute('data-route');
+      const active = route === '/' ? (path === '/' || path === '') : path.startsWith(route);
+      a.classList.toggle('active', active);
     });
+  }
+
+  function bindShellControls() {
+    const collapseBtn = document.getElementById('sidebarCollapse');
+    const menuBtn = document.getElementById('menuToggle');
+    const backdrop = document.getElementById('sidebarBackdrop');
+    // Collapse-Zustand (Desktop) merken
+    try { if (localStorage.getItem('gr.sidebarCollapsed') === '1') shell.classList.add('sidebar-collapsed'); } catch (_) {}
+    if (collapseBtn) collapseBtn.addEventListener('click', () => {
+      const c = shell.classList.toggle('sidebar-collapsed');
+      try { localStorage.setItem('gr.sidebarCollapsed', c ? '1' : '0'); } catch (_) {}
+    });
+    if (menuBtn) menuBtn.addEventListener('click', () => shell.classList.toggle('nav-open'));
+    if (backdrop) backdrop.addEventListener('click', () => shell.classList.remove('nav-open'));
   }
 
   function router() {
@@ -22,6 +103,7 @@
     mount.innerHTML = '';
     setActiveNav(path);
     if (path === '/' || path === '') return renderDashboard(mount);
+    if (path === '/sitzungen') return renderSitzungen(mount);
     if (path === '/dokumente') return renderDokumente(mount, params);
     if (path === '/stammdaten') return renderStammdaten(mount);
     if (path === '/einstellungen') return renderEinstellungen(mount);
@@ -131,6 +213,8 @@
   }
 
   async function startApp() {
+    buildSidebar();
+    bindShellControls();
     bindSyncStatus();
     // WebSocket-Nachrichten in den Store leiten
     if (GR.api && GR.api.subscribe) {

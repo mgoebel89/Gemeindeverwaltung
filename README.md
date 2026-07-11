@@ -35,6 +35,21 @@ eingebautem Node-Backend (SQLite + WebSocket) und nginx-Frontend.
 - **Backup:** tägliches Snapshot der SQLite-Datei + Anhänge nach
   `/var/backups/gemeindeverwaltung/YYYY-MM-DD/`, letzte 14 Tage werden behalten.
 
+## Oberfläche
+
+Die App nutzt eine **linke Seitenleiste** (gruppiert: *Übersicht*, *Gremien*,
+*Liegenschaften*, *Finanzen*, unten *Stammdaten*/*Einstellungen*), die sich per Knopf
+**einklappen** lässt (nur Icons) und auf schmalen Geräten als **Hamburger-Drawer** erscheint.
+Die Navigation wird aus einer zentralen Config in `app/src/app.js` (`NAV`) aufgebaut — ein
+neues Modul ist dort ein Eintrag.
+
+Die Startseite (`#/`) ist ein **Dashboard** (`app/src/views/uebersicht.js`) mit Karten für
+anstehende Saalvermietungen und Vertrags-Kündigungsfristen (Kalender-Termine und Vikunja-Aufgaben
+folgen als eigene Phasen). Die frühere Sitzungsliste liegt unter `#/sitzungen`.
+
+Die **Einstellungen** sind in Kategorien gegliedert (Unter-Navigation): Allgemein, Darstellung,
+Dokumente, Vermietung, Verträge & Pacht, Bargeldauslagen, Datensicherung.
+
 ## Struktur
 
 ```

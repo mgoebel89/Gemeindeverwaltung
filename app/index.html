@@ -7,29 +7,34 @@
   <link rel="stylesheet" href="styles.css" />
 </head>
 <body>
-  <header class="topbar">
-    <div class="brand">
-      <img src="assets/wappen.png" alt="Wappen" class="brand-wappen" onerror="this.style.display='none'" />
-      <div>
-        <h1>Gemeindeverwaltung</h1>
-        <small>Hörschhausen</small>
+  <div class="app-shell" id="appShell">
+    <aside class="sidebar" id="sidebar">
+      <div class="sidebar-head">
+        <img src="assets/wappen.png" alt="Wappen" class="brand-wappen" onerror="this.style.display='none'" />
+        <div class="sidebar-brand">
+          <h1>Gemeindeverwaltung</h1>
+          <small>Hörschhausen</small>
+        </div>
+        <button class="sidebar-collapse" id="sidebarCollapse" title="Seitenleiste ein-/ausklappen" aria-label="Seitenleiste ein-/ausklappen">«</button>
       </div>
+      <nav class="sidebar-nav" id="sidebarNav"><!-- von app.js aus NAV-Config aufgebaut --></nav>
+      <div class="sidebar-foot">
+        <button id="syncStatus" class="sync-status sync-status--unconfigured" title="NocoDB nicht konfiguriert" aria-label="Sync-Status">
+          <span class="sync-dot"></span>
+          <span class="sync-label">Sync</span>
+        </button>
+      </div>
+    </aside>
+    <div class="sidebar-backdrop" id="sidebarBackdrop"></div>
+    <div class="content-area">
+      <header class="mobile-bar">
+        <button class="menu-toggle" id="menuToggle" aria-label="Menü öffnen">☰</button>
+        <img src="assets/wappen.png" alt="" class="mobile-wappen" onerror="this.style.display='none'" />
+        <span class="mobile-title">Gemeindeverwaltung</span>
+      </header>
+      <main id="app"></main>
     </div>
-    <nav class="mainnav">
-      <a href="#/" data-route="/">Sitzungen</a>
-      <a href="#/dokumente" data-route="/dokumente">Dokumente</a>
-      <a href="#/vermietung" data-route="/vermietung">Vermietung</a>
-      <a href="#/vertraege" data-route="/vertraege">Verträge &amp; Pacht</a>
-      <a href="#/auslagen" data-route="/auslagen">Bargeldauslagen</a>
-      <a href="#/stammdaten" data-route="/stammdaten">Stammdaten</a>
-      <a href="#/einstellungen" data-route="/einstellungen">Einstellungen</a>
-      <button id="syncStatus" class="sync-status sync-status--unconfigured" title="NocoDB nicht konfiguriert" aria-label="Sync-Status">
-        <span class="sync-dot"></span>
-        <span class="sync-label">Sync</span>
-      </button>
-    </nav>
-  </header>
-  <main id="app"></main>
+  </div>
   <div id="toast" class="toast" hidden></div>
 
   <!-- Verstecktes Wappen-Bild für PDF-Export (wird per Canvas in Data-URL konvertiert, kein fetch). -->
@@ -56,6 +61,7 @@
   <script src="src/export/auslagen-pdf.js"></script>
   <script src="src/export/ics.js"></script>
   <script src="src/export/vertraege-pdf.js"></script>
+  <script src="src/views/uebersicht.js"></script>
   <script src="src/views/dashboard.js"></script>
   <script src="src/views/dokumente.js"></script>
   <script src="src/views/mieter.js"></script>

@@ -5,7 +5,7 @@
   const { el, formatDatum, confirmDialog, toast } = GR.ui;
   const { emptySitzung } = GR.models;
 
-  function renderDashboard(mount) {
+  function renderSitzungen(mount) {
     const sitzungen = store.listSitzungen().sort((a, b) => (a.datum < b.datum ? 1 : -1));
 
     const statusTag = s => {
@@ -25,7 +25,7 @@
       store.deleteSitzung(id);
       toast('Sitzung gelöscht');
       mount.innerHTML = '';
-      renderDashboard(mount);
+      renderSitzungen(mount);
     };
 
     const body = el('div', {}, [
@@ -73,5 +73,5 @@
   }
 
   GR.views = GR.views || {};
-  GR.views.renderDashboard = renderDashboard;
+  GR.views.renderSitzungen = renderSitzungen;
 })();
