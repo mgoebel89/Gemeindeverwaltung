@@ -19,6 +19,15 @@ const crypto = require('crypto');
 const fs = require('fs');
 const { URL } = require('url');
 const db = require('../db');
+const sane = require('../sane');
+
+// Scanner werden über einen einzelnen String identifiziert:
+//  - eSCL/AirScan:  eine http(s)-URL (…/eSCL)
+//  - SANE:          "sane:<scanimage-device>" (z. B. sane:airscan:w1:EPSON ES-580W)
+// So bleibt der bestehende Datenfluss (ein Feld au.scannerUrl) unverändert.
+const SANE_PREFIX = 'sane:';
+const isSaneId = id => String(id || '').startsWith(SANE_PREFIX);
+const saneDevice = id => String(id).slice(SANE_PREFIX.length);
 
 // --- eSCL-Basis-URL normalisieren (…/eSCL ohne abschließenden Slash) ---
 function esclBase(raw) {
@@ -116,19 +125,38 @@ async function scanPages(base, source) {
   return pages;
 }
 
+// Einheitlicher Einstieg für beide Scanner-Arten: liefert JPEG-Seiten (Buffer[]).
+// Verzweigt anhand des Präfixes zwischen SANE (scanimage) und eSCL.
+async function scanToPages(identifier, source) {
+  if (isSaneId(identifier)) return sane.scanToJpegs(saneDevice(identifier), source);
+  const base = esclBase(identifier);
+  if (!base) { const e = new Error('Scanner-URL fehlt.'); e.status = 400; throw e; }
+  return scanPages(base, source);
+}
+
 module.exports = function createScanRouter(broadcast) {
   const router = express.Router();
 
-  // --- mDNS-Discovery ---
+  // --- Discovery: eSCL (mDNS) + SANE (scanimage -L) zusammenführen ---
   router.get('/scanners', async (_req, res) => {
+    const found = new Map(); // key: eindeutige ID → Eintrag
+
+    // 1) SANE-Geräte (falls scanimage installiert) – deckt WSD-only-Scanner ab.
+    let saneList = [];
+    try { saneList = await sane.listDevices(); } catch (_) { saneList = []; }
+    for (const d of saneList) {
+      found.set('sane:' + d.device, { name: d.name + ' (SANE)', host: '', port: 0, url: SANE_PREFIX + d.device });
+    }
+
+    // 2) eSCL/AirScan per mDNS.
     let Bonjour;
     try {
       ({ Bonjour } = require('bonjour-service'));
     } catch (e) {
-      return res.status(501).json({ error: 'mDNS-Suche nicht verfügbar (bonjour-service nicht installiert). Scanner-URL bitte manuell eintragen.' });
+      // Kein mDNS verfügbar: nur SANE-Ergebnisse zurückgeben (oder leer).
+      return res.json(Array.from(found.values()));
     }
     const instance = new Bonjour();
-    const found = new Map(); // key: ip:port
     function collect(service, secure) {
       const ip = (service.addresses || []).find(a => /^\d+\.\d+\.\d+\.\d+$/.test(a)) || service.host;
       if (!ip) return;
@@ -153,7 +181,12 @@ module.exports = function createScanRouter(broadcast) {
 
   // --- Health / Verbindungstest ---
   router.get('/health', async (req, res) => {
-    const base = esclBase(req.query.url);
+    const id = req.query.url;
+    if (isSaneId(id)) {
+      const r = await sane.devicePresent(saneDevice(id));
+      return res.status(r.ok ? 200 : 502).json(r);
+    }
+    const base = esclBase(id);
     if (!base) return res.status(400).json({ ok: false, error: 'Scanner-URL fehlt.' });
     try {
       const r = await request('GET', `${base}/ScannerCapabilities`, { timeout: 8000 });
@@ -166,13 +199,12 @@ module.exports = function createScanRouter(broadcast) {
 
   // --- Scan auslösen (Belege zu einer Auslage) ---
   router.post('/', async (req, res) => {
-    const { auslageId, source } = req.body || {};
-    const base = esclBase((req.body || {}).scannerUrl);
-    if (!base) return res.status(400).json({ error: 'Scanner-URL fehlt.' });
+    const { auslageId, source, scannerUrl } = req.body || {};
+    if (!scannerUrl) return res.status(400).json({ error: 'Scanner-URL fehlt.' });
     if (!auslageId || !db.getAuslage(auslageId)) return res.status(404).json({ error: 'auslage not found' });
 
     try {
-      const pages = await scanPages(base, source);
+      const pages = await scanToPages(scannerUrl, source);
       if (!pages.length) return res.status(502).json({ error: 'Scanner lieferte keine Seite. Papier eingelegt?' });
 
       const created = [];
@@ -202,3 +234,4 @@ module.exports = function createScanRouter(broadcast) {
 // Für Wiederverwendung durch das Dokumente-Modul (Paperless-Upload per Scan).
 module.exports.scanPages = scanPages;
 module.exports.esclBase = esclBase;
+module.exports.scanToPages = scanToPages; // eSCL- ODER SANE-Dispatcher

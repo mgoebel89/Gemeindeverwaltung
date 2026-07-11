@@ -568,9 +568,10 @@
         el('button', { class: 'btn-primary', onClick: onUploadSig }, 'Unterschrift hochladen…'),
         el('button', { onClick: onResetSig }, 'Entfernen'),
       ]),
-      el('h4', { style: 'margin:14px 0 4px;' }, 'Netzwerkscanner (eSCL/AirScan)'),
+      el('h4', { style: 'margin:14px 0 4px;' }, 'Netzwerkscanner (eSCL/AirScan · SANE/WSD)'),
       el('p', { class: 'help' }, 'Scanner automatisch suchen und als Standard übernehmen oder die URL manuell eintragen. Beim Scannen werden die Seiten als Belege angelegt.'),
-      el('label', {}, 'Scanner-URL'),
+      el('p', { class: 'help' }, 'Es werden zwei Wege durchsucht: eSCL/AirScan-Geräte (wie der Brother) und – falls auf dem Server „scanimage" installiert ist – SANE-Geräte (mit „(SANE)" markiert). Über SANE werden auch reine WSD-Scanner wie der Epson ES-580W eingebunden. SANE-Geräte tragen intern die Kennung „sane:…".'),
+      el('label', {}, 'Scanner-URL bzw. -Kennung'),
       scannerInput,
       el('div', { class: 'toolbar', style: 'margin-top:8px;' }, [
         el('button', { class: 'btn-primary', onClick: onDiscover }, 'Scanner im Netzwerk suchen'),

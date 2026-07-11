@@ -338,13 +338,26 @@ wie alle Module – zusätzlich nach NocoDB gesichert (Tabellen `Empfaenger`,
 `Haushaltsstellen`, `Auslagen`, jeweils mit vollständigem `Payload`). Neue
 Zieltabellen legt „Schema initialisieren" in den Einstellungen an.
 
-**Netzwerkscanner (eSCL/AirScan):** In den Einstellungen unter *Bargeldauslagen*
-den Scanner **automatisch im Netzwerk suchen** (mDNS `_uscan._tcp`) und als
-Standard übernehmen, oder die URL (z. B. `http://192.168.1.30`) manuell
-eintragen. Der Scan läuft serverseitig über das Backend (`backend/routes/scan.js`),
-der Browser spricht den Scanner nicht direkt an. Voraussetzung: Der Scanner ist
-vom Container erreichbar und Multicast/mDNS ist auf der Bridge erlaubt. Fällt der
-Scanner aus, funktioniert der manuelle Datei-Upload weiterhin.
+**Netzwerkscanner (eSCL/AirScan **und** SANE/WSD):** In den Einstellungen unter
+*Bargeldauslagen* den Scanner **automatisch im Netzwerk suchen** und als Standard
+übernehmen, oder die Kennung manuell eintragen. Der Scan läuft serverseitig über das
+Backend (`backend/routes/scan.js`), der Browser spricht den Scanner nicht direkt an.
+Fällt der Scanner aus, funktioniert der manuelle Datei-Upload weiterhin.
+
+Es werden **zwei Wege** unterstützt (ein einziges Feld `scannerUrl`, per Präfix
+unterschieden):
+
+- **eSCL/AirScan** – direkt aus dem Backend per HTTP an `…/eSCL`, Discovery über
+  mDNS (`_uscan._tcp`/`_uscans._tcp`). URL z. B. `http://192.168.1.30`. Voraussetzung:
+  Scanner vom Container erreichbar, Multicast/mDNS auf der Bridge erlaubt. (So wird
+  z. B. der Brother gefunden.)
+- **SANE (`scanimage`)** – für Scanner, die **kein** eSCL anbieten, sondern nur
+  **WSD** (z. B. **Epson ES-580W**). Das Backend (`backend/sane.js`) ruft `scanimage`
+  auf; `sane-airscan` wählt automatisch eSCL oder WSD. Solche Geräte erscheinen in der
+  Suche mit „(SANE)" und tragen intern die Kennung `sane:<device>` (z. B.
+  `sane:airscan:w1:EPSON ES-580W`). **Voraussetzung auf dem LXC:**
+  `apt install sane-utils sane-airscan`; die Geräteliste liefert `scanimage -L`.
+  Ist `scanimage` nicht installiert, bleibt nur der eSCL-Weg (keine Fehler).
 
 **Bürgermeister-Unterschrift:** Ein in den Einstellungen hochgeladenes Bild (PNG
 mit Transparenz empfohlen) wird automatisch über die Bürgermeister-Linie gesetzt;

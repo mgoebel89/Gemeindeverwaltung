@@ -12,7 +12,7 @@ const { Readable } = require('stream');
 const { PDFDocument } = require('pdf-lib');
 const db = require('../db');
 const paperless = require('../paperless');
-const { scanPages, esclBase } = require('./scan');
+const { scanToPages } = require('./scan');
 
 const router = express.Router();
 
@@ -156,9 +156,9 @@ router.post('/upload', upload.single('file'), async (req, res) => {
 router.post('/scan', async (req, res) => {
   try {
     cleanupOldScans();
-    const base = esclBase((req.body || {}).scannerUrl);
-    if (!base) return res.status(400).json({ error: 'Scanner-URL fehlt.' });
-    const pages = await scanPages(base, (req.body || {}).source);
+    const scannerUrl = (req.body || {}).scannerUrl;
+    if (!scannerUrl) return res.status(400).json({ error: 'Scanner-URL fehlt.' });
+    const pages = await scanToPages(scannerUrl, (req.body || {}).source);
     if (!pages.length) return res.status(502).json({ error: 'Scanner lieferte keine Seite. Papier eingelegt?' });
     const scanId = crypto.randomUUID();
     const dir = scanDir(scanId);
