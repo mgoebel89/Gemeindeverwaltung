@@ -44,11 +44,12 @@ Die Navigation wird aus einer zentralen Config in `app/src/app.js` (`NAV`) aufge
 neues Modul ist dort ein Eintrag.
 
 Die Startseite (`#/`) ist ein **Dashboard** (`app/src/views/uebersicht.js`) mit Karten für
-anstehende Saalvermietungen und Vertrags-Kündigungsfristen (Kalender-Termine und Vikunja-Aufgaben
-folgen als eigene Phasen). Die frühere Sitzungsliste liegt unter `#/sitzungen`.
+anstehende Saalvermietungen, Vertrags-Kündigungsfristen und **anstehende Termine** (aus den
+abonnierten Kalendern); Vikunja-Aufgaben folgen als eigene Phase. Die frühere Sitzungsliste liegt
+unter `#/sitzungen`, die vollständige Terminliste unter `#/termine`.
 
 Die **Einstellungen** sind in Kategorien gegliedert (Unter-Navigation): Allgemein, Darstellung,
-Dokumente, Vermietung, Verträge & Pacht, Bargeldauslagen, Datensicherung.
+Dokumente, Kalender, Vermietung, Verträge & Pacht, Bargeldauslagen, Datensicherung.
 
 ## Struktur
 
@@ -405,6 +406,31 @@ Standard-Kündigungsfrist und die editierbare Kategorienliste.
 > **Migration:** Neue Tabellen entstehen per `CREATE TABLE IF NOT EXISTS` beim
 > Backend-Start; neue Settings-Defaults werden für Bestandsinstallationen nachgezogen.
 > Frontend nach dem Update mit **Strg+F5** neu laden.
+
+## Modul „Kalender" (iCal-Abos)
+
+Externe Kalender werden per **Abo-URL (iCal/ICS)** eingebunden – z. B. aus Google Kalender,
+Nextcloud oder der Müllabfuhr. Die Kalender werden **serverseitig** geholt und geparst
+(`backend/kalender.js`, Route `/api/kalender`), weil externe Kalender im Browser an **CORS**
+scheitern und die Abo-URL ein Geheimnis enthalten kann. Der Zugriff ist **nur lesend**.
+
+- **Konfiguration** unter *Einstellungen → Kalender*: beliebig viele Kalender mit Bezeichnung
+  und URL; je Eintrag **Testen** (zeigt die Anzahl gefundener Termine) und **Entfernen**.
+  Gespeichert wird serverseitig unter dem DB-Key `kalender` (eigener Key, **nicht** im
+  Snapshot/NocoDB-Sync). Fallback über die Env-Variable `KALENDER_URLS` (kommagetrennt).
+- **Anzeige**: Dashboard-Karte *Anstehende Termine* (nächste 60 Tage) und die vollständige
+  Liste unter `#/termine` (nach Tag gruppiert, Zeitraum wählbar).
+- **Parser** (`backend/kalender.js`): Zeilen-Unfolding, `VEVENT` mit `SUMMARY`/`LOCATION`/
+  `DTSTART`/`DTEND`, Zeitzonen (`Z`=UTC, `TZID`/floating als lokale Wandzeit des Containers),
+  **Serientermine** (`RRULE`: `DAILY`/`WEEKLY`/`MONTHLY`/`YEARLY` mit `INTERVAL`/`COUNT`/`UNTIL`/
+  `BYDAY`/`BYMONTHDAY`) und `EXDATE`. Serien werden auf ein Zeitfenster expandiert.
+  ICS-Antworten werden je URL **5 Minuten** gecacht.
+
+> **Tipp Google Kalender:** *Einstellungen → Kalender → Integration →* „Geheime Adresse im
+> iCal-Format". Diese URL enthält ein Token und bleibt deshalb serverseitig.
+
+> **Migration:** Kein neues Schema nötig (nutzt die bestehende `settings`-Tabelle). Frontend
+> nach dem Update mit **Strg+F5** neu laden.
 
 ## Lizenz
 

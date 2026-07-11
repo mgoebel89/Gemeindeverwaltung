@@ -161,6 +161,12 @@
   async function createTag(name) { return jsonFetch('/api/dokumente/tags', { method: 'POST', body: { name } }); }
   async function getDocConfig() { return jsonFetch('/api/dokumente/config'); }
   async function putDocConfig(cfg) { return jsonFetch('/api/dokumente/config', { method: 'PUT', body: cfg }); }
+  // --- Kalender (iCal-Abos, Backend-Proxy) ---
+  async function getCalConfig() { return jsonFetch('/api/kalender/config'); }
+  async function putCalConfig(calendars) { return jsonFetch('/api/kalender/config', { method: 'PUT', body: { calendars } }); }
+  async function testCalUrl(url) { return jsonFetch('/api/kalender/test', { method: 'POST', body: { url } }); }
+  async function listCalEvents(days = 90) { return jsonFetch(`/api/kalender/events?days=${encodeURIComponent(days)}`); }
+
   async function listDocNotes(id) { return jsonFetch(`/api/dokumente/${encodeURIComponent(id)}/notes`); }
   async function addDocNote(id, note) { return jsonFetch(`/api/dokumente/${encodeURIComponent(id)}/notes`, { method: 'POST', body: { note } }); }
   async function deleteDocNote(id, noteId) { return jsonFetch(`/api/dokumente/${encodeURIComponent(id)}/notes/${encodeURIComponent(noteId)}`, { method: 'DELETE' }); }
@@ -211,6 +217,7 @@
     docHealth, docMeta, searchDocuments, getDocument, patchDocument, docFileUrl,
     uploadDocument, scanDocument, scanPageUrl, discardScan, commitScan, getDocTask, createCorrespondent, createDocumentType, createTag,
     getDocConfig, putDocConfig,
+    getCalConfig, putCalConfig, testCalUrl, listCalEvents,
     listDocNotes, addDocNote, deleteDocNote,
     putMieter, deleteMieterRemote,
     putRaum, deleteRaumRemote,

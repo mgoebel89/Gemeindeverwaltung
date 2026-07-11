@@ -21,7 +21,7 @@
     const grid = el('div', { class: 'dash-grid' });
     grid.appendChild(cardVermietungen(heute));
     grid.appendChild(cardFristen(heute));
-    grid.appendChild(cardPlaceholder('Anstehende Termine', '📅', 'Kalender-Anbindung folgt (Phase 2): abonnierte iCal-Kalender erscheinen hier.'));
+    grid.appendChild(cardTermine());
     grid.appendChild(cardPlaceholder('Offene Aufgaben', '✅', 'Vikunja-Anbindung folgt (Phase 3): offene To-dos erscheinen hier.'));
     mount.appendChild(grid);
   }
@@ -98,6 +98,37 @@
     }
     return dashCard('Vertrags-Fristen (Kündigung)', '⏰', body,
       el('a', { href: '#/vertraege' }, 'Zu Verträge & Pacht →'));
+  }
+
+  // --- Anstehende Termine (iCal-Abos, serverseitig geladen) ---
+  function cardTermine() {
+    const bodyBox = el('div', {}, [emptyLine('Termine werden geladen…')]);
+    const card = dashCard('Anstehende Termine', '📅', [bodyBox],
+      el('a', { href: '#/termine' }, 'Zu den Terminen →'));
+
+    GR.api.listCalEvents(60).then(res => {
+      bodyBox.innerHTML = '';
+      const events = (res.events || []).slice(0, 6);
+      const errors = res.errors || [];
+      if (!events.length) {
+        bodyBox.appendChild(emptyLine(errors.length ? 'Kalender nicht erreichbar.' : 'Keine anstehenden Termine.'));
+        return;
+      }
+      bodyBox.appendChild(el('ul', { class: 'dash-list' }, events.map(ev => {
+        const zeit = formatDatum(ev.date) + (ev.allDay ? '' : ' · ' + ev.time);
+        return el('li', {}, [
+          el('span', { class: 'dash-date' }, zeit),
+          el('span', { class: 'dash-main' }, [
+            el('strong', {}, ev.summary),
+            el('span', { class: 'help', style: 'margin:0;' }, ev.calName ? ' · ' + ev.calName : ''),
+          ]),
+        ]);
+      })));
+    }).catch(() => {
+      bodyBox.innerHTML = '';
+      bodyBox.appendChild(emptyLine('Termine konnten nicht geladen werden.'));
+    });
+    return card;
   }
 
   function cardPlaceholder(title, icon, text) {

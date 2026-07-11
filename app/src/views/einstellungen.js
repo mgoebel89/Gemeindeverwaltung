@@ -81,7 +81,7 @@
 
     // Einstellungen nach Kategorien gegliedert – je Bereich ein eigener Container.
     const C = {
-      allgemein: el('div'), darstellung: el('div'), dokumente: el('div'),
+      allgemein: el('div'), darstellung: el('div'), dokumente: el('div'), kalender: el('div'),
       vermietung: el('div'), vertraege: el('div'), auslagen: el('div'), daten: el('div'),
     };
 
@@ -283,6 +283,77 @@
       ppStatus,
     ]));
     loadPpConfig();
+
+    // --- Kalender: iCal-Abos (serverseitig geladen) ---
+    const calListBox = el('div', {});
+    const calStatus = el('div', { class: 'help', style: 'margin-top:6px;' }, '');
+    const setCalStatus = (t, c) => { calStatus.textContent = t; calStatus.style.color = c || ''; };
+    let calItems = []; // [{ id, name, url }]
+
+    function renderCalList() {
+      calListBox.innerHTML = '';
+      if (!calItems.length) {
+        calListBox.appendChild(el('p', { class: 'help' }, 'Noch keine Kalender abonniert. Mit „+ Kalender" eine iCal-Abo-URL hinzufügen.'));
+        return;
+      }
+      calItems.forEach((item, idx) => {
+        const nameI = el('input', { type: 'text', value: item.name || '', placeholder: 'Bezeichnung (z. B. Müllabfuhr)' });
+        nameI.oninput = e => { item.name = e.target.value; };
+        const urlI = el('input', { type: 'text', value: item.url || '', placeholder: 'https://…/basic.ics' });
+        urlI.oninput = e => { item.url = e.target.value.trim(); };
+        const testBtn = el('button', { class: 'btn-sm', onClick: async () => {
+          if (!item.url) { setCalStatus('Bitte zuerst eine URL eintragen.', '#c53030'); return; }
+          setCalStatus('Teste „' + (item.name || item.url) + '“…', '');
+          try {
+            const r = await GR.api.testCalUrl(item.url);
+            if (r.ok) setCalStatus(`„${item.name || item.url}“ OK — ${r.events} Termin(e) gefunden.`, '#2f855a');
+            else setCalStatus('Fehler: ' + (r.error || 'unbekannt'), '#c53030');
+          } catch (e) { setCalStatus('Fehler: ' + e.message, '#c53030'); }
+        } }, 'Testen');
+        const delBtn = el('button', { class: 'btn-sm btn-danger', onClick: () => { calItems.splice(idx, 1); renderCalList(); } }, 'Entfernen');
+        calListBox.appendChild(el('div', { class: 'card', style: 'background:#fafbfc; margin-bottom:8px;' }, [
+          el('div', { class: 'grid-2' }, [
+            el('div', {}, [el('label', {}, 'Bezeichnung'), nameI]),
+            el('div', {}, [el('label', {}, 'iCal-Abo-URL'), urlI]),
+          ]),
+          el('div', { class: 'toolbar', style: 'margin-top:8px;' }, [testBtn, el('div', { class: 'spacer' }), delBtn]),
+        ]));
+      });
+    }
+
+    function loadCalConfig() {
+      GR.api.getCalConfig().then(cfg => {
+        calItems = (cfg.calendars || []).map(c => ({ id: c.id, name: c.name || '', url: c.url || '' }));
+        renderCalList();
+        if (cfg.source === 'env') setCalStatus('Aktuell aus der Server-Umgebung (Env). Speichern hier überschreibt sie dauerhaft.', '');
+      }).catch(e => setCalStatus('Konfiguration konnte nicht geladen werden: ' + e.message, '#c53030'));
+    }
+
+    const onCalAdd = () => { calItems.push({ id: '', name: '', url: '' }); renderCalList(); };
+    const onCalSave = async () => {
+      const clean = calItems.filter(c => c.url).map(c => ({ id: c.id || '', name: c.name || '', url: c.url }));
+      try {
+        const cfg = await GR.api.putCalConfig(clean);
+        calItems = (cfg.calendars || []).map(c => ({ id: c.id, name: c.name || '', url: c.url || '' }));
+        renderCalList();
+        toast('Kalender gespeichert');
+        setCalStatus('Gespeichert. Die Termine erscheinen im Dashboard und unter „Termine".', '#2f855a');
+      } catch (e) { setCalStatus('Speichern fehlgeschlagen: ' + e.message, '#c53030'); }
+    };
+
+    C.kalender.appendChild(el('div', { class: 'card' }, [
+      el('h3', {}, 'Kalender (iCal-Abos)'),
+      el('p', { class: 'help' }, 'Externe Kalender per Abo-URL (iCal/ICS) einbinden – z. B. aus Google Kalender, Nextcloud oder der Müllabfuhr. Die Kalender werden serverseitig geladen (nur lesend) und im Dashboard sowie unter „Termine" angezeigt. URLs werden serverseitig im Container gespeichert.'),
+      el('div', { class: 'help', style: 'margin-bottom:8px;' }, 'Tipp: In Google Kalender unter „Einstellungen → Kalender → Integration“ die „Geheime Adresse im iCal-Format“ kopieren.'),
+      calListBox,
+      el('div', { class: 'toolbar', style: 'margin-top:10px;' }, [
+        el('button', { onClick: onCalAdd }, '+ Kalender'),
+        el('div', { class: 'spacer' }),
+        el('button', { class: 'btn-primary', onClick: onCalSave }, 'Speichern'),
+      ]),
+      calStatus,
+    ]));
+    loadCalConfig();
 
     // --- Vermietung: Preise & Absenderdaten ---
     const numInput = (obj, key, step = '0.01') => {
@@ -498,6 +569,7 @@
       ['allgemein', 'Allgemein'],
       ['darstellung', 'Darstellung'],
       ['dokumente', 'Dokumente'],
+      ['kalender', 'Kalender'],
       ['vermietung', 'Vermietung'],
       ['vertraege', 'Verträge & Pacht'],
       ['auslagen', 'Bargeldauslagen'],

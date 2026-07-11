@@ -193,6 +193,21 @@ function savePaperlessConfig(c) {
   return c;
 }
 
+// Kalender-Abos (iCal-URLs): eigener Key, damit sie NICHT im allgemeinen
+// Settings-Blob (Snapshot/NocoDB-Sync) landen. Abo-URLs können ein Geheimnis
+// enthalten (z. B. Google-Privat-iCal) und bleiben deshalb serverseitig.
+function getKalenderConfig() {
+  const r = db.prepare("SELECT value FROM settings WHERE key = 'kalender'").get();
+  return r ? JSON.parse(r.value) : null;
+}
+function saveKalenderConfig(c) {
+  db.prepare(`
+    INSERT INTO settings (key, value) VALUES ('kalender', ?)
+    ON CONFLICT(key) DO UPDATE SET value = excluded.value
+  `).run(JSON.stringify(c));
+  return c;
+}
+
 // --- Generischer Payload-Store (für Vermietung-Entitäten) ---
 function makePayloadStore(table) {
   return {
@@ -402,6 +417,7 @@ module.exports = {
   listMitglieder, getMitglied, saveMitglied, deleteMitglied,
   getSettings, saveSettings,
   getPaperlessConfig, savePaperlessConfig,
+  getKalenderConfig, saveKalenderConfig,
   listAttachments, getAttachment, attachmentPath, ensureAttachmentDir,
   insertAttachment, deleteAttachment,
   listMieter, getMieter, saveMieter, deleteMieter,

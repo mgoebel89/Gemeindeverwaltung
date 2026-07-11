@@ -10,6 +10,7 @@ const { WebSocketServer } = require('ws');
 
 const db = require('./db');
 const dokumenteRouter = require('./routes/dokumente');
+const kalenderRouter = require('./routes/kalender');
 const createVermietungRouter = require('./routes/vermietung');
 const createAuslagenRouter = require('./routes/auslagen');
 const createScanRouter = require('./routes/scan');
@@ -42,6 +43,9 @@ app.get('/api/health', (_req, res) => res.json({ ok: true, version: 1 }));
 
 // --- Modul: Dokumente (Paperless-ngx-Proxy) ---
 app.use('/api/dokumente', dokumenteRouter);
+
+// --- Modul: Kalender (iCal-Abo-Proxy) ---
+app.use('/api/kalender', kalenderRouter);
 
 // --- Modul: Vermietung (Gemeindehaus & Jugendraum) ---
 app.use('/api', createVermietungRouter(broadcast));

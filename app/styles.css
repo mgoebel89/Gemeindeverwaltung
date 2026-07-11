@@ -486,6 +486,31 @@ tr:hover td { background: #fafbfc; }
   .dash-date { min-width: 84px; }
 }
 
+/* ===== Termine (Kalender) ===== */
+.termine-day { margin-top: 18px; }
+.termine-day-head {
+  display: flex; align-items: baseline; gap: 10px; margin-bottom: 6px;
+  padding-bottom: 4px; border-bottom: 2px solid var(--border);
+}
+.termine-dow { font-weight: 600; color: var(--primary); }
+.termine-date { color: var(--muted); font-size: 0.85rem; }
+.termine-list { list-style: none; margin: 0; padding: 0; }
+.termine-item {
+  display: flex; gap: 14px; align-items: baseline; padding: 8px 2px;
+  border-bottom: 1px solid var(--border);
+}
+.termine-item:last-child { border-bottom: none; }
+.termine-time {
+  flex: 0 0 auto; min-width: 92px; color: var(--primary); font-weight: 600;
+  font-variant-numeric: tabular-nums; white-space: nowrap;
+}
+.termine-time.is-allday { color: var(--muted); font-weight: 500; }
+.termine-main { flex: 1; min-width: 0; }
+
+@media (max-width: 760px) {
+  .termine-time { min-width: 72px; }
+}
+
 /* ===== Einstellungen: Kategorie-Unternavigation ===== */
 .settings-layout { display: grid; grid-template-columns: 220px 1fr; gap: 20px; align-items: start; }
 .settings-nav { display: flex; flex-direction: column; gap: 2px; position: sticky; top: 16px; }
