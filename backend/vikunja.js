@@ -129,9 +129,35 @@ function normalizeTask(t) {
 
 // --- Öffentliche Operationen --------------------------------------------
 
+// Der Endpunkt zum Auflisten von Aufgaben heißt je nach Vikunja-Version
+// `/api/v1/tasks` (neuer) oder `/api/v1/tasks/all` (älter). Ältere/neuere
+// Instanzen lehnen den jeweils anderen mit 404 bzw. 400 (Code 2004
+// „Invalid model provided") ab. Wir probieren den neueren zuerst und merken
+// uns den funktionierenden Pfad.
+let TASKS_PATH = null;
+const TASKS_CANDIDATES = ['/api/v1/tasks', '/api/v1/tasks/all'];
+
+async function fetchTasksPage(params) {
+  const candidates = TASKS_PATH ? [TASKS_PATH] : TASKS_CANDIDATES;
+  let lastErr;
+  for (const path of candidates) {
+    try {
+      const r = await apiJson(path, params);
+      TASKS_PATH = path; // Pfad für weitere Aufrufe merken
+      return r;
+    } catch (e) {
+      lastErr = e;
+      // Nur bei „Endpoint passt nicht zur Version" den nächsten Kandidaten testen.
+      if (e && (e.status === 404 || e.status === 400)) continue;
+      throw e;
+    }
+  }
+  throw lastErr;
+}
+
 async function health() {
   // Günstiger Aufruf, der Erreichbarkeit + Token (mit Lese-Scope) validiert.
-  await apiJson('/api/v1/tasks/all', { filter: 'done = false', page: 1 });
+  await fetchTasksPage({ filter: 'done = false', page: 1 });
   return { ok: true, url: cfg.url };
 }
 
@@ -141,7 +167,7 @@ async function listOpenTasks() {
   let page = 1;
   let totalPages = 1;
   do {
-    const { data, headers } = await apiJson('/api/v1/tasks/all', {
+    const { data, headers } = await fetchTasksPage({
       filter: 'done = false',
       sort_by: 'due_date',
       order_by: 'asc',
