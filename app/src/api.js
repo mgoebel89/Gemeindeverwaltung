@@ -138,6 +138,27 @@
   async function getDocument(id) { return jsonFetch(`/api/dokumente/${encodeURIComponent(id)}`); }
   async function patchDocument(id, patch) { return jsonFetch(`/api/dokumente/${encodeURIComponent(id)}`, { method: 'PATCH', body: patch }); }
   function docFileUrl(id, kind = 'preview') { return `/api/dokumente/${encodeURIComponent(id)}/${kind}`; }
+  // Upload einer Datei nach Paperless (multipart). meta: { title, correspondent, document_type, created, tags[] }
+  async function uploadDocument(file, meta = {}) {
+    const fd = new FormData();
+    fd.append('file', file, file.name);
+    if (meta.title) fd.append('title', meta.title);
+    if (meta.correspondent) fd.append('correspondent', meta.correspondent);
+    if (meta.document_type) fd.append('document_type', meta.document_type);
+    if (meta.created) fd.append('created', meta.created);
+    if (meta.tags && meta.tags.length) fd.append('tags', meta.tags.join(','));
+    const res = await fetch('/api/dokumente/upload', { method: 'POST', body: fd, headers: { 'X-Client-Id': CLIENT_ID } });
+    if (!res.ok) { const t = await res.text().catch(() => ''); throw new Error(`Upload ${res.status}: ${t.slice(0, 200)}`); }
+    return res.json();
+  }
+  async function scanUploadDocument(meta) { return jsonFetch('/api/dokumente/scan-upload', { method: 'POST', body: meta }); }
+  async function getDocTask(id) { return jsonFetch(`/api/dokumente/tasks/${encodeURIComponent(id)}`); }
+  async function createCorrespondent(name) { return jsonFetch('/api/dokumente/correspondents', { method: 'POST', body: { name } }); }
+  async function createDocumentType(name) { return jsonFetch('/api/dokumente/document-types', { method: 'POST', body: { name } }); }
+  async function createTag(name) { return jsonFetch('/api/dokumente/tags', { method: 'POST', body: { name } }); }
+  async function listDocNotes(id) { return jsonFetch(`/api/dokumente/${encodeURIComponent(id)}/notes`); }
+  async function addDocNote(id, note) { return jsonFetch(`/api/dokumente/${encodeURIComponent(id)}/notes`, { method: 'POST', body: { note } }); }
+  async function deleteDocNote(id, noteId) { return jsonFetch(`/api/dokumente/${encodeURIComponent(id)}/notes/${encodeURIComponent(noteId)}`, { method: 'DELETE' }); }
 
   // --- WebSocket ---
   function connectWs() {
@@ -183,6 +204,8 @@
     listAttachments, uploadAttachment, deleteAttachment, attachmentUrl,
     importAll,
     docHealth, docMeta, searchDocuments, getDocument, patchDocument, docFileUrl,
+    uploadDocument, scanUploadDocument, getDocTask, createCorrespondent, createDocumentType, createTag,
+    listDocNotes, addDocNote, deleteDocNote,
     putMieter, deleteMieterRemote,
     putRaum, deleteRaumRemote,
     putVermietung, deleteVermietungRemote,

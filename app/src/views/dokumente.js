@@ -37,8 +37,12 @@
     state._listPanel = listPanel;
     state._detailPanel = detailPanel;
 
+    mount.appendChild(el('div', { class: 'toolbar' }, [
+      el('div', { class: 'spacer' }),
+      el('button', { class: 'btn-primary', onClick: () => GR.ui.uploadPaperlessDocument({ onUploaded: () => { state.page = 1; doSearch(); } }) }, '＋ Dokument hochladen'),
+    ]));
     mount.appendChild(el('h2', {}, 'Dokumente'));
-    mount.appendChild(el('p', { class: 'help' }, 'Dokumente aus Paperless-ngx durchsuchen und Metadaten bearbeiten.'));
+    mount.appendChild(el('p', { class: 'help' }, 'Dokumente aus Paperless-ngx durchsuchen, hochladen und Metadaten bearbeiten.'));
     mount.appendChild(buildToolbar());
     mount.appendChild(el('div', { class: 'doc-split', style: 'display:flex; gap:16px; flex-wrap:wrap; align-items:flex-start;' }, [listPanel, detailPanel]));
 
@@ -253,19 +257,51 @@
     }
     if (state.meta.tags.length === 0) tagBox.appendChild(el('span', { class: 'help', style: 'margin:0;' }, 'Keine Tags vorhanden.'));
 
-    // Custom Fields (vorhandene Werte editierbar)
-    const cfInputs = [];
-    const cfNodes = [];
-    for (const cf of draft.custom_fields) {
-      const def = byId(state.meta.customFields, cf.field);
-      const label = def ? def.name : `Feld ${cf.field}`;
-      const type = def ? def.data_type : 'string';
-      const inputType = type === 'integer' || type === 'float' || type === 'monetary' ? 'number'
-        : type === 'date' ? 'date' : type === 'boolean' ? 'checkbox' : 'text';
-      const input = el('input', { type: inputType, style: inputType === 'checkbox' ? '' : 'width:100%;' });
-      if (inputType === 'checkbox') input.checked = !!cf.value; else input.value = cf.value == null ? '' : cf.value;
-      cfInputs.push({ field: cf.field, input, inputType });
-      cfNodes.push(field(label, input));
+    // Custom Fields: zuweisen, ändern, entfernen. cfState hält den aktuellen Stand;
+    // die Werte werden per Listener direkt in cfState gespiegelt, damit Hinzufügen/
+    // Entfernen andere Felder nicht verwirft.
+    const cfState = draft.custom_fields.map(cf => ({ field: cf.field, value: cf.value }));
+    const cfContainer = el('div', {});
+    const cfAddRow = el('div', { style: 'margin-top:4px;' });
+
+    const cfInputType = dt => (dt === 'integer' || dt === 'float' || dt === 'monetary') ? 'number'
+      : dt === 'date' ? 'date' : dt === 'boolean' ? 'checkbox' : 'text';
+
+    function renderCF() {
+      cfContainer.innerHTML = '';
+      if (!cfState.length) cfContainer.appendChild(el('p', { class: 'help', style: 'margin:0 0 6px;' }, 'Keine Felder zugewiesen.'));
+      cfState.forEach((item) => {
+        const def = byId(state.meta.customFields, item.field);
+        const label = def ? def.name : `Feld ${item.field}`;
+        const inputType = cfInputType(def ? def.data_type : 'string');
+        const input = el('input', { type: inputType, style: inputType === 'checkbox' ? '' : 'width:100%;' });
+        if (inputType === 'checkbox') { input.checked = !!item.value; input.addEventListener('change', () => { item.value = input.checked; }); }
+        else { input.value = item.value == null ? '' : item.value; input.addEventListener('input', () => { item.value = input.value; }); }
+        const removeBtn = el('button', { class: 'btn-sm', title: 'Feld entfernen', onClick: () => { const i = cfState.indexOf(item); if (i >= 0) cfState.splice(i, 1); renderCF(); } }, '✕');
+        cfContainer.appendChild(el('div', { style: 'display:flex; gap:8px; align-items:flex-end; margin-bottom:8px;' }, [
+          el('div', { style: 'flex:1;' }, field(label, input)),
+          removeBtn,
+        ]));
+      });
+      renderCFAdd();
+    }
+
+    function renderCFAdd() {
+      cfAddRow.innerHTML = '';
+      const used = new Set(cfState.map(c => String(c.field)));
+      const avail = (state.meta.customFields || []).filter(d => !used.has(String(d.id)));
+      if (!avail.length) return;
+      const sel = el('select', { style: 'flex:1;' }, [
+        el('option', { value: '' }, '— Feld hinzufügen —'),
+        ...avail.map(d => el('option', { value: d.id }, d.name)),
+      ]);
+      const btn = el('button', { class: 'btn-sm', onClick: () => {
+        if (!sel.value) return;
+        const def = byId(state.meta.customFields, sel.value);
+        cfState.push({ field: Number(sel.value), value: (def && def.data_type === 'boolean') ? false : '' });
+        renderCF();
+      } }, '＋');
+      cfAddRow.appendChild(el('div', { style: 'display:flex; gap:8px; align-items:center;' }, [sel, btn]));
     }
 
     const onSave = async () => {
@@ -277,14 +313,16 @@
         tags: Array.from(tagSet).map(Number),
         archive_serial_number: asnInput.value === '' ? null : Number(asnInput.value),
       };
-      if (cfInputs.length) {
-        patch.custom_fields = cfInputs.map(c => ({
-          field: c.field,
-          value: c.inputType === 'checkbox' ? c.input.checked
-            : c.inputType === 'number' ? (c.input.value === '' ? null : Number(c.input.value))
-            : c.input.value,
-        }));
-      }
+      // custom_fields immer mitsenden — ein leeres Array entfernt alle Zuweisungen.
+      patch.custom_fields = cfState.map(c => {
+        const def = byId(state.meta.customFields, c.field);
+        const dt = def ? def.data_type : 'string';
+        let value = c.value;
+        if (dt === 'boolean') value = !!value;
+        else if (dt === 'integer' || dt === 'float' || dt === 'monetary') value = (value === '' || value == null) ? null : Number(value);
+        else value = (value === '' ? null : value);
+        return { field: c.field, value };
+      });
       saveBtn.disabled = true;
       saveBtn.textContent = 'Speichere…';
       try {
@@ -330,11 +368,76 @@
     panel.appendChild(field('Korrespondent', corrSel));
     panel.appendChild(field('Dokumenttyp', typeSel));
     panel.appendChild(field('Tags', tagBox));
-    if (cfNodes.length) {
-      panel.appendChild(el('h4', { style: 'margin:14px 0 6px;' }, 'Weitere Felder'));
-      cfNodes.forEach(n => panel.appendChild(n));
-    }
+    panel.appendChild(el('h4', { style: 'margin:14px 0 6px;' }, 'Weitere Felder'));
+    panel.appendChild(cfContainer);
+    panel.appendChild(cfAddRow);
+    renderCF();
+
     panel.appendChild(el('div', { style: 'display:flex; gap:8px; margin-top:12px;' }, [saveBtn]));
+
+    // Notizen (eigener Bereich, unabhängig vom Metadaten-Speichern)
+    panel.appendChild(el('h4', { style: 'margin:20px 0 6px;' }, 'Notizen'));
+    const notesBox = el('div', {});
+    panel.appendChild(notesBox);
+    renderNotesSection(notesBox, doc.id, doc.notes);
+  }
+
+  // ---------- Notizen ----------
+  function fmtDateTime(iso) {
+    if (!iso) return '';
+    const d = new Date(iso);
+    if (isNaN(d.getTime())) return String(iso).slice(0, 16).replace('T', ' ');
+    return d.toLocaleString('de-DE', { dateStyle: 'short', timeStyle: 'short' });
+  }
+
+  function renderNotesSection(box, docId, initialNotes) {
+    let notes = Array.isArray(initialNotes) ? initialNotes.slice() : null;
+
+    const list = el('div', {});
+    const textArea = el('textarea', { rows: '2', placeholder: 'Neue Notiz…', style: 'width:100%; resize:vertical;' });
+    const addBtn = el('button', { class: 'btn-sm btn-primary', onClick: onAdd }, 'Notiz hinzufügen');
+
+    function renderList() {
+      list.innerHTML = '';
+      if (notes == null) { list.appendChild(el('p', { class: 'help', style: 'margin:0;' }, 'Lade…')); return; }
+      if (!notes.length) { list.appendChild(el('p', { class: 'help', style: 'margin:0;' }, 'Keine Notizen.')); return; }
+      for (const n of notes) {
+        list.appendChild(el('div', { style: 'display:flex; gap:8px; align-items:flex-start; border:1px solid rgba(0,0,0,0.1); border-radius:6px; padding:8px; margin-bottom:6px;' }, [
+          el('div', { style: 'flex:1;' }, [
+            el('div', { style: 'white-space:pre-wrap;' }, n.note || ''),
+            el('div', { class: 'help', style: 'margin:4px 0 0;' }, fmtDateTime(n.created)),
+          ]),
+          el('button', { class: 'btn-sm', title: 'Notiz löschen', onClick: () => onDelete(n.id) }, '✕'),
+        ]));
+      }
+    }
+
+    async function onAdd() {
+      const text = textArea.value.trim();
+      if (!text) return;
+      addBtn.disabled = true; addBtn.textContent = 'Speichere…';
+      try {
+        notes = await api.addDocNote(docId, text);
+        textArea.value = '';
+        renderList();
+      } catch (e) { toast('Notiz speichern fehlgeschlagen: ' + e.message); }
+      finally { addBtn.disabled = false; addBtn.textContent = 'Notiz hinzufügen'; }
+    }
+    async function onDelete(noteId) {
+      try { notes = await api.deleteDocNote(docId, noteId); renderList(); }
+      catch (e) { toast('Notiz löschen fehlgeschlagen: ' + e.message); }
+    }
+
+    box.appendChild(list);
+    box.appendChild(el('div', { style: 'margin-top:6px;' }, [textArea, el('div', { style: 'margin-top:6px;' }, [addBtn])]));
+    renderList();
+
+    // Falls das Dokument-Detail keine Notizen mitliefert: separat nachladen.
+    if (notes == null) {
+      api.listDocNotes(docId)
+        .then(n => { notes = Array.isArray(n) ? n : []; renderList(); })
+        .catch(e => { notes = []; renderList(); toast('Notizen konnten nicht geladen werden: ' + e.message); });
+    }
   }
 
   GR.views = GR.views || {};

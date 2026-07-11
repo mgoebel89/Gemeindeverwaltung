@@ -158,8 +158,27 @@ nicht funktionieren, ist aber für UI-Tests irrelevant.
 
 Der Container ist als **Multi-Modul-Gemeindeverwaltung** angelegt. Neben dem
 Sitzungsprotokoll gibt es das Modul **Dokumente**, das die in **Paperless-ngx**
-(Docker auf dem NAS) abgelegten Dokumente durchsuchbar macht und das **Bearbeiten der
-Metadaten** erlaubt (Titel, Datum, Korrespondent, Dokumenttyp, Tags, Archiv-Nr., Custom Fields).
+(Docker auf dem NAS) abgelegten Dokumente durchsuchbar macht, das **Bearbeiten der
+Metadaten** erlaubt (Titel, Datum, Korrespondent, Dokumenttyp, Tags, Archiv-Nr., Custom Fields)
+und **neue Dokumente hochladen** kann.
+
+**Dokument hochladen (nach Paperless):** Über „＋ Dokument hochladen" wird eine **Datei**
+(PDF/Bild, auf dem Handy auch direkt aus der Kamera) oder ein **Scan** vom Netzwerkscanner
+nach Paperless gelegt. Mehrseitige Scans werden serverseitig zu **einem PDF** gebündelt
+(Dependency `pdf-lib`). Im Upload-Dialog lassen sich **Titel, Korrespondent, Dokumenttyp und
+Tags** setzen – neue Korrespondenten/Typen/Tags können dabei **direkt angelegt** werden.
+Paperless verarbeitet den Upload asynchron (OCR); die App **wartet** über die Paperless-Task
+und meldet die Fertigstellung. Wird aus einem **Vertrag** heraus hochgeladen (Modul „Verträge
+und Pacht"), verknüpft die App das fertige Dokument **automatisch** mit dem Vertrag.
+
+**Custom Fields:** Im Detailbereich lassen sich die **Zusatzfelder** eines Dokuments nicht
+nur ändern, sondern auch **neu zuweisen** (Auswahl aus den in Paperless definierten Feldern)
+und wieder **entfernen**. Der Eingabetyp richtet sich nach der Felddefinition (Text/Zahl/Datum/
+Ja-Nein). Die Felddefinitionen selbst werden weiterhin in Paperless angelegt.
+
+**Notizen:** Zu jedem Dokument können **Notizen** angezeigt, **hinzugefügt** und **gelöscht**
+werden (Paperless-Notes-API `…/documents/{id}/notes/`). Der Notiz-Bereich speichert unabhängig
+vom „Speichern"-Button der Metadaten.
 
 **Architektur:** Das Frontend spricht ausschließlich das eigene Node-Backend an
 (`/api/dokumente/...`). Das Backend (`backend/paperless.js` + `backend/routes/dokumente.js`)
@@ -196,8 +215,12 @@ cd ../app && python3 -m http.server 8080
 # Backend-Proxy nachbilden oder über das nginx-Setup laufen lassen.
 ```
 
-> **Noch nicht enthalten (Folge-Iterationen):** SMB-Direktzugriff, Upload neuer Dokumente,
-> Löschen, Notizen-Bearbeitung und eine gemeinsame Benutzeranmeldung.
+> **Noch nicht enthalten (Folge-Iterationen):** SMB-Direktzugriff, Dokument-Löschen,
+> Massenbearbeitung, gespeicherte Ansichten und eine gemeinsame Benutzeranmeldung.
+>
+> **Migration:** Das Backend braucht die zusätzliche npm-Dependency `pdf-lib` (für mehrseitige
+> Scans → ein PDF); der Deploy zieht sie per `npm install`. Frontend nach dem Update mit **Strg+F5**
+> neu laden.
 
 ## Modul „Vermietung" (Gemeindehaus & Jugendraum)
 
@@ -314,10 +337,12 @@ Vertrag frei), Status (aktiv/gekündigt/ausgelaufen) und Notiz.
 **Vertragspartner** (`#/vertragspartner`): wiederverwendbare Stammdaten (Name,
 Ansprechpartner, Kontakt, Anschrift), die bei jedem Vertrag zur Auswahl stehen.
 
-**Paperless-Verknüpfung:** Zu jedem Vertrag können **mehrere** bestehende Dokumente
-aus **Paperless-ngx** verknüpft werden (Dokument-Picker mit Volltextsuche über den
-vorhandenen `/api/dokumente`-Proxy). Es werden **keine** neuen Dokumente angelegt –
-nur die Paperless-ID + Titel gespeichert; die Vorschau läuft über den Backend-Proxy.
+**Paperless-Verknüpfung:** Zu jedem Vertrag können **mehrere** Dokumente aus
+**Paperless-ngx** verknüpft werden – entweder ein **bestehendes** Dokument über den
+Dokument-Picker (Volltextsuche) oder ein **neu hochgeladenes** über „＋ Dokument
+hochladen" (Datei/Scan; die App verknüpft es nach der Paperless-Verarbeitung
+**automatisch**). Gespeichert werden nur Paperless-ID + Titel; die Vorschau läuft über
+den Backend-Proxy.
 
 **Erinnerungen:** Bewusst **ohne** Google-/E-Mail-Anbindung. Fristen erscheinen im
 Startbildschirm; zusätzlich lässt sich je Vertrag eine **`.ics`-Kalenderdatei** (mit

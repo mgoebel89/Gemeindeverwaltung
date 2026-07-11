@@ -357,19 +357,24 @@
     }
     renderList();
 
-    const addBtn = el('button', { class: 'btn-sm btn-primary', style: 'margin-top:8px;', onClick: () => {
-      GR.ui.pickPaperlessDocument((doc) => {
-        if (!v.paperlessDocs) v.paperlessDocs = [];
-        if (v.paperlessDocs.some(x => String(x.id) === String(doc.id))) { toast('Dokument ist bereits verknüpft.'); return; }
-        v.paperlessDocs.push(doc);
-        persist();
-        renderList();
-        toast('Dokument verknüpft');
-      });
+    function linkDoc(doc) {
+      if (!v.paperlessDocs) v.paperlessDocs = [];
+      if (v.paperlessDocs.some(x => String(x.id) === String(doc.id))) { toast('Dokument ist bereits verknüpft.'); return; }
+      v.paperlessDocs.push(doc);
+      persist();
+      renderList();
+    }
+
+    const pickBtn = el('button', { class: 'btn-sm', onClick: () => {
+      GR.ui.pickPaperlessDocument((doc) => { linkDoc(doc); toast('Dokument verknüpft'); });
     } }, '+ Dokument verknüpfen');
 
+    const uploadBtn = el('button', { class: 'btn-sm btn-primary', onClick: () => {
+      GR.ui.uploadPaperlessDocument({ prefillTitle: v.bezeichnung || '', onUploaded: (doc) => linkDoc(doc) });
+    } }, '＋ Dokument hochladen');
+
     wrap.appendChild(listBox);
-    wrap.appendChild(addBtn);
+    wrap.appendChild(el('div', { style: 'display:flex; gap:8px; margin-top:8px; flex-wrap:wrap;' }, [pickBtn, uploadBtn]));
     return wrap;
   }
 
