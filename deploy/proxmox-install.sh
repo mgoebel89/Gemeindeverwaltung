@@ -151,6 +151,10 @@ pct exec "$CTID" -- bash -lc "
 
   install -m 0755 /opt/gemeindeverwaltung/deploy/update.sh /usr/local/bin/sitzungsapp-update
   install -m 0755 /opt/gemeindeverwaltung/deploy/backup.sh /usr/local/bin/sitzungsapp-backup
+  # Kurzbefehl 'update' (wie bei den Proxmox-Helper-Scripts) auf das Update-Skript
+  ln -sfn /usr/local/bin/sitzungsapp-update /usr/local/bin/update
+  # Hinweis beim Login in die Container-Konsole
+  printf 'Gemeindeverwaltung-Container\n  App aktualisieren:  update\n  Backup jetzt:       sitzungsapp-backup\n' > /etc/motd
 
   # Cron: tägliches Backup um 03:30
   echo '30 3 * * * root /usr/local/bin/sitzungsapp-backup >/var/log/sitzungsapp-backup.log 2>&1' > /etc/cron.d/sitzungsapp-backup
@@ -176,6 +180,12 @@ if [[ "$GENERATED_PW" -eq 1 ]]; then
   echo "  root-Passwort: $PASSWORD"
 fi
 echo
-echo "  Update später im Container ausführen mit:"
-echo "    pct exec $CTID -- sitzungsapp-update"
+echo "  Update später einspielen:"
+echo "    • vom Proxmox-Host:      pct exec $CTID -- update"
+echo "    • in der Container-Konsole einfach:   update"
+if [[ "$GENERATED_PW" -eq 1 ]]; then
+  echo
+  echo "  Für den Konsolen-Login gilt das oben gezeigte root-Passwort."
+  echo "  Neu setzen ginge jederzeit vom Host:  pct exec $CTID -- passwd"
+fi
 echo "─────────────────────────────────────────────"

@@ -49,8 +49,11 @@ if ! diff -q deploy/backend.service /etc/systemd/system/gemeindeverwaltung-backe
   systemctl restart gemeindeverwaltung-backend
 fi
 
-# Backup-Skript aktualisieren
+# Backup-/Update-Skripte aktualisieren
 install -m 0755 deploy/backup.sh /usr/local/bin/sitzungsapp-backup
 install -m 0755 deploy/update.sh /usr/local/bin/sitzungsapp-update
+# Kurzbefehl 'update' + Konsolen-Hinweis für Bestandsinstallationen nachziehen
+ln -sfn /usr/local/bin/sitzungsapp-update /usr/local/bin/update
+printf 'Gemeindeverwaltung-Container\n  App aktualisieren:  update\n  Backup jetzt:       sitzungsapp-backup\n' > /etc/motd
 
 echo "Update abgeschlossen: $(git log -1 --pretty=format:'%h %s')"

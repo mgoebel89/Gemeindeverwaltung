@@ -107,19 +107,45 @@ Am Ende zeigt das Skript IP, URL und (falls generiert) root-Passwort.
 
 ## 2) Updates einspielen
 
-Auf dem Proxmox-Host:
+**Am einfachsten – vom Proxmox-Host** (dort bist du root, es wird **kein**
+Container-Passwort gebraucht):
 
 ```bash
-pct exec <CTID> -- sitzungsapp-update
+pct exec <CTID> -- update
+```
+
+`update` ist ein Kurzbefehl für `sitzungsapp-update` (analog zu den
+Proxmox-Helper-Scripts). Die CTID findest du mit `pct list`.
+
+**Oder direkt in der Container-Konsole** (Proxmox-Weboberfläche → Container →
+*Console*, oder `pct console <CTID>`) – dort nach dem Login einfach:
+
+```bash
+update
 ```
 
 Das Skript:
 1. zieht den aktuellen Git-Stand,
-2. installiert ggf. neue Backend-Dependencies (`npm ci`),
+2. installiert ggf. neue Backend-Dependencies,
 3. übernimmt geänderte `nginx-site.conf` und `backend.service`,
 4. reloadet Backend und nginx.
 
 Browser danach mit **Strg+F5** neu laden.
+
+> **Konsolen-Login / Passwort:** Die Konsole verlangt das **root-Passwort** des
+> Containers. Das wurde bei der Installation gesetzt (bei zufälligem Passwort nur
+> **einmal** am Ende ausgegeben). Ist es unbekannt, lässt es sich jederzeit vom
+> Proxmox-Host **neu setzen** – ohne das alte zu kennen:
+>
+> ```bash
+> pct exec <CTID> -- passwd            # neues root-Passwort interaktiv eingeben
+> ```
+>
+> Für reine Updates brauchst du die Konsole nicht – der Weg über
+> `pct exec <CTID> -- update` läuft auch ohne Container-Passwort.
+>
+> Der Kurzbefehl `update` wird bei der Installation angelegt; **bestehende**
+> Container erhalten ihn automatisch beim nächsten `sitzungsapp-update`.
 
 ## 3) Migration aus früherer Browser-Version
 
