@@ -110,10 +110,17 @@
   }
 
   // Ein Unterschriftsbild (Data-URL) mittig über eine Signaturlinie legen.
-  // Ohne Bild passiert nichts. Für Bürgermeister- wie Mieter-Unterschrift.
+  // Sind die Pixelmaße (opts.natW/natH) bekannt, wird das Bild
+  // seitenverhältnistreu in die Maximalbox (maxW×maxH mm) eingepasst –
+  // sonst als fester Kasten gezeichnet (Rückfall / Bürgermeisterbild).
   function drawSignatureImage(doc, dataUrl, centerX, lineY, opts = {}) {
     if (!dataUrl) return;
-    const w = opts.w || 44, h = opts.h || 15;
+    const maxW = opts.maxW || 44, maxH = opts.maxH || 15;
+    let w = maxW, h = maxH;
+    if (opts.natW > 0 && opts.natH > 0) {
+      const r = Math.min(maxW / opts.natW, maxH / opts.natH);
+      w = opts.natW * r; h = opts.natH * r;
+    }
     try {
       const fmt = String(dataUrl).includes('image/png') ? 'PNG' : 'JPEG';
       doc.addImage(dataUrl, fmt, centerX - w / 2, lineY - h - 1, w, h, undefined, 'SLOW');
@@ -121,7 +128,7 @@
   }
 
   // Bürgermeister-Unterschrift (aus den Bargeldauslagen-Einstellungen)
-  // mittig über eine Signaturlinie legen.
+  // mittig über eine Signaturlinie legen (fester Kasten wie bisher).
   function drawBuergermeisterSignatur(doc, centerX, lineY) {
     const cfg = (store.getSettings().auslagen) || {};
     drawSignatureImage(doc, cfg.unterschriftDataUrl, centerX, lineY);
@@ -244,7 +251,7 @@
     drawBuergermeisterSignatur(doc, MARGIN_X + colW / 2, state.y);
     // Live erfasste Mieter-Unterschrift über die rechte (Mieter-)Linie
     const mSig = v.mieterUnterschrift;
-    if (mSig && mSig.dataUrl) drawSignatureImage(doc, mSig.dataUrl, RIGHT_X - colW / 2, state.y);
+    if (mSig && mSig.dataUrl) drawSignatureImage(doc, mSig.dataUrl, RIGHT_X - colW / 2, state.y, { natW: mSig.w, natH: mSig.h, maxW: 55, maxH: 18 });
     doc.setDrawColor(0, 0, 0); doc.setLineWidth(0.4);
     doc.line(MARGIN_X, state.y, MARGIN_X + colW, state.y);
     doc.line(RIGHT_X - colW, state.y, RIGHT_X, state.y);
@@ -415,7 +422,7 @@
     drawBuergermeisterSignatur(doc, MARGIN_X + colW / 2, lineY);
     // Live erfasste Mieter-Unterschrift über die rechte Linie
     const pSig = proto.mieterUnterschrift;
-    if (pSig && pSig.dataUrl) drawSignatureImage(doc, pSig.dataUrl, RIGHT_X - colW / 2, lineY);
+    if (pSig && pSig.dataUrl) drawSignatureImage(doc, pSig.dataUrl, RIGHT_X - colW / 2, lineY, { natW: pSig.w, natH: pSig.h, maxW: 55, maxH: 18 });
     doc.setDrawColor(0, 0, 0); doc.setLineWidth(0.4);
     doc.line(MARGIN_X, lineY, MARGIN_X + colW, lineY);
     doc.line(RIGHT_X - colW, lineY, RIGHT_X, lineY);

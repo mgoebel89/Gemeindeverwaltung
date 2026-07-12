@@ -39,11 +39,43 @@
     }
     function onKey(e) { if (e.key === 'Escape') close(null); }
 
+    // Bounding-Box der tatsächlichen Tinte (nicht-transparente Pixel) ermitteln,
+    // damit im PDF nicht das leere Vollbild-Seitenverhältnis eingebettet wird.
+    function inkBounds() {
+      let data;
+      try { data = ctx.getImageData(0, 0, canvas.width, canvas.height).data; }
+      catch (_) { return null; }
+      let minX = canvas.width, minY = canvas.height, maxX = -1, maxY = -1;
+      for (let y = 0; y < canvas.height; y++) {
+        for (let x = 0; x < canvas.width; x++) {
+          if (data[(y * canvas.width + x) * 4 + 3] > 10) {
+            if (x < minX) minX = x; if (x > maxX) maxX = x;
+            if (y < minY) minY = y; if (y > maxY) maxY = y;
+          }
+        }
+      }
+      if (maxX < 0) return null;
+      const pad = Math.ceil(6 * (window.devicePixelRatio || 1));
+      minX = Math.max(0, minX - pad); minY = Math.max(0, minY - pad);
+      maxX = Math.min(canvas.width - 1, maxX + pad); maxY = Math.min(canvas.height - 1, maxY + pad);
+      return { x: minX, y: minY, w: maxX - minX + 1, h: maxY - minY + 1 };
+    }
+
     function finish() {
       if (!hasInk) { toast('Bitte zuerst unterschreiben'); return; }
-      let dataUrl = null;
-      try { dataUrl = canvas.toDataURL('image/png'); } catch (_) {}
-      close(dataUrl);
+      let dataUrl = null, w = 0, h = 0;
+      try {
+        const b = inkBounds();
+        if (b) {
+          const crop = document.createElement('canvas');
+          crop.width = b.w; crop.height = b.h;
+          crop.getContext('2d').drawImage(canvas, b.x, b.y, b.w, b.h, 0, 0, b.w, b.h);
+          dataUrl = crop.toDataURL('image/png'); w = b.w; h = b.h;
+        } else {
+          dataUrl = canvas.toDataURL('image/png'); w = canvas.width; h = canvas.height;
+        }
+      } catch (_) {}
+      close(dataUrl ? { dataUrl, w, h } : null);
     }
 
     // Canvas an die Bühnengröße + Device-Pixel-Ratio anpassen (scharfe Linien).

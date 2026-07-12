@@ -115,9 +115,9 @@
           subtitle: opts.subtitle || '',
           name: mieterName(),
           consent: opts.consent || 'Mit der Unterschrift bestätigt der Mieter die Angaben dieses Dokuments.',
-          onDone: (dataUrl) => {
-            if (!dataUrl) return;
-            holder.mieterUnterschrift = { dataUrl, datum: todayIso() };
+          onDone: (res) => {
+            if (!res || !res.dataUrl) return;
+            holder.mieterUnterschrift = { dataUrl: res.dataUrl, datum: todayIso(), w: res.w, h: res.h };
             persist(); draw(); toast('Unterschrift gespeichert');
           },
         });
@@ -135,7 +135,7 @@
           for (const s of (opts.reuseSources || [])) {
             if (!s || !s.sig || !s.sig.dataUrl) continue;
             box.appendChild(el('button', { class: 'btn-sm', type: 'button', onClick: () => {
-              holder.mieterUnterschrift = { dataUrl: s.sig.dataUrl, datum: s.sig.datum || todayIso() };
+              holder.mieterUnterschrift = { dataUrl: s.sig.dataUrl, datum: s.sig.datum || todayIso(), w: s.sig.w, h: s.sig.h };
               persist(); draw(); toast('Unterschrift übernommen');
             } }, '↩ ' + s.label));
           }
