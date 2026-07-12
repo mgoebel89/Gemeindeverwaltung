@@ -299,6 +299,17 @@ hinterlegte Unterschriftsbild wird automatisch über die Bürgermeister-Linie in
 Unterschriftslinien steht jeweils der Name: Bürgermeister (aus den
 Vermietungs-Absenderdaten) bzw. der Mietername.
 
+**Mieter-Unterschrift direkt am Gerät:** Der Mieter kann **Mietvertrag** und
+**Übergabe-/Abnahmeprotokoll** direkt am Handy/Tablet mit **Finger oder Stift**
+unterschreiben – ein Ausdruck ist nicht nötig. Der Button „✍ Mieter unterschreibt"
+öffnet ein **Vollbild-Unterschriftenfeld**; die Unterschrift wird als transparentes
+Bild **im Datensatz gespeichert** (läuft im Backup/NocoDB-Sync mit) und im PDF über
+die Mieter-Linie samt „unterschrieben am …" gelegt. Eine bereits geleistete
+Unterschrift lässt sich per Knopf **von einem anderen Dokument übernehmen** (z. B.
+die Übergabe-Unterschrift in den Vertrag). Die Kostenabrechnung bleibt bewusst
+ausgenommen. Die Gemeinde-/Bürgermeister-Unterschrift bleibt das
+Einstellungsbild.
+
 **Preise** (Menü *Einstellungen → Vermietung – Preise*): je Objekt gestaffelte
 Grundmiete (1. Tag / jeder weitere Tag, getrennt für Anwohner und Ortsfremde) sowie
 Strompreis (€/kWh) und Gaspreis (€/cbm). Absender-/Vertragsdaten für die PDFs

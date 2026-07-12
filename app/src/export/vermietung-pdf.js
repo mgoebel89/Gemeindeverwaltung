@@ -109,15 +109,22 @@
     });
   }
 
+  // Ein Unterschriftsbild (Data-URL) mittig über eine Signaturlinie legen.
+  // Ohne Bild passiert nichts. Für Bürgermeister- wie Mieter-Unterschrift.
+  function drawSignatureImage(doc, dataUrl, centerX, lineY, opts = {}) {
+    if (!dataUrl) return;
+    const w = opts.w || 44, h = opts.h || 15;
+    try {
+      const fmt = String(dataUrl).includes('image/png') ? 'PNG' : 'JPEG';
+      doc.addImage(dataUrl, fmt, centerX - w / 2, lineY - h - 1, w, h, undefined, 'SLOW');
+    } catch (_) {}
+  }
+
   // Bürgermeister-Unterschrift (aus den Bargeldauslagen-Einstellungen)
-  // mittig über eine Signaturlinie legen. Ohne hinterlegtes Bild passiert nichts.
+  // mittig über eine Signaturlinie legen.
   function drawBuergermeisterSignatur(doc, centerX, lineY) {
     const cfg = (store.getSettings().auslagen) || {};
-    if (!cfg.unterschriftDataUrl) return;
-    try {
-      const fmt = cfg.unterschriftDataUrl.includes('image/png') ? 'PNG' : 'JPEG';
-      doc.addImage(cfg.unterschriftDataUrl, fmt, centerX - 22, lineY - 16, 44, 15, undefined, 'SLOW');
-    } catch (_) {}
+    drawSignatureImage(doc, cfg.unterschriftDataUrl, centerX, lineY);
   }
 
   function zeitraumText(v) {
@@ -235,12 +242,19 @@
     const colW = CONTENT_W / 2 - 8;
     // Unterschriftsbild des Bürgermeisters über die linke (Vermieter-)Linie
     drawBuergermeisterSignatur(doc, MARGIN_X + colW / 2, state.y);
+    // Live erfasste Mieter-Unterschrift über die rechte (Mieter-)Linie
+    const mSig = v.mieterUnterschrift;
+    if (mSig && mSig.dataUrl) drawSignatureImage(doc, mSig.dataUrl, RIGHT_X - colW / 2, state.y);
     doc.setDrawColor(0, 0, 0); doc.setLineWidth(0.4);
     doc.line(MARGIN_X, state.y, MARGIN_X + colW, state.y);
     doc.line(RIGHT_X - colW, state.y, RIGHT_X, state.y);
     setFont(doc, 9, false, false, C_MUTED);
     doc.text(vm.buergermeister || '', MARGIN_X, state.y + 5);
     doc.text(mieter ? fullNameMieter(mieter) : 'Mieter', RIGHT_X - colW, state.y + 5);
+    if (mSig && mSig.dataUrl && mSig.datum) {
+      setFont(doc, 8, false, false, C_MUTED);
+      doc.text('unterschrieben am ' + formatDatum(mSig.datum), RIGHT_X - colW, state.y + 9);
+    }
 
     const filename = `Mietvertrag-${v.startDatum || ''}.pdf`;
     if (opts.target === 'paperless') {
@@ -399,12 +413,19 @@
     const lineY = state.y;
     const colW = 66;
     drawBuergermeisterSignatur(doc, MARGIN_X + colW / 2, lineY);
+    // Live erfasste Mieter-Unterschrift über die rechte Linie
+    const pSig = proto.mieterUnterschrift;
+    if (pSig && pSig.dataUrl) drawSignatureImage(doc, pSig.dataUrl, RIGHT_X - colW / 2, lineY);
     doc.setDrawColor(0, 0, 0); doc.setLineWidth(0.4);
     doc.line(MARGIN_X, lineY, MARGIN_X + colW, lineY);
     doc.line(RIGHT_X - colW, lineY, RIGHT_X, lineY);
     setFont(doc, 9, false, false, C_MUTED);
     doc.text('Ortsgemeinde (' + (vm.buergermeister || 'Bürgermeister/in') + ')', MARGIN_X, lineY + 5);
     doc.text(mieter ? fullNameMieter(mieter) : 'Mieter/in', RIGHT_X - colW, lineY + 5);
+    if (pSig && pSig.dataUrl && pSig.datum) {
+      setFont(doc, 8, false, false, C_MUTED);
+      doc.text('unterschrieben am ' + formatDatum(pSig.datum), RIGHT_X - colW, lineY + 9);
+    }
 
     for (const p of beanstandungen) {
       try {

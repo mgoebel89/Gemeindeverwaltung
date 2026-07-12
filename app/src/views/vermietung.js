@@ -101,6 +101,53 @@
     function persist() { store.saveVermietung(v); }
     function refresh() { mount.innerHTML = ''; renderDetail(mount, id); }
 
+    function mieterName() { const m = store.getMieter(v.mieterId); return m ? fullNameMieter(m) : 'Mieter/in'; }
+
+    // Unterschriften-Steuerung für ein Dokument (Vertrag oder Protokoll).
+    // holder trägt `holder.mieterUnterschrift = {dataUrl, datum}` inline im
+    // Datensatz (läuft im Payload/Backup/NocoDB mit). Nur der Mieter unterschreibt
+    // live; die Gemeinde/Bürgermeister bleibt das Einstellungsbild.
+    function signaturControl(holder, opts = {}) {
+      const box = el('div', { class: 'sig-inline' });
+      function capture() {
+        GR.ui.captureSignature({
+          title: opts.title || 'Unterschrift Mieter',
+          subtitle: opts.subtitle || '',
+          name: mieterName(),
+          consent: opts.consent || 'Mit der Unterschrift bestätigt der Mieter die Angaben dieses Dokuments.',
+          onDone: (dataUrl) => {
+            if (!dataUrl) return;
+            holder.mieterUnterschrift = { dataUrl, datum: todayIso() };
+            persist(); draw(); toast('Unterschrift gespeichert');
+          },
+        });
+      }
+      function draw() {
+        box.innerHTML = '';
+        const sig = holder.mieterUnterschrift;
+        if (sig && sig.dataUrl) {
+          box.appendChild(el('img', { class: 'sig-thumb', src: sig.dataUrl, alt: 'Unterschrift' }));
+          box.appendChild(el('span', { class: 'help' }, 'unterschrieben' + (sig.datum ? ' am ' + formatDatum(sig.datum) : '')));
+          box.appendChild(el('button', { class: 'btn-sm', type: 'button', onClick: capture }, 'Ändern'));
+          box.appendChild(el('button', { class: 'btn-sm btn-danger', type: 'button', onClick: () => { holder.mieterUnterschrift = null; persist(); draw(); } }, 'Entfernen'));
+        } else {
+          box.appendChild(el('button', { class: 'btn-sm btn-primary', type: 'button', onClick: capture }, '✍ Mieter unterschreibt'));
+          for (const s of (opts.reuseSources || [])) {
+            if (!s || !s.sig || !s.sig.dataUrl) continue;
+            box.appendChild(el('button', { class: 'btn-sm', type: 'button', onClick: () => {
+              holder.mieterUnterschrift = { dataUrl: s.sig.dataUrl, datum: s.sig.datum || todayIso() };
+              persist(); draw(); toast('Unterschrift übernommen');
+            } }, '↩ ' + s.label));
+          }
+        }
+      }
+      draw();
+      return el('div', { class: 'sig-row' }, [
+        el('span', { class: 'sig-row-label' }, opts.label || 'Unterschrift Mieter:'),
+        box,
+      ]);
+    }
+
     // Foto-Steuerung für einen Zählerstand (Beweisführung). Zeigt Miniatur +
     // „Entfernen", solange ein Foto hinterlegt ist, sonst den Aufnahme-Button.
     function fotoControl(kind) {
@@ -239,6 +286,14 @@
           }
           section.appendChild(row);
         });
+        section.appendChild(signaturControl(proto, {
+          title: (type === 'uebergabe' ? 'Übergabeprotokoll' : 'Abnahmeprotokoll') + ' – Unterschrift Mieter',
+          subtitle: raumName(v.raumId),
+          reuseSources: [
+            { label: 'Aus Mietvertrag übernehmen', sig: v.mieterUnterschrift },
+            type === 'abnahme' ? { label: 'Aus Übergabe übernehmen', sig: v.protokolle.uebergabe && v.protokolle.uebergabe.mieterUnterschrift } : null,
+          ],
+        }));
         return section;
       }
 
@@ -465,6 +520,17 @@
             ]
       ),
     ]);
+    // Mieter-Unterschrift zum Mietvertrag (erst ab erstelltem Vertrag sinnvoll)
+    if (v.status !== 'geplant') {
+      vertragCard.appendChild(signaturControl(v, {
+        title: 'Mietvertrag – Unterschrift Mieter',
+        subtitle: raumName(v.raumId) + (v.startDatum ? ' · ' + formatDatum(v.startDatum) : ''),
+        consent: 'Mit der Unterschrift erkennt der Mieter die Bedingungen des Mietvertrags an.',
+        reuseSources: [
+          { label: 'Aus Übergabe übernehmen', sig: v.protokolle.uebergabe && v.protokolle.uebergabe.mieterUnterschrift },
+        ],
+      }));
+    }
     mount.appendChild(vertragCard);
 
     // ---- Abschnitt 3: Abrechnung / Endstände ----

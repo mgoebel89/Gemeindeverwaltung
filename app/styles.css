@@ -276,6 +276,41 @@ tr:hover td { background: #fafbfc; }
 }
 .modal h3 { margin-top: 0; }
 
+/* Unterschrift: Inline-Steuerung an Vertrag/Protokoll */
+.sig-row {
+  display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+  margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--border);
+}
+.sig-row-label { font-weight: 600; }
+.sig-inline { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.sig-thumb {
+  height: 40px; max-width: 160px; object-fit: contain;
+  border: 1px solid var(--border); border-radius: 6px; background: #fff; padding: 2px;
+}
+
+/* Unterschrift: Vollbild-Erfassung */
+.sig-overlay {
+  position: fixed; inset: 0; z-index: 2000; background: rgba(18, 22, 30, 0.94);
+  display: flex; flex-direction: column;
+}
+.sig-head { padding: 16px 20px 8px; display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; }
+.sig-head h3 { margin: 0; color: #fff; font-size: 1.15rem; }
+.sig-sub { color: rgba(255, 255, 255, 0.72); font-size: 0.88rem; }
+.sig-stage {
+  flex: 1; position: relative; margin: 8px 16px; background: #fff;
+  border-radius: 12px; overflow: hidden; box-shadow: 0 8px 30px rgba(0, 0, 0, 0.4);
+}
+.sig-canvas { position: absolute; inset: 0; width: 100%; height: 100%; touch-action: none; cursor: crosshair; }
+.sig-baseline { position: absolute; left: 6%; right: 6%; bottom: 24%; border-bottom: 1.5px dashed #cbd2dc; pointer-events: none; }
+.sig-name { position: absolute; left: 6%; bottom: 24%; transform: translateY(120%); color: #9aa2ad; font-size: 0.8rem; pointer-events: none; }
+.sig-hint {
+  position: absolute; left: 0; right: 0; top: 50%; transform: translateY(-50%);
+  text-align: center; color: #b6bdc7; font-size: 0.95rem; pointer-events: none;
+}
+.sig-consent { color: rgba(255, 255, 255, 0.7); font-size: 0.8rem; padding: 4px 20px 0; }
+.sig-actions { display: flex; align-items: center; gap: 10px; padding: 14px 20px 20px; flex-wrap: wrap; }
+.sig-actions .spacer { flex: 1; }
+
 /* ===== Mobile / Tablet ===== */
 
 /* Navigationsleiste: bei schmalen Screens Marke oben, Nav in eigener,
