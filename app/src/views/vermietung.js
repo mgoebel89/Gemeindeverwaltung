@@ -67,7 +67,7 @@
           el('td', {}, raumName(v.raumId)),
           el('td', {}, mieter ? fullNameMieter(mieter) : '—'),
           el('td', {}, v.anlass || '—'),
-          el('td', {}, [el('span', { class: 'tag ' + meta.tag }, meta.label)]),
+          el('td', {}, [v.kostenfrei ? el('span', { class: 'tag prep' }, 'kostenfrei') : el('span', { class: 'tag ' + meta.tag }, meta.label)]),
           el('td', { style: 'text-align:right; white-space:nowrap;' }, [
             el('a', { class: 'btn btn-sm', href: `#/vermietung?id=${v.id}` }, 'Öffnen'),
             ' ',
@@ -148,8 +148,19 @@
       ]);
     }
 
+    // Zwei Buttons „📷 Kamera" (erzwingt Kameraaufnahme via capture) und
+    // „🖼 Galerie" (Dateiauswahl). Am Desktop wird capture ignoriert → beide
+    // öffnen den normalen Dateidialog. onPick(file) bekommt die gewählte Datei.
+    function fotoPickButtons(onPick, kamLabel = '📷 Kamera') {
+      const pick = async (capture) => { const f = await GR.ui.pickFile('image/*', capture); if (f) onPick(f); };
+      return [
+        el('button', { class: 'btn-sm', type: 'button', onClick: () => pick('environment') }, kamLabel),
+        el('button', { class: 'btn-sm', type: 'button', onClick: () => pick(null) }, '🖼 Galerie'),
+      ];
+    }
+
     // Foto-Steuerung für einen Zählerstand (Beweisführung). Zeigt Miniatur +
-    // „Entfernen", solange ein Foto hinterlegt ist, sonst den Aufnahme-Button.
+    // „Entfernen", solange ein Foto hinterlegt ist, sonst die Aufnahme-Buttons.
     function fotoControl(kind) {
       const box = el('div', { class: 'verm-foto', style: 'display:flex; gap:8px; align-items:center; margin-top:6px;' });
       function render() {
@@ -167,17 +178,15 @@
             v.zaehlerFotos[kind] = null; persist(); render();
           } }, 'Entfernen'));
         } else {
-          box.appendChild(el('button', { class: 'btn-sm', type: 'button', onClick: async () => {
-            // Ohne capture-Attribut bietet das Handy Kamera UND Galerie zur Auswahl an.
-            const f = await GR.ui.pickFile('image/*');
-            if (!f) return;
+          const onPick = async (f) => {
             try {
               const rec = await store.uploadVermietungFoto(id, f, kind);
               if (!v.zaehlerFotos) v.zaehlerFotos = { stromStart: null, stromEnde: null, gasStart: null, gasEnde: null };
               v.zaehlerFotos[kind] = rec.id; persist(); render();
               toast('Foto gespeichert');
             } catch (e) { toast('Upload fehlgeschlagen: ' + e.message); }
-          } }, '📷 Foto hinzufügen'));
+          };
+          for (const b of fotoPickButtons(onPick)) box.appendChild(b);
         }
       }
       render();
@@ -232,15 +241,14 @@
               punkt.fotoId = null; persist(); draw();
             } }, 'Foto entfernen'));
           } else {
-            box.appendChild(el('button', { class: 'btn-sm', type: 'button', onClick: async () => {
-              const f = await GR.ui.pickFile('image/*');
-              if (!f) return;
+            const onPick = async (f) => {
               try {
                 const rec = await store.uploadVermietungFoto(id, f, 'protokoll_' + type + '_' + punkt.id);
                 punkt.fotoId = rec.id; persist(); draw();
                 toast('Foto gespeichert');
               } catch (e) { toast('Upload fehlgeschlagen: ' + e.message); }
-            } }, '📷 Beanstandungsfoto'));
+            };
+            for (const b of fotoPickButtons(onPick, '📷 Kamera (Beanstandung)')) box.appendChild(b);
           }
         }
         draw();
@@ -324,6 +332,7 @@
     const raeume = store.listRaeume().filter(r => r.aktiv || r.id === v.raumId);
     const meta = STATUS_META[v.status] || STATUS_META.geplant;
     const pauschal = istPauschal(store.getRaum(v.raumId));
+    const kostenfrei = !!v.kostenfrei;
 
     // ---- Kopf: Stepper + Status ----
     const steps = ['geplant', 'vertrag', 'abgerechnet'];
@@ -339,9 +348,12 @@
     mount.appendChild(el('div', { class: 'toolbar' }, [
       el('a', { class: 'btn', href: '#/vermietung' }, '← Übersicht'),
       el('div', { class: 'spacer' }),
-      el('span', { class: 'tag ' + meta.tag }, 'Status: ' + meta.label),
+      kostenfrei
+        ? el('span', { class: 'tag prep' }, 'kostenfrei')
+        : el('span', { class: 'tag ' + meta.tag }, 'Status: ' + meta.label),
     ]));
-    mount.appendChild(stepper);
+    // Bei kostenfreier Nutzung passt der geplant→Vertrag→abgerechnet-Ablauf nicht.
+    if (!kostenfrei) mount.appendChild(stepper);
 
     // ---- Live-Berechnung ----
     const liveTage = el('strong', {}, '');
@@ -385,6 +397,10 @@
     // Mieter-Auswahl (Combobox) + Ortsfremd
     const ortsfremdCb = el('input', { type: 'checkbox', checked: !!v.ortsfremd });
     ortsfremdCb.onchange = () => { v.ortsfremd = ortsfremdCb.checked; persist(); updateLive(); };
+
+    // Kostenfrei (ortsansässiger Verein): blendet Vertrag + Abrechnung aus.
+    const kostenfreiCb = el('input', { type: 'checkbox', checked: kostenfrei });
+    kostenfreiCb.onchange = () => { v.kostenfrei = kostenfreiCb.checked; persist(); refresh(); };
 
     const mieterBox = el('div', {});
     function renderMieterBox() {
@@ -460,10 +476,11 @@
         el('div', {}, [el('label', {}, 'Bis'), endInput]),
       ]),
       el('div', { style: 'margin-top:12px;' }, [el('label', {}, 'Mieter'), mieterBox]),
-      el('label', { style: 'display:flex; gap:8px; align-items:center; margin-top:10px;' }, [ortsfremdCb, ' Ortsfremd (höhere Grundmiete)']),
+      el('label', { style: 'display:flex; gap:8px; align-items:center; margin-top:10px;' }, [kostenfreiCb, ' Kostenfrei (ortsansässiger Verein) – ohne Vertrag/Abrechnung']),
+      kostenfrei ? null : el('label', { style: 'display:flex; gap:8px; align-items:center; margin-top:10px;' }, [ortsfremdCb, ' Ortsfremd (höhere Grundmiete)']),
       el('div', { class: 'verm-summary', style: 'margin-top:14px;' }, [
         el('div', {}, ['Dauer: ', liveTage]),
-        el('div', {}, ['Grundmiete: ', liveGrund]),
+        kostenfrei ? null : el('div', {}, ['Grundmiete: ', liveGrund]),
       ]),
     ]));
 
@@ -531,10 +548,10 @@
         ],
       }));
     }
-    mount.appendChild(vertragCard);
+    if (!kostenfrei) mount.appendChild(vertragCard);
 
     // ---- Abschnitt 3: Abrechnung / Endstände ----
-    if (v.status !== 'geplant') {
+    if (!kostenfrei && v.status !== 'geplant') {
       const stromEnde = el('input', { type: 'number', step: '0.001', value: v.zaehler.stromEnde ?? '', placeholder: 'kWh' });
       stromEnde.oninput = () => { v.zaehler.stromEnde = stromEnde.value === '' ? null : Number(stromEnde.value); updateLive(); };
       stromEnde.onchange = persist;
@@ -597,6 +614,30 @@
           }) }, '📥 In Paperless speichern') : null,
           v.status === 'vertrag' ? el('button', { onClick: onAbrechnen }, 'Als abgerechnet markieren') : null,
           v.abrechnungDatum ? el('span', { class: 'help', style: 'align-self:center;' }, 'abgerechnet am ' + formatDatum(v.abrechnungDatum)) : null,
+        ]),
+      ]));
+    }
+
+    // Kostenfrei: schlanke, optionale Zählerstände-Karte (nur Dokumentation,
+    // ersetzt die ausgeblendeten Vertrags-/Abrechnungskarten). Bei Pauschalobjekten
+    // gibt es keine Zähler.
+    if (kostenfrei && !pauschal) {
+      const mkZ = (key, ph) => {
+        const i = el('input', { type: 'number', step: '0.001', value: v.zaehler[key] ?? '', placeholder: ph });
+        i.oninput = () => { v.zaehler[key] = i.value === '' ? null : Number(i.value); };
+        i.onchange = persist;
+        return i;
+      };
+      mount.appendChild(el('div', { class: 'card' }, [
+        el('h3', {}, 'Zählerstände (optional)'),
+        el('p', { class: 'help' }, 'Bei kostenfreier Nutzung erfolgt keine Abrechnung – diese Werte dienen nur der Dokumentation und erscheinen in keinem PDF.'),
+        el('div', { class: 'grid-2' }, [
+          el('div', {}, [el('label', {}, 'Stromzähler Anfang (kWh)'), mkZ('stromStart', 'kWh'), fotoControl('stromStart')]),
+          el('div', {}, [el('label', {}, 'Stromzähler Ende (kWh)'), mkZ('stromEnde', 'kWh'), fotoControl('stromEnde')]),
+        ]),
+        el('div', { class: 'grid-2' }, [
+          el('div', {}, [el('label', {}, 'Gaszähler Anfang (cbm)'), mkZ('gasStart', 'cbm'), fotoControl('gasStart')]),
+          el('div', {}, [el('label', {}, 'Gaszähler Ende (cbm)'), mkZ('gasEnde', 'cbm'), fotoControl('gasEnde')]),
         ]),
       ]));
     }

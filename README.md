@@ -286,8 +286,10 @@ den Navigationspunkt **Vermietung**.
    Versand an die Verbandsgemeindeverwaltung.
 
 **Zählerstand-Fotos (Beweisführung):** Zu jedem der vier Zählerstände (Strom
-Anfang/Ende, Gas Anfang/Ende) kann ein Foto hinterlegt werden – auf dem Handy
-öffnet der Button direkt die Kamera. Die Fotos dienen als interner Nachweis, sie
+Anfang/Ende, Gas Anfang/Ende) kann ein Foto hinterlegt werden – über zwei Buttons
+**📷 Kamera** (öffnet am Handy direkt die Kamera) oder **🖼 Galerie** (wählt ein
+vorhandenes Bild); dieselbe Wahl gibt es bei den Beanstandungsfotos im Protokoll.
+Die Fotos dienen als interner Nachweis, sie
 werden im Container gespeichert (Tabelle `vermietung_files` + Datei unter
 `/var/lib/gemeindeverwaltung/attachments/vermietung/<vermietungId>/`) und
 erscheinen **nicht** im PDF. Wie die Beleg-Scans werden sie **nicht** nach NocoDB
@@ -309,6 +311,14 @@ Unterschrift lässt sich per Knopf **von einem anderen Dokument übernehmen** (z
 die Übergabe-Unterschrift in den Vertrag). Die Kostenabrechnung bleibt bewusst
 ausgenommen. Die Gemeinde-/Bürgermeister-Unterschrift bleibt das
 Einstellungsbild.
+
+**Kostenfreie Nutzung (ortsansässige Vereine):** In den Eckdaten lässt sich eine
+Vermietung als **kostenfrei** markieren. Dann entfallen **Mietvertrag** und
+**Kostenabrechnung** (Abschnitte 2 und 3) samt Fortschritts-Stepper und
+Preisangaben; in Detail und Übersicht erscheint stattdessen ein Tag „kostenfrei".
+Das **Übergabe-/Abnahmeprotokoll** bleibt uneingeschränkt möglich. Die
+Zählerstände können bei Bedarf weiterhin **rein zur Dokumentation** über eine
+schlanke Zusatzkarte erfasst werden (ohne Abrechnung, ohne PDF).
 
 **Preise** (Menü *Einstellungen → Vermietung – Preise*): je Objekt gestaffelte
 Grundmiete (1. Tag / jeder weitere Tag, getrennt für Anwohner und Ortsfremde) sowie
