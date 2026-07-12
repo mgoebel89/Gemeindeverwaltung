@@ -207,11 +207,25 @@ Ja-Nein). Die Felddefinitionen selbst werden weiterhin in Paperless angelegt.
 werden (Paperless-Notes-API `…/documents/{id}/notes/`). Der Notiz-Bereich speichert unabhängig
 vom „Speichern"-Button der Metadaten.
 
-**Detailansicht & Bedienung:** Der Detailbereich ist in **Reiter** gegliedert –
+**Übersicht als Kachel-Galerie:** Die Dokumente werden als **Kachel-Galerie** mit
+**Vorschaubildern** (Thumbnail + Titel + Korrespondent + Datum + farbige Tags) über die volle
+Breite dargestellt – kein horizontales Scrollen mehr. Per Umschalter lässt sich zwischen
+**Kacheln** und einer kompakten **Liste** wechseln (die Wahl wird gemerkt). Über der Galerie gibt es
+eine **Sortierung** (Neueste / Älteste / Titel A–Z / Zuletzt hinzugefügt) und einen **„Mehr
+laden"**-Knopf. Ein Klick auf ein Dokument öffnet die Detailansicht als **großes Overlay** über
+der Galerie.
+
+**Gespeicherte Ansichten (voreingestellte Filter):** Filter (Suche, Korrespondent, Typ, Tags,
+Datum) und Sortierung lassen sich als **benannte Ansicht** speichern und erscheinen oben als
+**Reiter/Chips** („Alle" ist immer vorhanden). Eine aktive Ansicht kann **aktualisiert**,
+**umbenannt** und **gelöscht** werden. Die Ansichten werden **serverseitig** in den Einstellungen
+(`docViews`) gehalten – sie sind damit auf allen Geräten gleich und im Backup enthalten.
+
+**Detailansicht & Bedienung:** Das Detail-Overlay ist in **Reiter** gegliedert –
 **Vorschau · Eigenschaften · Notizen** – statt einer langen Scroll-Spalte. Die Vorschau bekommt
-den vollen Platz und lässt sich per **Vollbild** öffnen. Auf **Mobilgeräten** arbeitet das Modul
-als **Master-Detail**: erst die Trefferliste, ein Tipp öffnet das Dokument als eigene Ansicht mit
-„‹ Zurück". Der Assistent wird auf schmalen Displays randlos/vollflächig dargestellt.
+den vollen Platz und lässt sich per **Vollbild** öffnen. Auf **Mobilgeräten** erscheinen Galerie
+und Overlay **randlos/vollflächig**. Der Upload-Assistent wird auf schmalen Displays ebenfalls
+vollflächig dargestellt.
 
 **Architektur:** Das Frontend spricht ausschließlich das eigene Node-Backend an
 (`/api/dokumente/...`). Das Backend (`backend/paperless.js` + `backend/routes/dokumente.js`)
