@@ -122,6 +122,7 @@
       nocodb: defaultNocoDbSettings(),
       autoSync: true,
       autoSyncIntervalSec: 60,
+      vikunjaProjektId: null, // globales Vikunja-Projekt (app-weit: Aufgaben-Modul + Vorgangs-ToDos)
       vermietung: defaultVermietungSettings(),
       auslagen: defaultAuslagenSettings(),
       vertraege: defaultVertraegeSettings(),
@@ -255,6 +256,12 @@
     else {
       const dvg = defaultVorgaengeSettings();
       for (const k of Object.keys(dvg)) if (cache.settings.vorgaenge[k] === undefined) cache.settings.vorgaenge[k] = dvg[k];
+    }
+    // Globales Vikunja-Projekt: einmalig aus dem früheren Vorgänge-spezifischen
+    // Wert übernehmen (nur wenn das Feld noch gar nicht existiert).
+    if (cache.settings.vikunjaProjektId === undefined) {
+      const legacy = cache.settings.vorgaenge && cache.settings.vorgaenge.vikunjaProjektId;
+      cache.settings.vikunjaProjektId = legacy || null;
     }
   }
 

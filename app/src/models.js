@@ -265,11 +265,17 @@
     return (auslage && auslage.belege || []).reduce((s, b) => s + (Number(b.betrag) || 0), 0);
   }
 
+  // Auslagen, die das Budget einer Haushaltsstelle mindern: eingereicht + erstattet
+  // (offene Entwürfe zählen noch nicht).
+  const ABGERECHNET_STATUS = ['eingereicht', 'erstattet'];
+
   // Budgetverbrauch einer Haushaltsstelle in einem Haushaltsjahr über eine
-  // Liste von Auslagen (Store-unabhängig gehalten).
-  function budgetVerbrauch(auslagen, haushaltsstelleId, jahr) {
+  // Liste von Auslagen (Store-unabhängig gehalten). `statusFilter` (optional)
+  // schränkt auf bestimmte Auslage-Status ein; ohne Filter zählen alle.
+  function budgetVerbrauch(auslagen, haushaltsstelleId, jahr, statusFilter) {
     return (auslagen || [])
-      .filter(a => a.haushaltsstelleId === haushaltsstelleId && String(a.haushaltsjahr) === String(jahr))
+      .filter(a => a.haushaltsstelleId === haushaltsstelleId && String(a.haushaltsjahr) === String(jahr)
+        && (!statusFilter || statusFilter.includes(a.status || 'offen')))
       .reduce((s, a) => s + gesamtbetrag(a), 0);
   }
 
@@ -462,7 +468,7 @@
     emptyMieter, emptyRaum, emptyRaumPreise, emptyVermietung, defaultUebergabeCheckliste,
     fullNameMieter, anzahlTage, berechneGrundmiete, berechneVerbrauch, berechneGesamt,
     AUSLAGE_STATUS, emptyEmpfaenger, fullNameEmpfaenger, formatIban, emptyHaushaltsstelle,
-    emptyBeleg, emptyAuslage, gesamtbetrag, budgetVerbrauch,
+    emptyBeleg, emptyAuslage, gesamtbetrag, budgetVerbrauch, ABGERECHNET_STATUS,
     VERTRAG_RICHTUNGEN, VERTRAG_INTERVALLE, VERTRAG_LAUFZEIT_TYPEN, VERTRAG_STATUS,
     INTERVALL_LABEL, RICHTUNG_LABEL,
     emptyVertragspartner, emptyVertrag,

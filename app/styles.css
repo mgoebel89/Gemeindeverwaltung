@@ -862,3 +862,10 @@ tr:hover td { background: #fafbfc; }
 .vg-budget-table td, .vg-budget-table th { padding: 6px 8px; border-bottom: 1px solid var(--border); }
 .vg-budget-table tbody tr:last-child td { border-bottom: none; }
 .vg-budget-table .vg-row-neg td { color: var(--danger); }
+
+/* Bargeldauslagen: Status-Dropdown direkt in der Liste */
+.auslage-status-sel { padding: 3px 6px; font-size: 0.85rem; min-width: 120px; }
+
+/* Vermietung: kostenfreie Vermietungen in der Liste hervorheben */
+.verm-row-kostenfrei { background: #f0f7f2; }
+.verm-row-kostenfrei td:first-child { box-shadow: inset 3px 0 0 var(--success); }

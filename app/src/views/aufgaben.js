@@ -1,7 +1,10 @@
 (function () {
   'use strict';
   window.GR = window.GR || {};
+  const { store } = GR;
   const { el, formatDatum, toast } = GR.ui;
+
+  function globalProjektId() { const s = store.getSettings(); return s && s.vikunjaProjektId ? s.vikunjaProjektId : null; }
 
   // ---- Aufgaben (Vikunja) ----
   // Offene Aufgaben aus Vikunja, fällige zuerst, nach Zeitbucket gruppiert.
@@ -30,9 +33,18 @@
 
     function load() {
       listBox.innerHTML = '';
+      const pid = globalProjektId();
+      if (!pid) {
+        listBox.appendChild(el('div', { class: 'card' }, [
+          el('p', { class: 'help', style: 'margin:0;' }, 'Es ist noch kein synchronisiertes Vikunja-Projekt gewählt. Bitte unter Einstellungen → Aufgaben ein Projekt festlegen.'),
+        ]));
+        return;
+      }
       listBox.appendChild(el('p', { class: 'help' }, 'Aufgaben werden geladen…'));
       GR.api.listOpenTasks().then(res => {
-        renderList(listBox, res.tasks || [], load);
+        // Nur Aufgaben des app-weit gewählten Projekts anzeigen.
+        const tasks = (res.tasks || []).filter(t => String(t.projectId) === String(pid));
+        renderList(listBox, tasks, load);
       }).catch(err => {
         listBox.innerHTML = '';
         listBox.appendChild(el('div', { class: 'warn' }, 'Aufgaben konnten nicht geladen werden: ' + err.message +
@@ -137,30 +149,21 @@
     return el('span', { class: 'aufg-prio', title: 'Priorität: ' + lbl }, icon + ' ');
   }
 
-  // --- Neue Aufgabe anlegen ---
+  // --- Neue Aufgabe anlegen (immer im app-weit gewählten Projekt) ---
   function buildCreateForm(onCreated) {
     const titleI = el('input', { type: 'text', placeholder: 'Was ist zu tun?' });
-    const projSel = el('select', {});
-    projSel.appendChild(el('option', { value: '' }, 'Projekt lädt…'));
     const dueI = el('input', { type: 'date' });
     const prioSel = el('select', {});
     [['', 'Keine Priorität'], ['3', 'Hoch'], ['4', 'Dringend'], ['5', 'Sofort']]
       .forEach(([v, l]) => prioSel.appendChild(el('option', { value: v }, l)));
     const status = el('div', { class: 'help', style: 'margin-top:6px;' }, '');
 
-    GR.api.listTaskProjects().then(res => {
-      projSel.innerHTML = '';
-      const projs = res.projects || [];
-      if (!projs.length) { projSel.appendChild(el('option', { value: '' }, 'Keine Projekte gefunden')); return; }
-      projs.forEach(p => projSel.appendChild(el('option', { value: p.id }, p.title)));
-    }).catch(() => { projSel.innerHTML = ''; projSel.appendChild(el('option', { value: '' }, 'Projekte nicht ladbar')); });
-
     const saveBtn = el('button', { class: 'btn-primary' }, 'Anlegen');
     saveBtn.onclick = () => {
       const title = titleI.value.trim();
-      const projectId = projSel.value;
+      const projectId = globalProjektId();
       if (!title) { status.textContent = 'Bitte einen Titel eingeben.'; status.style.color = '#c53030'; return; }
-      if (!projectId) { status.textContent = 'Bitte ein Projekt wählen.'; status.style.color = '#c53030'; return; }
+      if (!projectId) { status.textContent = 'Kein Vikunja-Projekt gewählt (Einstellungen → Aufgaben).'; status.style.color = '#c53030'; return; }
       saveBtn.disabled = true; status.textContent = 'Wird angelegt…'; status.style.color = '';
       GR.api.createTask(projectId, {
         title,
@@ -179,7 +182,6 @@
       el('h3', { style: 'margin-top:0;' }, 'Neue Aufgabe'),
       el('div', {}, [el('label', {}, 'Titel'), titleI]),
       el('div', { class: 'grid-2', style: 'margin-top:10px;' }, [
-        el('div', {}, [el('label', {}, 'Projekt'), projSel]),
         el('div', {}, [el('label', {}, 'Fällig am (optional)'), dueI]),
         el('div', {}, [el('label', {}, 'Priorität (optional)'), prioSel]),
       ]),

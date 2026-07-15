@@ -40,45 +40,77 @@
       refresh();
     };
 
+    // Jahresauswahl für die Übersichts-PDF (Jahre aus den Vermietungen + aktuelles).
+    const jahre = new Set([new Date().getFullYear()]);
+    for (const v of vermietungen) if (v.startDatum) jahre.add(new Date(v.startDatum).getFullYear());
+    const jahrSel = el('select', { class: 'input', style: 'width:auto;' },
+      [...jahre].sort((a, b) => b - a).map(j => el('option', { value: j }, String(j))));
+
     mount.appendChild(el('div', { class: 'toolbar' }, [
       el('button', { class: 'btn-primary', onClick: onNew }, '+ Neue Vermietung'),
       el('a', { class: 'btn', href: '#/mieter' }, 'Mieter verwalten'),
       el('a', { class: 'btn', href: '#/protokolle' }, 'Protokolle (Checklisten)'),
+      el('div', { class: 'spacer', style: 'flex:1;' }),
+      jahrSel,
+      el('button', { class: 'btn', onClick: () => GR.vermietungPdf.buildJahresuebersicht(Number(jahrSel.value)) }, '📄 Jahres-Übersicht'),
     ]));
     mount.appendChild(el('h2', {}, 'Vermietungen'));
 
-    const card = el('div', { class: 'card', style: 'padding:0' });
-    if (vermietungen.length === 0) {
-      card.appendChild(el('div', { class: 'empty' }, 'Noch keine Vermietungen erfasst. Oben „Neue Vermietung" anlegen.'));
-    } else {
+    // Kostenfreie hervorheben; abgerechnete separat (eingeklappt).
+    function buildRow(v) {
+      const mieter = store.getMieter(v.mieterId);
+      const meta = STATUS_META[v.status] || STATUS_META.geplant;
+      const zeitraum = v.startDatum
+        ? formatDatum(v.startDatum) + (v.endDatum && v.endDatum !== v.startDatum ? '–' + formatDatum(v.endDatum) : '')
+        : '—';
+      return el('tr', { class: v.kostenfrei ? 'verm-row-kostenfrei' : '' }, [
+        el('td', {}, zeitraum),
+        el('td', {}, raumName(v.raumId)),
+        el('td', {}, mieter ? fullNameMieter(mieter) : '—'),
+        el('td', {}, v.anlass || '—'),
+        el('td', {}, [v.kostenfrei ? el('span', { class: 'tag prep' }, 'kostenfrei') : el('span', { class: 'tag ' + meta.tag }, meta.label)]),
+        el('td', { style: 'text-align:right; white-space:nowrap;' }, [
+          el('a', { class: 'btn btn-sm', href: `#/vermietung?id=${v.id}` }, 'Öffnen'),
+          ' ',
+          el('button', { class: 'btn-sm btn-danger', onClick: () => onDelete(v) }, 'Löschen'),
+        ]),
+      ]);
+    }
+    function buildTable(rows) {
       const table = el('table');
       table.appendChild(el('thead', {}, el('tr', {}, [
         el('th', {}, 'Zeitraum'), el('th', {}, 'Objekt'), el('th', {}, 'Mieter'), el('th', {}, 'Anlass'), el('th', {}, 'Status'), el('th', {}, ''),
       ])));
       const tbody = el('tbody');
-      for (const v of vermietungen) {
-        const mieter = store.getMieter(v.mieterId);
-        const meta = STATUS_META[v.status] || STATUS_META.geplant;
-        const zeitraum = v.startDatum
-          ? formatDatum(v.startDatum) + (v.endDatum && v.endDatum !== v.startDatum ? '–' + formatDatum(v.endDatum) : '')
-          : '—';
-        tbody.appendChild(el('tr', {}, [
-          el('td', {}, zeitraum),
-          el('td', {}, raumName(v.raumId)),
-          el('td', {}, mieter ? fullNameMieter(mieter) : '—'),
-          el('td', {}, v.anlass || '—'),
-          el('td', {}, [v.kostenfrei ? el('span', { class: 'tag prep' }, 'kostenfrei') : el('span', { class: 'tag ' + meta.tag }, meta.label)]),
-          el('td', { style: 'text-align:right; white-space:nowrap;' }, [
-            el('a', { class: 'btn btn-sm', href: `#/vermietung?id=${v.id}` }, 'Öffnen'),
-            ' ',
-            el('button', { class: 'btn-sm btn-danger', onClick: () => onDelete(v) }, 'Löschen'),
-          ]),
-        ]));
-      }
+      for (const v of rows) tbody.appendChild(buildRow(v));
       table.appendChild(tbody);
-      card.appendChild(table);
+      return table;
+    }
+
+    const aktive = vermietungen.filter(v => v.status !== 'abgerechnet');
+    const abgerechnet = vermietungen.filter(v => v.status === 'abgerechnet');
+
+    const card = el('div', { class: 'card', style: 'padding:0' });
+    if (aktive.length === 0) {
+      card.appendChild(el('div', { class: 'empty' }, vermietungen.length === 0
+        ? 'Noch keine Vermietungen erfasst. Oben „Neue Vermietung" anlegen.'
+        : 'Keine offenen Vermietungen – abgerechnete siehe unten.'));
+    } else {
+      card.appendChild(buildTable(aktive));
     }
     mount.appendChild(card);
+
+    // Abgerechnete: eingeklappter Bereich
+    if (abgerechnet.length > 0) {
+      const open = !!renderList._showAbger;
+      mount.appendChild(el('div', { class: 'vg-section', style: 'margin-top:18px;' }, [
+        el('button', {
+          class: 'vg-section-toggle',
+          onClick: () => { renderList._showAbger = !renderList._showAbger; refresh(); },
+        }, (open ? '▾ ' : '▸ ') + `Abgerechnet (${abgerechnet.length})`),
+        open ? el('div', { class: 'card', style: 'padding:0' }, [buildTable(abgerechnet)]) : null,
+      ]));
+    }
   }
 
   // ------------------------------------------------------------------ Detail

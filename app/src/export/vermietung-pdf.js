@@ -457,5 +457,71 @@
     }
   }
 
-  GR.vermietungPdf = { buildMietvertrag, buildKostenabrechnung, buildUebergabeprotokoll };
+  // Jahres-Übersicht: alle Vermietungen eines Jahres + Summe der Einnahmen.
+  // opts.target: 'download' (Standard) oder 'paperless'.
+  function buildJahresuebersicht(jahr, opts = {}) {
+    const doc = newDoc();
+    if (!doc) return;
+    const settings = store.getSettings();
+    const vm = settings.vermietung || {};
+    const state = { y: MARGIN_TOP };
+
+    const wappen = getWappenDataUrl();
+    if (wappen) { try { doc.addImage(wappen, 'PNG', RIGHT_X - 20, state.y - 2, 20, 24, undefined, 'SLOW'); } catch (_) {} }
+    setFont(doc, 15, true);
+    doc.text('Vermietungen ' + jahr, MARGIN_X, state.y + 4);
+    setFont(doc, 10, false, false, C_MUTED);
+    doc.text('Ortsgemeinde ' + (vm.ortsgemeinde || ''), MARGIN_X, state.y + 10);
+    state.y += 20;
+
+    const rows = store.listVermietungen()
+      .filter(v => v.startDatum && String(new Date(v.startDatum).getFullYear()) === String(jahr))
+      .sort((a, b) => (a.startDatum || '').localeCompare(b.startDatum || ''));
+
+    const colDatum = MARGIN_X, colObjekt = MARGIN_X + 34, colMieter = MARGIN_X + 78, colBetrag = RIGHT_X;
+    const headRow = () => {
+      setFont(doc, 9.5, true);
+      doc.text('Zeitraum', colDatum, state.y);
+      doc.text('Objekt', colObjekt, state.y);
+      doc.text('Mieter', colMieter, state.y);
+      doc.text('Betrag', colBetrag, state.y, { align: 'right' });
+      state.y += 2; doc.setDrawColor(180); doc.line(MARGIN_X, state.y, RIGHT_X, state.y); state.y += 4;
+    };
+    headRow();
+
+    let summe = 0;
+    setFont(doc, 9.5, false);
+    if (rows.length === 0) {
+      setFont(doc, 10, false, true, C_MUTED);
+      doc.text('Keine Vermietungen in diesem Jahr.', MARGIN_X, state.y); state.y += 6;
+    }
+    for (const v of rows) {
+      if (state.y > PAGE_H - 30) { doc.addPage(); state.y = MARGIN_TOP; headRow(); setFont(doc, 9.5, false); }
+      const raum = store.getRaum(v.raumId);
+      const mieter = store.getMieter(v.mieterId);
+      const zeitraum = formatDatum(v.startDatum) + (v.endDatum && v.endDatum !== v.startDatum ? '–' + formatDatum(v.endDatum) : '');
+      const betrag = v.kostenfrei ? 0 : (raum ? berechneGesamt(v, raum).gesamt : 0);
+      summe += betrag;
+      setFont(doc, 9.5, false);
+      doc.text(zeitraum, colDatum, state.y);
+      doc.text(String(raum ? raum.name : '—').slice(0, 22), colObjekt, state.y);
+      doc.text(String(mieter ? fullNameMieter(mieter) : '—').slice(0, 26), colMieter, state.y);
+      doc.text(v.kostenfrei ? 'kostenfrei' : euro(betrag), colBetrag, state.y, { align: 'right' });
+      state.y += 5.5;
+    }
+
+    state.y += 2; doc.setDrawColor(120); doc.line(MARGIN_X, state.y, RIGHT_X, state.y); state.y += 5;
+    setFont(doc, 11, true);
+    doc.text('Einnahmen gesamt ' + jahr, MARGIN_X, state.y);
+    doc.text(euro(summe), colBetrag, state.y, { align: 'right' });
+    state.y += 6;
+    setFont(doc, 9, false, false, C_MUTED);
+    doc.text(rows.length + ' Vermietung(en)', MARGIN_X, state.y);
+
+    const filename = `Vermietungen-${jahr}.pdf`;
+    if (opts.target === 'paperless') GR.ui.savePdfToPaperless(doc, filename, { prefillTitle: 'Vermietungen ' + jahr, onUploaded: opts.onUploaded });
+    else openPdf(doc, filename);
+  }
+
+  GR.vermietungPdf = { buildMietvertrag, buildKostenabrechnung, buildUebergabeprotokoll, buildJahresuebersicht };
 })();

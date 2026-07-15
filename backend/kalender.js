@@ -202,16 +202,36 @@ function parseRRule(value) {
 
 const WEEKDAY_IDX = { SU: 0, MO: 1, TU: 2, WE: 3, TH: 4, FR: 5, SA: 6 };
 
-// Liefert absolute Startzeitpunkte (ms) einer (evtl. wiederkehrenden) VEVENT
-// innerhalb [windowStart, windowEnd].
+// n-ter Wochentag eines Monats (ord>0 = von vorn, ord<0 = von hinten, z. B.
+// 2TU = 2. Dienstag, -1FR = letzter Freitag). Rückgabe: ms oder null.
+function nthWeekdayOfMonth(year, month, dow, ord, H, Min, S) {
+  if (!ord) ord = 1;
+  const dim = daysInMonth(year, month);
+  let day;
+  if (ord > 0) {
+    const firstDow = new Date(year, month, 1).getDay();
+    day = 1 + ((dow - firstDow + 7) % 7) + (ord - 1) * 7;
+  } else {
+    const lastDow = new Date(year, month, dim).getDay();
+    day = dim - ((lastDow - dow + 7) % 7) - (Math.abs(ord) - 1) * 7;
+  }
+  if (day < 1 || day > dim) return null;
+  return new Date(year, month, day, H, Min, S).getTime();
+}
+
+// Liefert absolute Startzeitpunkte (ms) einer (evtl. wiederkehrenden) VEVENT,
+// die das Fenster [windowStart, windowEnd] schneiden (dauerbewusst: auch schon
+// laufende mehrtägige Termine, deren Start vor dem Fenster liegt).
 function expandOccurrences(ev, windowStart, windowEnd) {
   if (!ev.start) return [];
   const startMs = ev.start.ms;
   const exset = new Set(ev.exdates || []);
+  const durMs = (ev.end && ev.start && ev.end.ms > ev.start.ms) ? (ev.end.ms - ev.start.ms) : 0;
+  // Ein Vorkommen zählt, wenn sein Intervall [ms, ms+dur] das Fenster schneidet.
+  const inWindow = (ms) => (ms <= windowEnd) && ((ms + durMs) >= windowStart);
 
   if (!ev.rrule) {
-    if (startMs >= windowStart && startMs <= windowEnd && !exset.has(startMs)) return [startMs];
-    return [];
+    return (inWindow(startMs) && !exset.has(startMs)) ? [startMs] : [];
   }
 
   const r = ev.rrule;
@@ -233,18 +253,18 @@ function expandOccurrences(ev, windowStart, windowEnd) {
     if (until != null && ms > until) return false;
     if (count != null && emitted >= count) return false;
     emitted++;
-    if (ms >= windowStart && ms <= windowEnd && !exset.has(ms)) results.push(ms);
+    if (inWindow(ms) && !exset.has(ms)) results.push(ms);
     return true;
   };
-
-  const stopByWindow = (ms) => ms > windowEnd && (until == null || ms <= until);
+  // Über das Fenster hinaus (unter Berücksichtigung der Dauer) → abbrechen.
+  const stopByWindow = (ms) => (ms - durMs) > windowEnd && (until == null || ms <= until);
 
   if (freq === 'WEEKLY' && byday && byday.length) {
     // Wochenraster: je Intervall-Woche die passenden Wochentage.
     const wkStart = startOfWeek(base); // Montag als Wochenbeginn (locale-agnostisch)
     let weekBase = wkStart.getTime();
     const targetDows = byday.map(t => WEEKDAY_IDX[t.replace(/^[+-]?\d+/, '')]).filter(n => n != null);
-    while (weekBase <= windowEnd && guard < 5000) {
+    while (weekBase <= windowEnd && guard < 6000) {
       guard++;
       for (const dow of targetDows) {
         const day = new Date(weekBase);
@@ -258,13 +278,66 @@ function expandOccurrences(ev, windowStart, windowEnd) {
       const nw = new Date(weekBase);
       nw.setDate(nw.getDate() + 7 * interval);
       weekBase = nw.getTime();
-      if (count == null && weekBase > windowEnd) break;
+      if (count == null && weekBase - durMs > windowEnd) break;
     }
     return finalize(results, exset);
   }
 
-  // Einfache Schrittfolge ab Startdatum.
+  // MONTHLY/YEARLY mit „n-ter Wochentag" (z. B. jeden 2. Dienstag).
+  if ((freq === 'MONTHLY' || freq === 'YEARLY') && byday && byday.length) {
+    const specs = byday.map(t => {
+      const m = t.match(/^([+-]?\d+)?([A-Z]{2})$/);
+      if (!m) return null;
+      const ord = m[1] ? parseInt(m[1], 10) : 1;
+      const dow = WEEKDAY_IDX[m[2]];
+      return dow == null ? null : { ord, dow };
+    }).filter(Boolean);
+    let y = base.getFullYear(), mo = base.getMonth();
+    const stepMonths = freq === 'MONTHLY' ? interval : interval * 12;
+    while (guard < MAX_OCCURRENCES_PER_EVENT * 2) {
+      guard++;
+      const periodStartMs = new Date(y, mo, 1).getTime();
+      for (const sp of specs) {
+        const ms = nthWeekdayOfMonth(y, mo, sp.dow, sp.ord, H, Min, S);
+        if (ms == null || ms < startMs) continue;
+        if (!push(ms)) return finalize(results, exset);
+      }
+      // Fensterende (dauerbewusst) und Schutzgrenzen
+      if (count == null && periodStartMs - durMs > windowEnd) break;
+      if (results.length > MAX_OCCURRENCES_PER_EVENT) break;
+      mo += stepMonths; while (mo > 11) { mo -= 12; y++; }
+    }
+    return finalize(results, exset);
+  }
+
+  // Einfache Schrittfolge ab Startdatum – für alte Serien vorspulen, damit die
+  // Schutzgrenze nicht vor dem Fenster zuschlägt (nur ohne COUNT).
   const cursor = new Date(startMs);
+  if (count == null && windowStart > startMs + durMs) {
+    if (freq === 'DAILY') {
+      const perStep = interval * 86400000;
+      const n = Math.floor((windowStart - durMs - startMs) / perStep);
+      if (n > 0) cursor.setDate(cursor.getDate() + n * interval);
+    } else if (freq === 'WEEKLY') {
+      const perStep = interval * 7 * 86400000;
+      const n = Math.floor((windowStart - durMs - startMs) / perStep);
+      if (n > 0) cursor.setDate(cursor.getDate() + n * 7 * interval);
+    } else if (freq === 'MONTHLY') {
+      const bd = new Date(windowStart);
+      let months = (bd.getFullYear() - base.getFullYear()) * 12 + (bd.getMonth() - base.getMonth()) - 1;
+      months = Math.floor(months / interval) * interval;
+      if (months > 0) {
+        cursor.setMonth(cursor.getMonth() + months);
+        if (bymonthday && bymonthday.length) cursor.setDate(Math.min(bymonthday[0], daysInMonth(cursor.getFullYear(), cursor.getMonth())));
+      }
+    } else if (freq === 'YEARLY') {
+      let years = new Date(windowStart).getFullYear() - base.getFullYear() - 1;
+      years = Math.floor(years / interval) * interval;
+      if (years > 0) cursor.setFullYear(cursor.getFullYear() + years);
+    }
+    cursor.setHours(H, Min, S, 0);
+  }
+
   while (guard < MAX_OCCURRENCES_PER_EVENT * 2) {
     guard++;
     const ms = cursor.getTime();
@@ -275,7 +348,6 @@ function expandOccurrences(ev, windowStart, windowEnd) {
     else if (freq === 'WEEKLY') cursor.setDate(cursor.getDate() + 7 * interval);
     else if (freq === 'MONTHLY') {
       if (bymonthday && bymonthday.length) {
-        // nur erster BYMONTHDAY-Wert unterstützt (häufigster Fall)
         cursor.setMonth(cursor.getMonth() + interval);
         cursor.setDate(Math.min(bymonthday[0], daysInMonth(cursor.getFullYear(), cursor.getMonth())));
       } else {

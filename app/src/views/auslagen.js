@@ -150,14 +150,17 @@
       for (const a of auslagen) {
         const emp = store.getEmpfaenger(a.empfaengerId);
         const hs = store.getHaushaltsstelle(a.haushaltsstelleId);
-        const meta = STATUS_META[a.status] || STATUS_META.offen;
+        const statusSel = el('select', {
+          class: 'input auslage-status-sel',
+          onChange: (ev) => { a.status = ev.target.value; store.saveAuslage(a); toast('Status: ' + (STATUS_META[a.status] || STATUS_META.offen).label); refresh(); },
+        }, AUSLAGE_STATUS.map(s => el('option', { value: s, selected: (a.status || 'offen') === s }, STATUS_META[s].label)));
         tbody.appendChild(el('tr', {}, [
           el('td', {}, a.datum ? formatDatum(a.datum) : '—'),
           el('td', {}, emp ? fullNameEmpfaenger(emp) : '—'),
           el('td', {}, String(a.haushaltsjahr || '—')),
           el('td', {}, hs ? (hs.nummer || '—') : '—'),
           el('td', { style: 'text-align:right; white-space:nowrap;' }, euro(gesamtbetrag(a))),
-          el('td', {}, [el('span', { class: 'tag ' + meta.tag }, meta.label)]),
+          el('td', { class: 'auslage-status-cell ' + ((STATUS_META[a.status] || STATUS_META.offen).tag || '') }, [statusSel]),
           el('td', { style: 'text-align:right; white-space:nowrap;' }, [
             el('a', { class: 'btn btn-sm', href: `#/auslagen?id=${a.id}` }, 'Öffnen'),
             ' ',
@@ -211,9 +214,10 @@
         budgetBox.style.color = '';
         return;
       }
-      // Verbrauch inkl. der aktuellen (gespeicherten) Auslage.
+      // Verbrauch inkl. der aktuellen (gespeicherten) Auslage; nur eingereichte
+      // und erstattete Auslagen mindern das Budget.
       const list = store.listAuslagen().map(x => x.id === a.id ? a : x);
-      const verbraucht = budgetVerbrauch(list, hs.id, a.haushaltsjahr);
+      const verbraucht = budgetVerbrauch(list, hs.id, a.haushaltsjahr, GR.models.ABGERECHNET_STATUS);
       const rest = Number(hs.budget) - verbraucht;
       const ueber = rest < 0;
       budgetBox.textContent = `Budget ${a.haushaltsjahr}: ${euro(hs.budget)} · verbraucht ${euro(verbraucht)} · ${ueber ? 'überschritten um ' + euro(-rest) : 'Rest ' + euro(rest)}`;
@@ -500,7 +504,7 @@
     mount.appendChild(el('div', { class: 'toolbar' }, [
       el('a', { class: 'btn', href: '#/auslagen' }, '← Bargeldauslagen'),
     ]));
-    mount.appendChild(el('h2', {}, 'Empfänger & Haushaltsstellen'));
+    mount.appendChild(el('h2', {}, 'Empfänger'));
 
     // Empfänger
     const empfCard = el('div', { class: 'card', style: 'padding:0' });
@@ -530,34 +534,12 @@
     ]));
     mount.appendChild(empfCard);
 
-    // Haushaltsstellen
-    const hsCard = el('div', { class: 'card', style: 'padding:0; margin-top:16px;' });
-    const hss = store.listHaushaltsstellen().sort((a, b) => (a.nummer || '').localeCompare(b.nummer || '', 'de'));
-    if (hss.length === 0) {
-      hsCard.appendChild(el('div', { class: 'empty' }, 'Noch keine Haushaltsstellen angelegt.'));
-    } else {
-      const t = el('table');
-      t.appendChild(el('thead', {}, el('tr', {}, [el('th', {}, 'Nummer'), el('th', {}, 'Bezeichnung'), el('th', { style: 'text-align:right' }, 'Budget'), el('th', {}, '')])));
-      const tb = el('tbody');
-      for (const h of hss) {
-        tb.appendChild(el('tr', {}, [
-          el('td', {}, el('strong', {}, h.nummer || '—')),
-          el('td', {}, h.bezeichnung || '—'),
-          el('td', { style: 'text-align:right; white-space:nowrap;' }, (h.budget === null || h.budget === undefined || h.budget === '') ? '—' : euro(h.budget)),
-          el('td', { style: 'text-align:right; white-space:nowrap;' }, [
-            el('button', { class: 'btn-sm', onClick: () => haushaltsstelleDialog(h, refresh) }, 'Bearbeiten'), ' ',
-            el('button', { class: 'btn-sm btn-danger', onClick: () => { if (confirmDialog(`Haushaltsstelle „${hsLabel(h)}" löschen?`)) { store.deleteHaushaltsstelle(h.id); refresh(); } } }, 'Löschen'),
-          ]),
-        ]));
-      }
-      t.appendChild(tb); hsCard.appendChild(t);
-    }
-    mount.appendChild(el('div', { class: 'toolbar', style: 'margin-top:16px;' }, [
-      el('h3', { style: 'margin:0;' }, 'Haushaltsstellen'),
-      el('div', { class: 'spacer' }),
-      el('button', { class: 'btn-primary', onClick: () => haushaltsstelleDialog(null, refresh) }, '+ Neue Haushaltsstelle'),
+    // Haushaltsstellen sind ins eigene Modul „Haushalt" umgezogen.
+    mount.appendChild(el('p', { class: 'help', style: 'margin-top:16px;' }, [
+      'Haushaltsstellen werden jetzt im Modul ',
+      el('a', { href: '#/haushalt' }, 'Haushalt'),
+      ' verwaltet.',
     ]));
-    mount.appendChild(hsCard);
   }
 
   GR.views = GR.views || {};

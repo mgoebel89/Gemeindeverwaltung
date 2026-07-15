@@ -340,7 +340,7 @@
         const h = store.getHaushaltsstelle(id);
         const budget = h && h.budget != null ? Number(h.budget) : null;
         const eigenAuf = M.vorgangKostenAuf(v, id);
-        const ausl = M.budgetVerbrauch(store.listAuslagen(), id, v.haushaltsjahr);
+        const ausl = M.budgetVerbrauch(store.listAuslagen(), id, v.haushaltsjahr, M.ABGERECHNET_STATUS);
         const vorg = M.vorgaengeVerbrauch(store.listVorgaenge(), id, v.haushaltsjahr);
         const gesamt = ausl + vorg;
         const rest = budget != null ? budget - gesamt : null;
@@ -492,10 +492,10 @@
     const prioSel = el('select', { class: 'input', onChange: (ev) => { e.prioritaet = ev.target.value; persist(); } },
       PRIO_OPTS.map(([val, lbl]) => el('option', { value: val, selected: String(e.prioritaet || '') === val }, lbl)));
 
-    // Festes Projekt aus den Einstellungen; falls nicht gesetzt → Auswahl anbieten.
-    const vgSettings = store.getSettings().vorgaenge || {};
+    // App-weit gewähltes Vikunja-Projekt; falls nicht gesetzt → Auswahl anbieten.
+    const globalProjekt = store.getSettings().vikunjaProjektId;
     let projSel = null;
-    if (!vgSettings.vikunjaProjektId) {
+    if (!globalProjekt) {
       projSel = el('select', { class: 'input' }, [el('option', { value: '' }, 'Vikunja-Projekt lädt…')]);
       GR.api.listTaskProjects().then(res => {
         projSel.innerHTML = '';
@@ -511,7 +511,7 @@
       class: 'btn-sm btn-primary', onClick: async () => {
         const titel = (titelI.value || '').trim();
         if (!titel) { status.textContent = 'Bitte einen Titel eingeben.'; return; }
-        const projectId = vgSettings.vikunjaProjektId || (projSel && projSel.value);
+        const projectId = globalProjekt || (projSel && projSel.value);
         if (!projectId) { status.textContent = 'Bitte ein Vikunja-Projekt wählen.'; return; }
         createBtn.disabled = true; status.textContent = 'Wird in Vikunja angelegt…';
         try {
@@ -521,11 +521,10 @@
           e.erledigt = !!t.done;
           e.faellig = t.dueDate ? String(t.dueDate).slice(0, 10) : (dueI.value || '');
           e.prioritaet = t.priority || (e.prioritaet || '');
-          // Erstmalig gewähltes Projekt als festes Projekt merken.
-          if (!vgSettings.vikunjaProjektId && projectId) {
+          // Erstmalig gewähltes Projekt app-weit als festes Projekt merken.
+          if (!globalProjekt && projectId) {
             const s = store.getSettings();
-            s.vorgaenge = s.vorgaenge || {};
-            s.vorgaenge.vikunjaProjektId = isNaN(Number(projectId)) ? projectId : Number(projectId);
+            s.vikunjaProjektId = isNaN(Number(projectId)) ? projectId : Number(projectId);
             store.saveSettings(s);
           }
           persist(); toast('ToDo in Vikunja angelegt'); refresh();

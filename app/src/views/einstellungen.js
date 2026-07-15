@@ -409,6 +409,23 @@
     ]));
     loadVkConfig();
 
+    // Synchronisiertes Projekt (app-weit: Aufgaben-Modul + Vorgangs-ToDos)
+    const syncProjSel = el('select', {}, [el('option', { value: '' }, 'Projekt lädt…')]);
+    GR.api.listTaskProjects().then(res => {
+      syncProjSel.innerHTML = '';
+      syncProjSel.appendChild(el('option', { value: '' }, '– kein Projekt –'));
+      (res.projects || []).forEach(p => syncProjSel.appendChild(el('option', { value: String(p.id), selected: String(settings.vikunjaProjektId || '') === String(p.id) }, p.title)));
+    }).catch(() => { syncProjSel.innerHTML = ''; syncProjSel.appendChild(el('option', { value: '' }, 'Projekte nicht ladbar (Zugang prüfen)')); });
+    syncProjSel.onchange = () => {
+      settings.vikunjaProjektId = syncProjSel.value ? (isNaN(Number(syncProjSel.value)) ? syncProjSel.value : Number(syncProjSel.value)) : null;
+      store.saveSettings(settings);
+    };
+    C.aufgaben.appendChild(el('div', { class: 'card' }, [
+      el('h3', {}, 'Synchronisiertes Projekt'),
+      el('p', { class: 'help' }, 'Nur die Aufgaben dieses Projekts werden in der Gemeindeverwaltung angezeigt; das Aufgaben-Modul und ToDos aus Vorgängen legen neue Aufgaben hier an. Gilt app-weit.'),
+      el('div', {}, [el('label', {}, 'Projekt'), syncProjSel]),
+    ]));
+
     // --- Vermietung: Preise & Absenderdaten ---
     const numInput = (obj, key, step = '0.01') => {
       const i = el('input', { type: 'number', step, value: obj[key] ?? 0 });
@@ -608,19 +625,9 @@
       ]),
     ]));
 
-    // --- Vorgänge & Projekte: Vikunja-Projekt, Kategorien, Leitungs-PIN ---
+    // --- Vorgänge & Projekte: Kategorien, Leitungs-PIN ---
+    // (Das Vikunja-Projekt wird app-weit unter „Aufgaben" gesetzt.)
     const vg = settings.vorgaenge || (settings.vorgaenge = { kategorien: [], vikunjaProjektId: null, leitungPinHash: '' });
-    const vgProjSel = el('select', {}, [el('option', { value: '' }, 'Vikunja-Projekt lädt…')]);
-    GR.api.listTaskProjects().then(res => {
-      vgProjSel.innerHTML = '';
-      vgProjSel.appendChild(el('option', { value: '' }, '– kein Projekt –'));
-      (res.projects || []).forEach(p => vgProjSel.appendChild(el('option', { value: String(p.id), selected: String(vg.vikunjaProjektId || '') === String(p.id) }, p.title)));
-    }).catch(() => { vgProjSel.innerHTML = ''; vgProjSel.appendChild(el('option', { value: '' }, 'Projekte nicht ladbar (Vikunja-Zugang prüfen)')); });
-    vgProjSel.onchange = () => {
-      vg.vikunjaProjektId = vgProjSel.value ? (isNaN(Number(vgProjSel.value)) ? vgProjSel.value : Number(vgProjSel.value)) : null;
-      store.saveSettings(settings);
-    };
-
     const vgKatInput = el('textarea', { style: 'width:100%;' }, (vg.kategorien || []).join('\n'));
     vgKatInput.oninput = e => { vg.kategorien = e.target.value.split('\n').map(s => s.trim()).filter(Boolean); };
     vgKatInput.onchange = () => store.saveSettings(settings);
@@ -638,9 +645,8 @@
 
     C.vorgaenge.appendChild(el('div', { class: 'card' }, [
       el('h3', {}, 'Vorgänge & Projekte'),
-      el('p', { class: 'help' }, 'Festes Vikunja-Projekt für ToDos aus Vorgängen, die Kategorienliste und der PIN für die Leitungs-Ansicht (vertrauliche Vorgänge/Einträge).'),
-      el('div', {}, [el('label', {}, 'Vikunja-Projekt für Vorgangs-ToDos'), vgProjSel]),
-      el('div', { style: 'margin-top:10px;' }, [el('label', {}, 'Kategorien (eine pro Zeile)'), vgKatInput]),
+      el('p', { class: 'help' }, 'Kategorienliste und der PIN für die Leitungs-Ansicht (vertrauliche Vorgänge/Einträge). Das Vikunja-Projekt für ToDos wird app-weit unter „Aufgaben" gesetzt.'),
+      el('div', {}, [el('label', {}, 'Kategorien (eine pro Zeile)'), vgKatInput]),
       el('div', { style: 'margin-top:10px;' }, [
         el('label', {}, 'Leitungs-PIN'),
         el('div', { class: 'toolbar', style: 'margin:4px 0 0;' }, [pinInput, pinSave, pinClear]),
