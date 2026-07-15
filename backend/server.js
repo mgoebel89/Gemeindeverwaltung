@@ -16,6 +16,7 @@ const createVermietungRouter = require('./routes/vermietung');
 const createAuslagenRouter = require('./routes/auslagen');
 const createScanRouter = require('./routes/scan');
 const createVertraegeRouter = require('./routes/vertraege');
+const createVorgaengeRouter = require('./routes/vorgaenge');
 
 const PORT = parseInt(process.env.PORT || '3000', 10);
 const HOST = process.env.HOST || '127.0.0.1';
@@ -60,6 +61,7 @@ app.use('/api/scan', createScanRouter(broadcast));
 
 // --- Modul: Verträge und Pacht ---
 app.use('/api', createVertraegeRouter(broadcast));
+app.use('/api', createVorgaengeRouter(broadcast));
 
 // --- Snapshot (Bootstrap) ---
 app.get('/api/snapshot', (_req, res) => {
@@ -78,6 +80,7 @@ app.get('/api/snapshot', (_req, res) => {
     belege: groupBelege(),
     vertragspartner: db.listVertragspartner(),
     vertraege: db.listVertraege(),
+    vorgaenge: db.listVorgaenge(),
     serverTime: new Date().toISOString(),
   });
 });

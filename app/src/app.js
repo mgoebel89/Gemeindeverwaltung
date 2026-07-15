@@ -1,6 +1,6 @@
 (function () {
   'use strict';
-  const { renderDashboard, renderSitzungen, renderDokumente, renderTermine, renderAufgaben, renderStammdaten, renderEinstellungen, renderVorbereitung, renderLive, renderVermietung, renderMieter, renderProtokolle, renderAuslagen, renderAuslagenStammdaten, renderVertraege, renderVertragspartner } = GR.views;
+  const { renderDashboard, renderSitzungen, renderDokumente, renderTermine, renderAufgaben, renderStammdaten, renderEinstellungen, renderVorbereitung, renderLive, renderVermietung, renderMieter, renderProtokolle, renderAuslagen, renderAuslagenStammdaten, renderVertraege, renderVertragspartner, renderVorgaenge } = GR.views;
 
   const mount = document.getElementById('app');
   const shell = document.getElementById('appShell');
@@ -10,6 +10,7 @@
   const NAV = [
     { items: [
       { path: '/', label: 'Übersicht', icon: 'home' },
+      { path: '/vorgaenge', label: 'Vorgänge & Projekte', icon: 'folder' },
       { path: '/termine', label: 'Termine', icon: 'calendar' },
       { path: '/aufgaben', label: 'Aufgaben', icon: 'check' },
     ] },
@@ -32,6 +33,7 @@
 
   const ICONS = {
     home: '<path d="M3 11l9-8 9 8"/><path d="M5 10v10h14V10"/>',
+    folder: '<path d="M3 7a2 2 0 012-2h4l2 2h8a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2z"/>',
     calendar: '<rect x="3" y="4" width="18" height="17" rx="2"/><path d="M3 9h18M8 2v4M16 2v4"/>',
     check: '<path d="M9 11l3 3 8-8"/><path d="M20 12v6a2 2 0 01-2 2H6a2 2 0 01-2-2V6a2 2 0 012-2h9"/>',
     gavel: '<path d="M14 4l6 6"/><path d="M4 20l7-7"/><path d="M9 8l4 4"/><path d="M15 14l4 4"/>',
@@ -109,6 +111,7 @@
     mount.innerHTML = '';
     setActiveNav(path);
     if (path === '/' || path === '') return renderDashboard(mount);
+    if (path === '/vorgaenge') return renderVorgaenge(mount, params);
     if (path === '/sitzungen') return renderSitzungen(mount);
     if (path === '/dokumente') return renderDokumente(mount, params);
     if (path === '/termine') return renderTermine(mount, params);

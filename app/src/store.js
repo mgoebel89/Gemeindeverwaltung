@@ -19,6 +19,7 @@
     belege: {},           // auslageId -> [{id, filename, ...}]
     vertragspartner: [],  // [{...}]
     vertraege: [],        // [{...}]
+    vorgaenge: [],        // [{...}] Modul Vorgänge & Projekte
     ready: false,
     backendAvailable: false,
   };
@@ -106,6 +107,17 @@
       vermietung: defaultVermietungSettings(),
       auslagen: defaultAuslagenSettings(),
       vertraege: defaultVertraegeSettings(),
+      vorgaenge: defaultVorgaengeSettings(),
+    };
+  }
+  // Modul-Einstellungen „Vorgänge & Projekte": Kategorienliste, festes Vikunja-
+  // Projekt für ToDos und der Hash des Leitungs-PIN (schaltet vertrauliche
+  // Inhalte frei; leer = kein PIN gesetzt, Leitungs-Ansicht frei wählbar).
+  function defaultVorgaengeSettings() {
+    return {
+      kategorien: ['Bauprojekt', 'Beschaffung', 'Veranstaltung', 'Personal', 'Förderung', 'Sonstiges'],
+      vikunjaProjektId: null,
+      leitungPinHash: '',
     };
   }
   function defaultNocoDbSettings() {
@@ -119,6 +131,7 @@
       tableEmpfaengerId: '', tableHaushaltsstellenId: '', tableAuslagenId: '',
       tableVertragspartnerName: 'Vertragspartner', tableVertraegeName: 'Vertraege',
       tableVertragspartnerId: '', tableVertraegeId: '',
+      tableVorgaengeName: 'Vorgaenge', tableVorgaengeId: '',
     };
   }
   // Absender-/Formulardaten für die Bargeldauslagen-PDFs (Defaults aus der Vorlage Hörschhausen).
@@ -172,6 +185,7 @@
       cache.belege = snap.belege || {};
       cache.vertragspartner = snap.vertragspartner || [];
       cache.vertraege = snap.vertraege || [];
+      cache.vorgaenge = snap.vorgaenge || [];
       cache.backendAvailable = true;
       cache.ready = true;
       mergeSettingsDefaults();
@@ -200,7 +214,8 @@
     const dn = defaultNocoDbSettings();
     for (const k of ['tableMieterName', 'tableRaeumeName', 'tableVermietungenName', 'tableMieterId', 'tableRaeumeId', 'tableVermietungenId',
       'tableEmpfaengerName', 'tableHaushaltsstellenName', 'tableAuslagenName', 'tableEmpfaengerId', 'tableHaushaltsstellenId', 'tableAuslagenId',
-      'tableVertragspartnerName', 'tableVertraegeName', 'tableVertragspartnerId', 'tableVertraegeId']) {
+      'tableVertragspartnerName', 'tableVertraegeName', 'tableVertragspartnerId', 'tableVertraegeId',
+      'tableVorgaengeName', 'tableVorgaengeId']) {
       if (cache.settings.nocodb[k] === undefined) cache.settings.nocodb[k] = dn[k];
     }
     if (!cache.settings.vermietung) cache.settings.vermietung = defaultVermietungSettings();
@@ -217,6 +232,11 @@
     else {
       const dvt = defaultVertraegeSettings();
       for (const k of Object.keys(dvt)) if (cache.settings.vertraege[k] === undefined) cache.settings.vertraege[k] = dvt[k];
+    }
+    if (!cache.settings.vorgaenge) cache.settings.vorgaenge = defaultVorgaengeSettings();
+    else {
+      const dvg = defaultVorgaengeSettings();
+      for (const k of Object.keys(dvg)) if (cache.settings.vorgaenge[k] === undefined) cache.settings.vorgaenge[k] = dvg[k];
     }
   }
 
@@ -313,6 +333,8 @@
       case 'vertragspartner:delete': { cache.vertragspartner = cache.vertragspartner.filter(x => x.id !== msg.id); notifyChange(); notifyRemote(); break; }
       case 'vertrag:save': { upsertInto(cache.vertraege, msg.vertrag); notifyChange(); notifyRemote(); break; }
       case 'vertrag:delete': { cache.vertraege = cache.vertraege.filter(x => x.id !== msg.id); notifyChange(); notifyRemote(); break; }
+      case 'vorgang:save': { upsertInto(cache.vorgaenge, msg.vorgang); notifyChange(); notifyRemote(); break; }
+      case 'vorgang:delete': { cache.vorgaenge = cache.vorgaenge.filter(x => x.id !== msg.id); notifyChange(); notifyRemote(); break; }
       case 'bulk:imported': {
         // Komplettes Re-Bootstrap, damit alle Daten konsistent kommen
         bootstrap();
@@ -577,6 +599,21 @@
       notifyChange();
     },
 
+    // --- Vorgänge & Projekte ---
+    listVorgaenge() { return cache.vorgaenge.slice(); },
+    getVorgang(id) { return cache.vorgaenge.find(v => v.id === id) || null; },
+    saveVorgang(v) {
+      v.lastModifiedAt = nowIso();
+      upsertInto(cache.vorgaenge, v);
+      GR.api.putVorgang(v).catch(e => { console.warn('saveVorgang Backend-Fehler', e); if (GR.ui && GR.ui.toast) GR.ui.toast('Backend-Fehler: ' + e.message, 4000); });
+      notifyChange();
+    },
+    deleteVorgang(id) {
+      cache.vorgaenge = cache.vorgaenge.filter(v => v.id !== id);
+      GR.api.deleteVorgangRemote(id).catch(e => console.warn('deleteVorgang Backend-Fehler', e));
+      notifyChange();
+    },
+
     // --- Sync-Queue (NocoDB-Backup; bleibt im localStorage als Browser-eigener Cache) ---
     listQueue() { try { return JSON.parse(localStorage.getItem('gr.syncQueue') || '[]'); } catch (_) { return []; } },
     enqueueSync(sitzungId, lastError) {
@@ -601,7 +638,7 @@
       let s;
       try { s = JSON.parse(localStorage.getItem('gr.syncState') || '{}'); }
       catch (_) { s = {}; }
-      for (const k of ['sitzungen', 'mitglieder', 'mieter', 'raeume', 'vermietungen', 'empfaenger', 'haushaltsstellen', 'auslagen', 'vertragspartner', 'vertraege']) {
+      for (const k of ['sitzungen', 'mitglieder', 'mieter', 'raeume', 'vermietungen', 'empfaenger', 'haushaltsstellen', 'auslagen', 'vertragspartner', 'vertraege', 'vorgaenge']) {
         if (!s[k] || typeof s[k] !== 'object') s[k] = {};
       }
       return s;

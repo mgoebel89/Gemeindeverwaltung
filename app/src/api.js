@@ -122,6 +122,10 @@
   async function putVertrag(v) { return jsonFetch(`/api/vertraege/${encodeURIComponent(v.id)}`, { method: 'PUT', body: v }); }
   async function deleteVertragRemote(id) { return jsonFetch(`/api/vertraege/${encodeURIComponent(id)}`, { method: 'DELETE' }); }
 
+  // --- Modul: Vorgänge & Projekte ---
+  async function putVorgang(v) { return jsonFetch(`/api/vorgaenge/${encodeURIComponent(v.id)}`, { method: 'PUT', body: v }); }
+  async function deleteVorgangRemote(id) { return jsonFetch(`/api/vorgaenge/${encodeURIComponent(id)}`, { method: 'DELETE' }); }
+
   // --- Modul: Dokumente (Paperless-Proxy im Backend) ---
   function docQuery(params = {}) {
     const usp = new URLSearchParams();
@@ -246,6 +250,7 @@
     listScanners, scanHealth, scan,
     putVertragspartner, deleteVertragspartnerRemote,
     putVertrag, deleteVertragRemote,
+    putVorgang, deleteVorgangRemote,
     connectWs, subscribe,
     clientId: CLIENT_ID,
   };

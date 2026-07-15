@@ -388,6 +388,52 @@
     return daysBetween(heute, termin);
   }
 
+  // ===== Modul Vorgänge & Projekte =====
+  const VORGANG_STATUS = ['geplant', 'bearbeitung', 'pausiert', 'beendet'];
+  const VORGANG_STATUS_LABEL = {
+    geplant: 'Geplant', bearbeitung: 'In Bearbeitung',
+    pausiert: 'Pausiert', beendet: 'Beendet',
+  };
+  // Typen der getippten Vorgangshistorie (Zeitleiste).
+  const HISTORIE_TYPEN = ['notiz', 'todo', 'dokument', 'referenz', 'kosten'];
+  const HISTORIE_TYP_LABEL = {
+    notiz: 'Notiz', todo: 'ToDo', dokument: 'Dokument',
+    referenz: 'Referenz', kosten: 'Kosten',
+  };
+
+  function emptyVorgang() {
+    const today = new Date().toISOString().slice(0, 10);
+    return {
+      id: uuid(),
+      titel: '',
+      beschreibung: '',
+      kategorie: '',
+      status: 'geplant',            // 'geplant' | 'bearbeitung' | 'pausiert' | 'beendet'
+      vertraulich: false,           // ganzer Vorgang nur für die Leitung sichtbar
+      haushaltsstelleId: '',        // laufender Budget-Topf (bestehende Haushaltsstelle)
+      haushaltsjahr: new Date().getFullYear(),
+      planung: { betrag: null, zieljahr: '' }, // geplanter Bedarf für künftigen Haushalt
+      historie: [],                 // [ …getippte Einträge… ]
+      paperlessDocs: [],            // [{ id, title }] – vorgangsweite Dokumente
+      erstelltAm: today,
+      schemaVersion: 1,
+    };
+  }
+
+  // Ein getippter Historieneintrag. Typ-spezifische Felder werden je nach `typ`
+  // beim Anlegen ergänzt (siehe Modul Phase 2/3).
+  function emptyHistorieEintrag(typ) {
+    const today = new Date().toISOString().slice(0, 10);
+    return { id: uuid(), datum: today, typ: typ || 'notiz', vertraulich: false };
+  }
+
+  // Ist-Verbrauch eines Vorgangs = Summe aller Kosten-Historieneinträge.
+  function vorgangKosten(v) {
+    return (v && v.historie || [])
+      .filter(e => e.typ === 'kosten')
+      .reduce((s, e) => s + (Number(e.betrag) || 0), 0);
+  }
+
   GR.models = {
     SCHEMA_VERSION, uuid,
     emptyAbstimmung, emptyTop, emptySitzung,
@@ -402,5 +448,7 @@
     INTERVALL_LABEL, RICHTUNG_LABEL,
     emptyVertragspartner, emptyVertrag,
     jahresbetrag, addMonths, dateToIso, spaetesterKuendigungstermin, fristStatus, tageBisKuendigung,
+    VORGANG_STATUS, VORGANG_STATUS_LABEL, HISTORIE_TYPEN, HISTORIE_TYP_LABEL,
+    emptyVorgang, emptyHistorieEintrag, vorgangKosten,
   };
 })();

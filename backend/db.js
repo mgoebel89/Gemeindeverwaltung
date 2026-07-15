@@ -109,6 +109,14 @@ db.exec(`
     last_modified TEXT NOT NULL
   );
   CREATE INDEX IF NOT EXISTS idx_vertraege_modified ON vertraege(last_modified);
+
+  -- Modul Vorgänge & Projekte (Vorgangsverfolgung mit getippter Historie)
+  CREATE TABLE IF NOT EXISTS vorgaenge (
+    id           TEXT PRIMARY KEY,
+    payload      TEXT NOT NULL,
+    last_modified TEXT NOT NULL
+  );
+  CREATE INDEX IF NOT EXISTS idx_vorgaenge_modified ON vorgaenge(last_modified);
 `);
 
 const BELEG_DIR = path.join(ATTACH_DIR, 'auslagen');
@@ -367,6 +375,13 @@ const getVertrag = (id) => vertraegeStore.get(id);
 const saveVertrag = (v) => vertraegeStore.save(v);
 const deleteVertrag = (id) => vertraegeStore.delete(id);
 
+// --- Modul Vorgänge & Projekte ---
+const vorgaengeStore = makePayloadStore('vorgaenge');
+const listVorgaenge = () => vorgaengeStore.list();
+const getVorgang = (id) => vorgaengeStore.get(id);
+const saveVorgang = (v) => vorgaengeStore.save(v);
+const deleteVorgang = (id) => vorgaengeStore.delete(id);
+
 // Beim ersten Start die beiden Standard-Objekte anlegen (Preise aus den Vorlagen).
 function seedRaeume() {
   if (raeumeStore.list().length > 0) return;
@@ -448,4 +463,5 @@ module.exports = {
   insertBelegFile, deleteBelegFile,
   listVertragspartner, getVertragspartner, saveVertragspartner, deleteVertragspartner,
   listVertraege, getVertrag, saveVertrag, deleteVertrag,
+  listVorgaenge, getVorgang, saveVorgang, deleteVorgang,
 };
