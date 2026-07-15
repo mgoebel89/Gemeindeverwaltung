@@ -282,47 +282,88 @@
     mount.appendChild(buildHistorie(v, persist, refresh));
   }
 
-  // =================== Budget / Kostenstelle ===================
+  // =================== Budget / Kostenstellen ===================
   function buildBudget(v, persist, refresh) {
+    if (!Array.isArray(v.haushaltsstellen)) v.haushaltsstellen = [];
     const card = el('div', { class: 'card' });
-    card.appendChild(el('h3', {}, 'Budget / Kostenstelle'));
+    card.appendChild(el('h3', {}, 'Budget / Kostenstellen'));
 
-    const hhstellen = store.listHaushaltsstellen();
-    const hhSel = el('select', {
-      class: 'input', onChange: (ev) => { v.haushaltsstelleId = ev.target.value; persist(); refresh(); },
-    }, [
-      el('option', { value: '' }, '– keine Haushaltsstelle –'),
-      ...hhstellen.map(h => el('option', { value: h.id, selected: v.haushaltsstelleId === h.id }, (h.nummer ? h.nummer + ' · ' : '') + (h.bezeichnung || '(ohne)'))),
-    ]);
     const jahrI = el('input', {
       class: 'input', type: 'number', step: '1', value: v.haushaltsjahr || new Date().getFullYear(),
       onChange: (ev) => { v.haushaltsjahr = ev.target.value === '' ? '' : Number(ev.target.value); persist(); refresh(); },
     });
-
     card.appendChild(el('div', { class: 'vg-form-row' }, [
-      el('div', { class: 'vg-field vg-field-grow' }, [el('label', { class: 'vg-label' }, 'Haushaltsstelle'), hhSel]),
-      el('div', { class: 'vg-field' }, [el('label', { class: 'vg-label' }, 'Haushaltsjahr'), jahrI]),
+      el('div', { class: 'vg-field' }, [el('label', { class: 'vg-label' }, 'Haushaltsjahr (fürs ganze Projekt)'), jahrI]),
     ]));
 
-    // Kennzahlen
+    // --- Zugewiesene Kostenstellen (Liste; Eintrag wählt daraus) ---
+    card.appendChild(el('div', { class: 'vg-label', style: 'margin-top:6px;' }, 'Zugewiesene Kostenstellen'));
+    const chips = el('div', { class: 'vg-stellen-chips' });
+    if (v.haushaltsstellen.length === 0) {
+      chips.appendChild(el('span', { class: 'help' }, 'Noch keine Kostenstelle zugewiesen.'));
+    }
+    for (const id of v.haushaltsstellen) {
+      const h = store.getHaushaltsstelle(id);
+      const benutzt = M.vorgangKostenAuf(v, id) > 0;
+      const rm = el('button', {
+        class: 'vg-chip-x', title: benutzt ? 'Wird von Kosteneinträgen genutzt – erst dort entfernen' : 'Entfernen',
+        disabled: benutzt,
+        onClick: () => { v.haushaltsstellen = v.haushaltsstellen.filter(x => x !== id); persist(); refresh(); },
+      }, '✕');
+      chips.appendChild(el('span', { class: 'vg-stelle-chip' }, [
+        el('span', {}, h ? ((h.nummer ? h.nummer + ' · ' : '') + (h.bezeichnung || '(ohne)')) : '(unbekannte Stelle)'),
+        rm,
+      ]));
+    }
+    card.appendChild(chips);
+
+    // Hinzufügen-Auswahl (nur noch nicht zugewiesene Stellen)
+    const frei = store.listHaushaltsstellen().filter(h => !v.haushaltsstellen.includes(h.id));
+    const addSel = el('select', { class: 'input', onChange: (ev) => {
+      if (!ev.target.value) return;
+      if (!v.haushaltsstellen.includes(ev.target.value)) v.haushaltsstellen.push(ev.target.value);
+      persist(); refresh();
+    } }, [
+      el('option', { value: '' }, frei.length ? '+ Kostenstelle zuweisen…' : '(keine weiteren Stellen – in Bargeldauslagen anlegen)'),
+      ...frei.map(h => el('option', { value: h.id }, (h.nummer ? h.nummer + ' · ' : '') + (h.bezeichnung || '(ohne)'))),
+    ]);
+    card.appendChild(el('div', { class: 'vg-field', style: 'margin-top:8px; max-width:360px;' }, [addSel]));
+
+    // --- Kennzahlen ---
     const eigen = M.vorgangKosten(v);
-    if (v.haushaltsstelleId) {
-      const h = store.getHaushaltsstelle(v.haushaltsstelleId);
-      const budget = h && h.budget != null ? Number(h.budget) : null;
-      const ausl = M.budgetVerbrauch(store.listAuslagen(), v.haushaltsstelleId, v.haushaltsjahr);
-      const vorg = M.vorgaengeVerbrauch(store.listVorgaenge(), v.haushaltsstelleId, v.haushaltsjahr);
-      const gesamt = ausl + vorg;
-      const rest = budget != null ? budget - gesamt : null;
-      const restCls = rest != null && rest < 0 ? 'vg-kpi-neg' : 'vg-kpi-pos';
-      card.appendChild(el('div', { class: 'vg-kpis' }, [
-        kpi('Dieser Vorgang', eur(eigen)),
-        kpi('Verbrauch gesamt (' + (v.haushaltsjahr || '—') + ')', eur(gesamt), 'davon Auslagen ' + eur(ausl) + ' · Vorgänge ' + eur(vorg)),
-        kpi('Budget', budget != null ? eur(budget) : '—'),
-        kpi('Restmittel', rest != null ? eur(rest) : '—', null, restCls),
+    card.appendChild(el('div', { class: 'vg-kpis', style: 'margin-top:14px;' }, [
+      kpi('Kosten dieses Vorgangs', eur(eigen), v.haushaltsstellen.length > 1 ? 'über ' + v.haushaltsstellen.length + ' Kostenstellen' : null),
+    ]));
+
+    if (v.haushaltsstellen.length > 0) {
+      const rows = v.haushaltsstellen.map(id => {
+        const h = store.getHaushaltsstelle(id);
+        const budget = h && h.budget != null ? Number(h.budget) : null;
+        const eigenAuf = M.vorgangKostenAuf(v, id);
+        const ausl = M.budgetVerbrauch(store.listAuslagen(), id, v.haushaltsjahr);
+        const vorg = M.vorgaengeVerbrauch(store.listVorgaenge(), id, v.haushaltsjahr);
+        const gesamt = ausl + vorg;
+        const rest = budget != null ? budget - gesamt : null;
+        return el('tr', { class: rest != null && rest < 0 ? 'vg-row-neg' : '' }, [
+          el('td', {}, h ? ((h.nummer ? h.nummer + ' · ' : '') + (h.bezeichnung || '(ohne)')) : '(unbekannt)'),
+          el('td', { style: 'text-align:right;' }, eur(eigenAuf)),
+          el('td', { style: 'text-align:right;' }, budget != null ? eur(budget) : '—'),
+          el('td', { style: 'text-align:right;', title: 'Auslagen ' + eur(ausl) + ' · Vorgänge ' + eur(vorg) }, eur(gesamt)),
+          el('td', { style: 'text-align:right; font-weight:600;' }, rest != null ? eur(rest) : '—'),
+        ]);
+      });
+      card.appendChild(el('table', { class: 'vg-budget-table' }, [
+        el('thead', {}, el('tr', {}, [
+          el('th', {}, 'Kostenstelle'),
+          el('th', { style: 'text-align:right;' }, 'Dieser Vorgang'),
+          el('th', { style: 'text-align:right;' }, 'Budget'),
+          el('th', { style: 'text-align:right;' }, 'Verbrauch ' + (v.haushaltsjahr || '')),
+          el('th', { style: 'text-align:right;' }, 'Restmittel'),
+        ])),
+        el('tbody', {}, rows),
       ]));
     } else {
-      card.appendChild(el('div', { class: 'vg-kpis' }, [kpi('Kosten dieses Vorgangs', eur(eigen))]));
-      card.appendChild(el('p', { class: 'help' }, 'Ordne eine Haushaltsstelle zu, um Restmittel im Blick zu behalten. Kosten erfasst du unten in der Historie als „€ Kosten".'));
+      card.appendChild(el('p', { class: 'help' }, 'Weise eine oder mehrere Kostenstellen zu, um Restmittel im Blick zu behalten. Kosten erfasst du unten in der Historie als „€ Kosten" und buchst sie je Anschaffung auf eine der Stellen.'));
     }
 
     // Planung für künftigen Haushalt
@@ -372,7 +413,7 @@
       el('span', { class: 'vg-addbar-label' }, 'Eintrag hinzufügen:'),
       el('button', { class: 'btn-sm', onClick: () => addEntry('notiz', { textMd: '' }) }, '📝 Notiz'),
       el('button', { class: 'btn-sm', onClick: () => addEntry('todo', { titel: '', faellig: '', prioritaet: '', vikunjaTaskId: null, erledigt: false }) }, '☑ ToDo'),
-      el('button', { class: 'btn-sm', onClick: () => addEntry('kosten', { betrag: 0, beschreibung: '', haendler: '', belegdatum: '', paperlessDocs: [] }) }, '€ Kosten'),
+      el('button', { class: 'btn-sm', onClick: () => addEntry('kosten', { betrag: 0, beschreibung: '', haendler: '', belegdatum: '', haushaltsstelleId: (v.haushaltsstellen && v.haushaltsstellen.length === 1 ? v.haushaltsstellen[0] : ''), paperlessDocs: [] }) }, '€ Kosten'),
       el('button', { class: 'btn-sm', onClick: () => addEntry('referenz', { refVorgangId: '', notiz: '' }) }, '↪ Referenz'),
       el('button', { class: 'btn-sm', onClick: () => addEntry('dokument', { titel: '', paperlessDocs: [] }) }, '📄 Dokument'),
     ]));
@@ -429,7 +470,7 @@
   function histBody(v, e, persist, refresh) {
     if (e.typ === 'notiz') return notizBody(e, persist, refresh);
     if (e.typ === 'todo') return todoBody(v, e, persist, refresh);
-    if (e.typ === 'kosten') return kostenBody(v, e, persist);
+    if (e.typ === 'kosten') return kostenBody(v, e, persist, refresh);
     if (e.typ === 'referenz') return referenzBody(v, e, persist);
     if (e.typ === 'dokument') return dokumentBody(v, e, persist);
     return el('div', { class: 'help' }, '(unbekannter Typ)');
@@ -557,17 +598,34 @@
     return parts.join(' · ');
   }
 
-  // --- Kosten (Rechnung/Quittung, verrechnet mit der Haushaltsstelle) ---
-  function kostenBody(v, e, persist) {
+  // --- Kosten (Rechnung/Quittung, verrechnet mit einer Haushaltsstelle) ---
+  function kostenBody(v, e, persist, refresh) {
     const box = el('div', { class: 'vg-hist-body' });
     if (!Array.isArray(e.paperlessDocs)) e.paperlessDocs = [];
     const betragI = el('input', { class: 'input', type: 'number', step: '0.01', min: '0', value: e.betrag != null ? e.betrag : 0, onChange: (ev) => { e.betrag = ev.target.value === '' ? 0 : Number(ev.target.value); persist(); } });
     const beschrI = el('input', { class: 'input', type: 'text', placeholder: 'Beschreibung', value: e.beschreibung || '', onChange: (ev) => { e.beschreibung = ev.target.value; persist(); } });
     const haendlerI = el('input', { class: 'input', type: 'text', placeholder: 'Händler/Empfänger', value: e.haendler || '', onChange: (ev) => { e.haendler = ev.target.value; persist(); } });
     const belegI = el('input', { class: 'input', type: 'date', value: e.belegdatum || '', onChange: (ev) => { e.belegdatum = ev.target.value; persist(); } });
+
+    // Kostenstelle: Auswahl aus den dem Projekt zugewiesenen Haushaltsstellen.
+    const zugewiesen = (v.haushaltsstellen || []);
+    let stelleField;
+    if (zugewiesen.length === 0) {
+      stelleField = el('div', { class: 'help' }, 'Keine Kostenstelle zugewiesen – oben unter „Budget / Kostenstelle" zuweisen.');
+    } else {
+      const stelleSel = el('select', {
+        class: 'input', onChange: (ev) => { e.haushaltsstelleId = ev.target.value; persist(); refresh(); },
+      }, [
+        el('option', { value: '' }, '– Kostenstelle wählen –'),
+        ...zugewiesen.map(id => { const h = store.getHaushaltsstelle(id); return el('option', { value: id, selected: e.haushaltsstelleId === id }, h ? ((h.nummer ? h.nummer + ' · ' : '') + (h.bezeichnung || '(ohne)')) : '(unbekannt)'); }),
+      ]);
+      stelleField = el('div', { class: 'vg-field' }, [el('label', { class: 'vg-label' }, 'Kostenstelle'), stelleSel]);
+    }
+
     box.appendChild(el('div', { class: 'vg-kosten-form' }, [
       el('div', { class: 'vg-field' }, [el('label', { class: 'vg-label' }, 'Betrag (€)'), betragI]),
       el('div', { class: 'vg-field' }, [el('label', { class: 'vg-label' }, 'Belegdatum'), belegI]),
+      stelleField,
       el('div', { class: 'vg-field vg-field-grow' }, [el('label', { class: 'vg-label' }, 'Beschreibung'), beschrI]),
       el('div', { class: 'vg-field vg-field-grow' }, [el('label', { class: 'vg-label' }, 'Händler/Empfänger'), haendlerI]),
     ]));

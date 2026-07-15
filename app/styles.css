@@ -843,3 +843,22 @@ tr:hover td { background: #fafbfc; }
 .vg-plan-table tfoot td { border-bottom: none; border-top: 2px solid var(--border); }
 .vg-plan-total { display: flex; justify-content: space-between; align-items: center; font-weight: 600; }
 .vg-plan-total-val { font-size: 1.2rem; color: var(--primary); }
+
+/* ===== Vorgänge: mehrere Kostenstellen ===== */
+.vg-stellen-chips { display: flex; flex-wrap: wrap; gap: 8px; margin: 6px 0; }
+.vg-stelle-chip {
+  display: inline-flex; align-items: center; gap: 6px; padding: 4px 6px 4px 10px;
+  background: #eef2f7; border: 1px solid var(--border); border-radius: 999px; font-size: 0.86rem;
+}
+.vg-chip-x {
+  border: none; background: none; cursor: pointer; color: var(--muted); font-size: 0.9rem;
+  line-height: 1; padding: 2px 4px; border-radius: 50%;
+}
+.vg-chip-x:hover:not(:disabled) { background: #fdecea; color: var(--danger); }
+.vg-chip-x:disabled { opacity: 0.35; cursor: not-allowed; }
+
+.vg-budget-table { width: 100%; border-collapse: collapse; margin-top: 12px; }
+.vg-budget-table th { font-size: 0.76rem; color: var(--muted); font-weight: 600; }
+.vg-budget-table td, .vg-budget-table th { padding: 6px 8px; border-bottom: 1px solid var(--border); }
+.vg-budget-table tbody tr:last-child td { border-bottom: none; }
+.vg-budget-table .vg-row-neg td { color: var(--danger); }

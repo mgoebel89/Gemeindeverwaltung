@@ -19,6 +19,7 @@
     ]));
 
     const grid = el('div', { class: 'dash-grid' });
+    grid.appendChild(cardVorgaenge());
     grid.appendChild(cardVermietungen(heute));
     grid.appendChild(cardFristen(heute));
     grid.appendChild(cardTermine());
@@ -39,6 +40,31 @@
   }
 
   function emptyLine(text) { return el('p', { class: 'help', style: 'margin:0;' }, text); }
+
+  // --- Laufende Vorgänge & Projekte (rollengefiltert) ---
+  function cardVorgaenge() {
+    const alle = GR.roles ? GR.roles.filterVorgaenge(store.listVorgaenge()) : store.listVorgaenge();
+    const aktive = alle
+      .filter(v => v.status !== 'beendet')
+      .sort((a, b) => String(b.lastModifiedAt || '').localeCompare(String(a.lastModifiedAt || '')))
+      .slice(0, 6);
+    let body;
+    if (!aktive.length) {
+      body = [emptyLine('Keine laufenden Vorgänge.')];
+    } else {
+      body = [el('ul', { class: 'dash-list' }, aktive.map(v => {
+        const st = models.VORGANG_STATUS_LABEL[v.status] || v.status;
+        return el('li', {}, [
+          el('span', { class: 'dash-date' }, st),
+          el('span', { class: 'dash-main' }, [
+            el('a', { href: '#/vorgaenge?id=' + encodeURIComponent(v.id) }, v.titel || '(ohne Titel)'),
+            v.vertraulich ? el('span', { class: 'help', style: 'margin:0;' }, ' 🔒') : null,
+          ]),
+        ]);
+      }))];
+    }
+    return dashCard('Laufende Vorgänge', '📁', body, el('a', { href: '#/vorgaenge' }, 'Zum Modul →'));
+  }
 
   // --- Anstehende Saalvermietungen ---
   function cardVermietungen(heute) {

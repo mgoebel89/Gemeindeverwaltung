@@ -552,6 +552,33 @@
     return { vertraege: 1 };
   }
 
+  // --- Modul Vorgänge & Projekte ---
+  function buildVorgangRow(v) {
+    const stellen = (v.haushaltsstellen || []).map(id => {
+      const h = store.getHaushaltsstelle(id);
+      return h ? ((h.nummer ? h.nummer + ' ' : '') + (h.bezeichnung || '')).trim() : id;
+    }).filter(Boolean).join('; ');
+    return {
+      VorgangId: v.id,
+      Titel: v.titel || '',
+      Status: GR.models.VORGANG_STATUS_LABEL[v.status] || v.status || '',
+      Kategorie: v.kategorie || '',
+      Vertraulich: v.vertraulich ? 'ja' : 'nein',
+      Haushaltsjahr: v.haushaltsjahr || '',
+      Kostenstellen: stellen,
+      KostenIst: GR.models.vorgangKosten(v),
+      PlanBetrag: (v.planung && v.planung.betrag != null) ? Number(v.planung.betrag) : 0,
+      PlanZieljahr: (v.planung && v.planung.zieljahr) || '',
+      AnzahlHistorie: (v.historie || []).length,
+      LastModifiedAt: v.lastModifiedAt || '',
+      Payload: JSON.stringify(v),
+    };
+  }
+  async function syncVorgang(v) {
+    await upsertRecord(await ensureTableId('tableVorgaengeId', 'Vorgaenge'), 'VorgangId', buildVorgangRow(v));
+    return { vorgaenge: 1 };
+  }
+
   async function syncQueue() {
     const queue = store.listQueue();
     let ok = 0, fail = 0;
@@ -650,6 +677,7 @@
     syncAuslage,
     syncVertragspartner,
     syncVertrag,
+    syncVorgang,
     syncQueue,
     restoreFromNocoDb,
     isConfigured,

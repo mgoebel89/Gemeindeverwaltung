@@ -410,7 +410,7 @@
       kategorie: '',
       status: 'geplant',            // 'geplant' | 'bearbeitung' | 'pausiert' | 'beendet'
       vertraulich: false,           // ganzer Vorgang nur für die Leitung sichtbar
-      haushaltsstelleId: '',        // laufender Budget-Topf (bestehende Haushaltsstelle)
+      haushaltsstellen: [],         // [hhId, …] – dem Projekt zugewiesene Kostenstellen
       haushaltsjahr: new Date().getFullYear(),
       planung: { betrag: null, zieljahr: '' }, // geplanter Bedarf für künftigen Haushalt
       historie: [],                 // [ …getippte Einträge… ]
@@ -434,12 +434,23 @@
       .reduce((s, e) => s + (Number(e.betrag) || 0), 0);
   }
 
-  // Budgetverbrauch aus Vorgängen für eine Haushaltsstelle in einem Jahr
-  // (analog budgetVerbrauch für Auslagen – Store-unabhängig).
+  // Ist-Verbrauch eines Vorgangs, der auf EINE Haushaltsstelle gebucht ist.
+  function vorgangKostenAuf(v, haushaltsstelleId) {
+    return (v && v.historie || [])
+      .filter(e => e.typ === 'kosten' && e.haushaltsstelleId === haushaltsstelleId)
+      .reduce((s, e) => s + (Number(e.betrag) || 0), 0);
+  }
+
+  // Budgetverbrauch aus Vorgängen für eine Haushaltsstelle in einem Jahr.
+  // Kosten sind je Eintrag einer Stelle zugeordnet; das Haushaltsjahr gilt fürs
+  // ganze Projekt. Store-unabhängig gehalten (analog budgetVerbrauch für Auslagen).
   function vorgaengeVerbrauch(vorgaenge, haushaltsstelleId, jahr) {
-    return (vorgaenge || [])
-      .filter(v => v.haushaltsstelleId === haushaltsstelleId && String(v.haushaltsjahr) === String(jahr))
-      .reduce((s, v) => s + vorgangKosten(v), 0);
+    let sum = 0;
+    for (const v of (vorgaenge || [])) {
+      if (String(v.haushaltsjahr) !== String(jahr)) continue;
+      sum += vorgangKostenAuf(v, haushaltsstelleId);
+    }
+    return sum;
   }
 
   GR.models = {
@@ -457,6 +468,6 @@
     emptyVertragspartner, emptyVertrag,
     jahresbetrag, addMonths, dateToIso, spaetesterKuendigungstermin, fristStatus, tageBisKuendigung,
     VORGANG_STATUS, VORGANG_STATUS_LABEL, HISTORIE_TYPEN, HISTORIE_TYP_LABEL,
-    emptyVorgang, emptyHistorieEintrag, vorgangKosten, vorgaengeVerbrauch,
+    emptyVorgang, emptyHistorieEintrag, vorgangKosten, vorgangKostenAuf, vorgaengeVerbrauch,
   };
 })();

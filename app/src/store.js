@@ -98,6 +98,24 @@
     return r;
   }
 
+  // Vorgänge: Einzel-Kostenstelle → Liste; Kosten-Einträge erben die alte Stelle.
+  // In-memory beim Laden/Speichern (persistiert beim nächsten Save des Vorgangs).
+  function migrateVorgang(v) {
+    if (!v) return v;
+    if (!Array.isArray(v.haushaltsstellen)) {
+      v.haushaltsstellen = v.haushaltsstelleId ? [v.haushaltsstelleId] : [];
+    }
+    if (Array.isArray(v.historie)) {
+      for (const e of v.historie) {
+        if (e && e.typ === 'kosten' && e.haushaltsstelleId === undefined) {
+          e.haushaltsstelleId = v.haushaltsstelleId || (v.haushaltsstellen[0] || '');
+        }
+      }
+    }
+    if ('haushaltsstelleId' in v) delete v.haushaltsstelleId;
+    return v;
+  }
+
   function defaultSettings() {
     return {
       ortsname: 'Hörschhausen',
@@ -185,7 +203,7 @@
       cache.belege = snap.belege || {};
       cache.vertragspartner = snap.vertragspartner || [];
       cache.vertraege = snap.vertraege || [];
-      cache.vorgaenge = snap.vorgaenge || [];
+      cache.vorgaenge = (snap.vorgaenge || []).map(migrateVorgang);
       cache.backendAvailable = true;
       cache.ready = true;
       mergeSettingsDefaults();
@@ -333,7 +351,7 @@
       case 'vertragspartner:delete': { cache.vertragspartner = cache.vertragspartner.filter(x => x.id !== msg.id); notifyChange(); notifyRemote(); break; }
       case 'vertrag:save': { upsertInto(cache.vertraege, msg.vertrag); notifyChange(); notifyRemote(); break; }
       case 'vertrag:delete': { cache.vertraege = cache.vertraege.filter(x => x.id !== msg.id); notifyChange(); notifyRemote(); break; }
-      case 'vorgang:save': { upsertInto(cache.vorgaenge, msg.vorgang); notifyChange(); notifyRemote(); break; }
+      case 'vorgang:save': { upsertInto(cache.vorgaenge, migrateVorgang(msg.vorgang)); notifyChange(); notifyRemote(); break; }
       case 'vorgang:delete': { cache.vorgaenge = cache.vorgaenge.filter(x => x.id !== msg.id); notifyChange(); notifyRemote(); break; }
       case 'bulk:imported': {
         // Komplettes Re-Bootstrap, damit alle Daten konsistent kommen
@@ -604,6 +622,7 @@
     getVorgang(id) { return cache.vorgaenge.find(v => v.id === id) || null; },
     saveVorgang(v) {
       v.lastModifiedAt = nowIso();
+      migrateVorgang(v);
       upsertInto(cache.vorgaenge, v);
       GR.api.putVorgang(v).catch(e => { console.warn('saveVorgang Backend-Fehler', e); if (GR.ui && GR.ui.toast) GR.ui.toast('Backend-Fehler: ' + e.message, 4000); });
       notifyChange();
