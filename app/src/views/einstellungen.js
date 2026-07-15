@@ -82,7 +82,7 @@
     // Einstellungen nach Kategorien gegliedert – je Bereich ein eigener Container.
     const C = {
       allgemein: el('div'), darstellung: el('div'), dokumente: el('div'), kalender: el('div'), aufgaben: el('div'),
-      vermietung: el('div'), vertraege: el('div'), auslagen: el('div'), daten: el('div'),
+      vorgaenge: el('div'), vermietung: el('div'), vertraege: el('div'), auslagen: el('div'), daten: el('div'),
     };
 
     C.allgemein.appendChild(el('div', { class: 'card' }, [
@@ -608,6 +608,46 @@
       ]),
     ]));
 
+    // --- Vorgänge & Projekte: Vikunja-Projekt, Kategorien, Leitungs-PIN ---
+    const vg = settings.vorgaenge || (settings.vorgaenge = { kategorien: [], vikunjaProjektId: null, leitungPinHash: '' });
+    const vgProjSel = el('select', {}, [el('option', { value: '' }, 'Vikunja-Projekt lädt…')]);
+    GR.api.listTaskProjects().then(res => {
+      vgProjSel.innerHTML = '';
+      vgProjSel.appendChild(el('option', { value: '' }, '– kein Projekt –'));
+      (res.projects || []).forEach(p => vgProjSel.appendChild(el('option', { value: String(p.id), selected: String(vg.vikunjaProjektId || '') === String(p.id) }, p.title)));
+    }).catch(() => { vgProjSel.innerHTML = ''; vgProjSel.appendChild(el('option', { value: '' }, 'Projekte nicht ladbar (Vikunja-Zugang prüfen)')); });
+    vgProjSel.onchange = () => {
+      vg.vikunjaProjektId = vgProjSel.value ? (isNaN(Number(vgProjSel.value)) ? vgProjSel.value : Number(vgProjSel.value)) : null;
+      store.saveSettings(settings);
+    };
+
+    const vgKatInput = el('textarea', { style: 'width:100%;' }, (vg.kategorien || []).join('\n'));
+    vgKatInput.oninput = e => { vg.kategorien = e.target.value.split('\n').map(s => s.trim()).filter(Boolean); };
+    vgKatInput.onchange = () => store.saveSettings(settings);
+
+    const pinInput = el('input', { type: 'password', autocomplete: 'new-password', placeholder: GR.roles.hasPin() ? '•••• (gesetzt) – neuen PIN eingeben zum Ändern' : 'PIN festlegen' });
+    const pinStatus = el('span', { class: 'help' }, GR.roles.hasPin() ? 'PIN ist gesetzt.' : 'Kein PIN – die Leitungs-Ansicht ist frei wählbar.');
+    const pinSave = el('button', { class: 'btn-primary', onClick: async () => {
+      if (!pinInput.value) { toast('Bitte einen PIN eingeben.'); return; }
+      await GR.roles.setPin(pinInput.value); pinInput.value = '';
+      pinStatus.textContent = 'PIN ist gesetzt.'; toast('Leitungs-PIN gespeichert');
+    } }, 'PIN speichern');
+    const pinClear = el('button', { class: 'btn-danger', onClick: async () => {
+      await GR.roles.setPin(''); pinStatus.textContent = 'Kein PIN – die Leitungs-Ansicht ist frei wählbar.'; toast('Leitungs-PIN entfernt');
+    } }, 'PIN entfernen');
+
+    C.vorgaenge.appendChild(el('div', { class: 'card' }, [
+      el('h3', {}, 'Vorgänge & Projekte'),
+      el('p', { class: 'help' }, 'Festes Vikunja-Projekt für ToDos aus Vorgängen, die Kategorienliste und der PIN für die Leitungs-Ansicht (vertrauliche Vorgänge/Einträge).'),
+      el('div', {}, [el('label', {}, 'Vikunja-Projekt für Vorgangs-ToDos'), vgProjSel]),
+      el('div', { style: 'margin-top:10px;' }, [el('label', {}, 'Kategorien (eine pro Zeile)'), vgKatInput]),
+      el('div', { style: 'margin-top:10px;' }, [
+        el('label', {}, 'Leitungs-PIN'),
+        el('div', { class: 'toolbar', style: 'margin:4px 0 0;' }, [pinInput, pinSave, pinClear]),
+        pinStatus,
+      ]),
+    ]));
+
     C.daten.appendChild(el('div', { class: 'card' }, [
       el('h3', {}, 'Backup'),
       el('p', { class: 'help' }, 'Sichern Sie regelmäßig den gesamten Datenbestand als JSON. Sie können diese Datei jederzeit wieder einspielen — z. B. nach Browserwechsel.'),
@@ -626,6 +666,7 @@
       ['dokumente', 'Dokumente'],
       ['kalender', 'Kalender'],
       ['aufgaben', 'Aufgaben'],
+      ['vorgaenge', 'Vorgänge & Projekte'],
       ['vermietung', 'Vermietung'],
       ['vertraege', 'Verträge & Pacht'],
       ['auslagen', 'Bargeldauslagen'],

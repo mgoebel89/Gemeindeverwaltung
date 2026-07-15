@@ -434,6 +434,14 @@
       .reduce((s, e) => s + (Number(e.betrag) || 0), 0);
   }
 
+  // Budgetverbrauch aus Vorgängen für eine Haushaltsstelle in einem Jahr
+  // (analog budgetVerbrauch für Auslagen – Store-unabhängig).
+  function vorgaengeVerbrauch(vorgaenge, haushaltsstelleId, jahr) {
+    return (vorgaenge || [])
+      .filter(v => v.haushaltsstelleId === haushaltsstelleId && String(v.haushaltsjahr) === String(jahr))
+      .reduce((s, v) => s + vorgangKosten(v), 0);
+  }
+
   GR.models = {
     SCHEMA_VERSION, uuid,
     emptyAbstimmung, emptyTop, emptySitzung,
@@ -449,6 +457,6 @@
     emptyVertragspartner, emptyVertrag,
     jahresbetrag, addMonths, dateToIso, spaetesterKuendigungstermin, fristStatus, tageBisKuendigung,
     VORGANG_STATUS, VORGANG_STATUS_LABEL, HISTORIE_TYPEN, HISTORIE_TYP_LABEL,
-    emptyVorgang, emptyHistorieEintrag, vorgangKosten,
+    emptyVorgang, emptyHistorieEintrag, vorgangKosten, vorgaengeVerbrauch,
   };
 })();

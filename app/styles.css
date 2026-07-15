@@ -813,3 +813,33 @@ tr:hover td { background: #fafbfc; }
 
 .vg-ref-row { display: flex; gap: 8px; }
 .vg-ref-link { display: flex; align-items: center; gap: 8px; margin-top: 6px; }
+
+/* ===== Vorgänge: ToDo / Kosten / Budget / Planung ===== */
+.vg-todo-form, .vg-kosten-form { display: flex; gap: 12px; flex-wrap: wrap; }
+.vg-todo-live { display: flex; flex-direction: column; gap: 2px; }
+.vg-todo-check { display: inline-flex; align-items: center; gap: 8px; cursor: pointer; }
+.vg-todo-check input { width: 16px; height: 16px; }
+.vg-todo-title { font-weight: 500; }
+.vg-todo-done { text-decoration: line-through; color: var(--muted); }
+.vg-todo-meta { font-size: 0.82rem; color: var(--muted); }
+.vg-todo-note { color: var(--danger); }
+.vg-todo-hint { font-size: 0.78rem; }
+
+.vg-kpis { display: flex; gap: 10px; flex-wrap: wrap; margin: 14px 0 6px; }
+.vg-kpi {
+  flex: 1 1 130px; background: #fafbfc; border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px;
+}
+.vg-kpi-label { font-size: 0.75rem; color: var(--muted); }
+.vg-kpi-value { font-size: 1.15rem; font-weight: 600; margin-top: 2px; }
+.vg-kpi-sub { font-size: 0.72rem; color: var(--muted); margin-top: 2px; }
+.vg-kpi-pos .vg-kpi-value { color: var(--success); }
+.vg-kpi-neg .vg-kpi-value { color: var(--danger); }
+
+.vg-plan-box { margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--border); }
+
+.vg-plan-table { width: 100%; border-collapse: collapse; }
+.vg-plan-table th { font-size: 0.78rem; color: var(--muted); font-weight: 600; }
+.vg-plan-table td, .vg-plan-table th { padding: 6px 8px; border-bottom: 1px solid var(--border); }
+.vg-plan-table tfoot td { border-bottom: none; border-top: 2px solid var(--border); }
+.vg-plan-total { display: flex; justify-content: space-between; align-items: center; font-weight: 600; }
+.vg-plan-total-val { font-size: 1.2rem; color: var(--primary); }
