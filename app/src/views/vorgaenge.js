@@ -222,11 +222,30 @@
 
     const kategorien = (store.getSettings().vorgaenge || {}).kategorien || [];
 
+    // Ablauf-Dokumentation als PDF (Download bzw. in Paperless ablegen).
+    function exportPdf(target) {
+      GR.vorgaengePdf.buildVorgangDokumentation(v, {
+        target,
+        onUploaded: (docRec) => {
+          const entry = Object.assign(M.emptyHistorieEintrag('dokument'), {
+            titel: 'Ablauf-Dokumentation',
+            paperlessDocs: [{ id: docRec.id, title: docRec.title || ('Dokument ' + docRec.id) }],
+          });
+          v.historie.push(entry);
+          persist();
+          toast('Dokumentation in Paperless abgelegt und verknüpft');
+          refresh();
+        },
+      });
+    }
+
     // Kopf-Toolbar
     mount.appendChild(el('div', { class: 'toolbar' }, [
       el('a', { class: 'btn', href: '#/vorgaenge' }, '← Übersicht'),
       el('div', { class: 'spacer' }),
       roleChip(refresh),
+      el('button', { class: 'btn', onClick: () => exportPdf('download') }, '📄 Ablauf-PDF'),
+      el('button', { class: 'btn', onClick: () => exportPdf('paperless') }, '📥 In Paperless'),
       el('button', {
         class: 'btn btn-danger', onClick: () => {
           if (!confirmDialog(`Vorgang „${v.titel || 'ohne Titel'}" wirklich löschen?`)) return;
