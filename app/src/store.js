@@ -852,7 +852,11 @@
       let s;
       try { s = JSON.parse(localStorage.getItem('gr.syncState') || '{}'); }
       catch (_) { s = {}; }
-      for (const k of ['sitzungen', 'mitglieder', 'mieter', 'raeume', 'vermietungen', 'empfaenger', 'haushaltsstellen', 'auslagen', 'vertragspartner', 'vertraege', 'vorgaenge']) {
+      // Jede sync-fähige Entität braucht hier ihren Eimer — fehlt er, laufen
+      // markSynced/isDirty in „Cannot set properties of undefined".
+      for (const k of ['sitzungen', 'mitglieder', 'mieter', 'raeume', 'vermietungen', 'empfaenger',
+        'haushaltsstellen', 'auslagen', 'vertragspartner', 'vertraege', 'vorgaenge',
+        'arbeiter', 'arbeitszeiten', 'arbeitsabrechnungen']) {
         if (!s[k] || typeof s[k] !== 'object') s[k] = {};
       }
       return s;

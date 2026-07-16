@@ -168,11 +168,15 @@
     refreshQueueBlock();
 
     const onRestoreFromNocoDb = async () => {
-      if (!confirmDialog('Alle Sitzungen und Mitglieder aus NocoDB ziehen?\n\nLokal vorhandene Datensätze bleiben unverändert; nur fehlende werden ergänzt.')) return;
+      if (!confirmDialog('Den gesamten Datenbestand aus NocoDB ziehen?\n\nAlle Module (Sitzungen, Mitglieder, Vermietung, Auslagen, Verträge, Vorgänge, Arbeitszeiten …) werden geprüft.\n\nLokal vorhandene Datensätze bleiben unverändert; nur fehlende werden ergänzt.')) return;
       try {
         setStatus('Lade aus NocoDB…', '');
         const res = await GR.nocodb_client.restoreFromNocoDb();
-        setStatus(`Wiederherstellung: ${res.sitzungenHinzugefuegt} Sitzung(en) und ${res.mitgliederHinzugefuegt} Mitglied(er) hinzugefügt.`, '#2f855a');
+        const txt = res.details && res.details.length
+          ? 'Wiederhergestellt: ' + res.details.join(' · ')
+          : 'Wiederherstellung abgeschlossen – es fehlte lokal nichts.';
+        const fehler = (res.fehler && res.fehler.length) ? ' — Hinweise: ' + res.fehler.join(' · ') : '';
+        setStatus(txt + fehler, fehler ? '#b7791f' : '#2f855a');
         toast('Wiederherstellung abgeschlossen');
       } catch (e) {
         setStatus('Fehler: ' + e.message, '#c53030');

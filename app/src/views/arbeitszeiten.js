@@ -6,7 +6,8 @@
   const M = GR.models;
 
   // Zeiterfassung (Modul Arbeitszeiten & Vergütung).
-  // Oben ein schnelles Erfassungsformular, darunter die gefilterte Liste.
+  // Erfassen und Bearbeiten laufen über denselben Overlay-Dialog (Muster der
+  // anderen Module); die Seite selbst zeigt die gefilterte Liste.
   // Regel: nur „erfasst" ist editier-/löschbar; ab „abgerechnet" ist der Eintrag
   // gesperrt (Korrektur nur über Storno der Abrechnung).
 
@@ -32,15 +33,18 @@
   function renderArbeitszeiten(mount) {
     function refresh() { mount.innerHTML = ''; renderArbeitszeiten(mount); }
 
+    const arbeiter = aktiveArbeiter();
+
     mount.appendChild(el('div', { class: 'toolbar' }, [
       el('h2', { style: 'margin:0;' }, 'Arbeitszeiten'),
       el('div', { class: 'spacer' }),
       el('a', { class: 'btn btn-sm', href: '#/arbeiter' }, 'Arbeiter & Firmen'),
       el('a', { class: 'btn btn-sm', href: '#/arbeitsabrechnungen' }, 'Abrechnungen'),
       el('a', { class: 'btn btn-sm', href: '#/einstellungen' }, 'Stundensatz'),
+      arbeiter.length
+        ? el('button', { class: 'btn-primary', onClick: () => eintragDialog(null, refresh) }, '+ Zeit erfassen')
+        : null,
     ]));
-
-    const arbeiter = aktiveArbeiter();
     if (!arbeiter.length) {
       mount.appendChild(el('div', { class: 'card' }, [
         el('p', { class: 'help', style: 'margin:0 0 8px;' }, 'Es ist noch kein Arbeiter und keine Firma angelegt. Ohne Leistungserbringer lässt sich keine Zeit erfassen.'),
@@ -55,74 +59,114 @@
       ]));
     }
 
-    mount.appendChild(erfassungsKarte(refresh));
     mount.appendChild(listenKarte(refresh));
   }
 
-  // --- Schnellerfassung ---
-  function erfassungsKarte(refresh) {
-    const arbeiterSel = el('select', {}, aktiveArbeiter().map(a =>
-      el('option', { value: a.id, selected: a.id === uiState.arbeiterId }, M.arbeiterName(a))));
-    const datumI = el('input', { type: 'date', value: heuteIso() });
-    const stundenI = el('input', { type: 'number', step: '0.25', min: '0', placeholder: 'z. B. 2,5' });
+  // Satz-Feld mit Freischalt-Checkbox: der einheitliche Satz gilt, solange die
+  // Checkbox aus ist – so lässt er sich nicht versehentlich überschreiben.
+  // Liefert { node, read() } mit read() = null (Standard) oder Zahl.
+  function satzFeld(vorbelegung, datumGetter) {
+    const check = el('input', { type: 'checkbox', checked: vorbelegung != null && vorbelegung !== '' });
+    const input = el('input', {
+      type: 'number', step: '0.01', min: '0',
+      value: vorbelegung == null ? '' : vorbelegung,
+    });
+    const info = el('div', { class: 'help', style: 'margin:2px 0 0;' }, '');
 
-    // Tätigkeit: Katalog-Auswahl ODER freier Text.
-    const katSel = el('select', {}, [el('option', { value: '' }, '— aus Katalog wählen —')]
-      .concat(katalog().map(t => el('option', { value: t }, t))));
-    const freiI = el('input', { type: 'text', placeholder: 'oder frei eintippen' });
-    katSel.onchange = () => { if (katSel.value) freiI.value = katSel.value; };
-
-    const notizI = el('input', { type: 'text', placeholder: 'Notiz (optional)' });
-
-    // Abweichender Satz (z. B. Firmen); leer = einheitlicher Satz zum Datum.
-    const satzI = el('input', { type: 'number', step: '0.01', min: '0', placeholder: 'Standard' });
-    const satzInfo = el('span', { class: 'help' }, '');
-    function refreshSatzInfo() {
-      const s = M.satzFuer(satzHistorie(), datumI.value);
-      satzInfo.textContent = s == null
-        ? 'Für dieses Datum ist kein Satz hinterlegt.'
-        : `Einheitlicher Satz am ${formatDatum(datumI.value)}: ${euro(s)} / Std.`;
+    function sync() {
+      input.disabled = !check.checked;
+      const s = M.satzFuer(satzHistorie(), datumGetter());
+      if (check.checked) {
+        info.textContent = 'Abweichender Satz – überschreibt den einheitlichen Satz für diesen Eintrag.';
+      } else {
+        info.textContent = s == null
+          ? 'Für dieses Datum ist kein Stundensatz hinterlegt.'
+          : `Einheitlicher Satz am ${formatDatum(datumGetter())}: ${euro(s)} / Std.`;
+      }
     }
-    refreshSatzInfo();
-    datumI.onchange = refreshSatzInfo;
+    check.onchange = () => { sync(); if (check.checked) input.focus(); };
+    sync();
 
-    const onAdd = () => {
-      const taetigkeit = (freiI.value || katSel.value || '').trim();
-      const std = Number(String(stundenI.value).replace(',', '.'));
+    return {
+      node: el('div', {}, [
+        el('label', { class: 'az-check' }, [check, ' Abweichender Stundensatz']),
+        input,
+        info,
+      ]),
+      refresh: sync,
+      read() {
+        if (!check.checked) return null;
+        const v = Number(String(input.value).replace(',', '.'));
+        return Number.isFinite(v) && v >= 0 ? v : null;
+      },
+    };
+  }
+
+  // --- Erfassen/Bearbeiten im Overlay (wie in den anderen Modulen) ---
+  // z = null → neuer Eintrag.
+  function eintragDialog(z, onSaved) {
+    const isNew = !z;
+    const base = z || Object.assign(M.emptyArbeitszeit(), { arbeiterId: uiState.arbeiterId || '' });
+    const liste = isNew ? aktiveArbeiter() : store.listArbeiter();
+
+    const arbeiterSel = el('select', {}, liste.map(a =>
+      el('option', { value: a.id, selected: a.id === base.arbeiterId }, M.arbeiterName(a))));
+    const datumI = el('input', { type: 'date', value: base.datum || heuteIso() });
+    const stundenI = el('input', { type: 'number', step: '0.25', min: '0', placeholder: 'z. B. 2,5', value: base.stunden || '' });
+    const katSel = el('select', {}, [el('option', { value: '' }, '— aus Katalog wählen —')]
+      .concat(katalog().map(t => el('option', { value: t, selected: t === base.taetigkeit }, t))));
+    const taetI = el('input', { type: 'text', placeholder: 'oder frei eintippen', value: base.taetigkeit || '' });
+    katSel.onchange = () => { if (katSel.value) taetI.value = katSel.value; };
+    const notizI = el('input', { type: 'text', placeholder: 'Notiz (optional)', value: base.notiz || '' });
+
+    const satz = satzFeld(base.satzManuell, () => datumI.value);
+    datumI.onchange = satz.refresh;
+
+    const overlay = el('div', { class: 'modal-overlay' });
+    const close = () => overlay.remove();
+
+    const onSave = () => {
+      const taetigkeit = (taetI.value || katSel.value || '').trim();
+      const stundenWert = Number(String(stundenI.value).replace(',', '.'));
+      if (!arbeiterSel.value) return toast('Bitte Arbeiter/Firma wählen');
       if (!taetigkeit) return toast('Bitte eine Tätigkeit angeben');
-      if (!(std > 0)) return toast('Bitte die Stunden angeben');
-      const z = Object.assign(M.emptyArbeitszeit(), {
-        arbeiterId: arbeiterSel.value,
-        datum: datumI.value || heuteIso(),
-        taetigkeit,
-        stunden: std,
-        notiz: notizI.value.trim(),
-        satzManuell: satzI.value === '' ? null : Number(String(satzI.value).replace(',', '.')),
-      });
-      store.saveArbeitszeit(z);
-      uiState.arbeiterId = z.arbeiterId; // Filter/Vorauswahl merken
-      toast('Eingetragen');
-      refresh();
+      if (!(stundenWert > 0)) return toast('Bitte die Stunden angeben');
+      const obj = isNew ? base : z;
+      obj.arbeiterId = arbeiterSel.value;
+      obj.datum = datumI.value || heuteIso();
+      obj.taetigkeit = taetigkeit;
+      obj.stunden = stundenWert;
+      obj.notiz = notizI.value.trim();
+      obj.satzManuell = satz.read();
+      store.saveArbeitszeit(obj);
+      uiState.arbeiterId = obj.arbeiterId; // Vorauswahl fürs nächste Mal merken
+      toast(isNew ? 'Eingetragen' : 'Gespeichert');
+      close();
+      if (onSaved) onSaved();
     };
 
-    return el('div', { class: 'card' }, [
-      el('h3', {}, 'Zeit erfassen'),
-      el('div', { class: 'az-form' }, [
+    overlay.appendChild(el('div', { class: 'modal' }, [
+      el('h3', {}, isNew ? 'Zeit erfassen' : 'Eintrag bearbeiten'),
+      el('div', { class: 'grid-2' }, [
         el('div', {}, [el('label', {}, 'Arbeiter / Firma'), arbeiterSel]),
         el('div', {}, [el('label', {}, 'Datum (Leistung)'), datumI]),
-        el('div', {}, [el('label', {}, 'Stunden'), stundenI]),
-        el('div', {}, [el('label', {}, 'Abw. Satz (€/Std.)'), satzI]),
       ]),
-      el('div', { class: 'az-form', style: 'margin-top:8px;' }, [
+      el('div', { class: 'grid-2' }, [
         el('div', {}, [el('label', {}, 'Tätigkeit (Katalog)'), katSel]),
-        el('div', { style: 'grid-column: span 2;' }, [el('label', {}, 'Tätigkeit (Text)'), freiI]),
-        el('div', {}, [el('label', {}, 'Notiz'), notizI]),
+        el('div', {}, [el('label', {}, 'Tätigkeit (Text)'), taetI]),
       ]),
-      el('div', { class: 'toolbar', style: 'margin-top:10px; align-items:center;' }, [
-        el('button', { class: 'btn-primary', onClick: onAdd }, 'Eintragen'),
-        satzInfo,
+      el('div', { class: 'grid-2' }, [
+        el('div', {}, [el('label', {}, 'Stunden'), stundenI]),
+        satz.node,
       ]),
-    ]);
+      el('div', { style: 'margin-top:8px;' }, [el('label', {}, 'Notiz'), notizI]),
+      el('div', { class: 'toolbar', style: 'margin-top:16px; margin-bottom:0;' }, [
+        el('button', { class: 'btn-primary', onClick: onSave }, isNew ? 'Eintragen' : 'Speichern'),
+        el('button', { onClick: close }, 'Abbrechen'),
+      ]),
+    ]));
+    overlay.addEventListener('click', e => { if (e.target === overlay) close(); });
+    document.body.appendChild(overlay);
   }
 
   // --- Liste mit Filtern ---
@@ -199,7 +243,7 @@
         el('td', { style: 'text-align:right; white-space:nowrap;' }, gesperrt
           ? el('span', { class: 'help', title: 'Abgerechnete Einträge sind gesperrt. Korrektur nur über Storno der Abrechnung.' }, '🔒')
           : [
-            el('button', { class: 'btn-sm', onClick: () => bearbeitenDialog(z, refresh) }, 'Bearbeiten'),
+            el('button', { class: 'btn-sm', onClick: () => eintragDialog(z, refresh) }, 'Bearbeiten'),
             ' ',
             el('button', {
               class: 'btn-sm btn-danger', onClick: () => {
@@ -221,62 +265,6 @@
     card.appendChild(table);
     return card;
   }
-
-  // --- Bearbeiten (nur solange „erfasst") ---
-  function bearbeitenDialog(z, onSaved) {
-    const arbeiterSel = el('select', {}, store.listArbeiter().map(a =>
-      el('option', { value: a.id, selected: a.id === z.arbeiterId }, M.arbeiterName(a))));
-    const datumI = el('input', { type: 'date', value: z.datum || '' });
-    const taetI = el('input', { type: 'text', value: z.taetigkeit || '' });
-    const katSel = el('select', {}, [el('option', { value: '' }, '— aus Katalog —')]
-      .concat(katalog().map(t => el('option', { value: t }, t))));
-    katSel.onchange = () => { if (katSel.value) taetI.value = katSel.value; };
-    const stundenI = el('input', { type: 'number', step: '0.25', min: '0', value: z.stunden || 0 });
-    const satzI = el('input', { type: 'number', step: '0.01', min: '0', value: z.satzManuell == null ? '' : z.satzManuell, placeholder: 'Standard' });
-    const notizI = el('input', { type: 'text', value: z.notiz || '' });
-
-    const overlay = el('div', { class: 'modal-overlay' });
-    const close = () => overlay.remove();
-    const onSave = () => {
-      const std = Number(String(stundenI.value).replace(',', '.'));
-      if (!taetI.value.trim()) return toast('Bitte eine Tätigkeit angeben');
-      if (!(std > 0)) return toast('Bitte die Stunden angeben');
-      z.arbeiterId = arbeiterSel.value;
-      z.datum = datumI.value;
-      z.taetigkeit = taetI.value.trim();
-      z.stunden = std;
-      z.satzManuell = satzI.value === '' ? null : Number(String(satzI.value).replace(',', '.'));
-      z.notiz = notizI.value.trim();
-      store.saveArbeitszeit(z);
-      toast('Gespeichert');
-      close();
-      if (onSaved) onSaved();
-    };
-
-    overlay.appendChild(el('div', { class: 'modal' }, [
-      el('h3', {}, 'Eintrag bearbeiten'),
-      el('div', { class: 'grid-2' }, [
-        el('div', {}, [el('label', {}, 'Arbeiter / Firma'), arbeiterSel]),
-        el('div', {}, [el('label', {}, 'Datum'), datumI]),
-      ]),
-      el('div', { class: 'grid-2' }, [
-        el('div', {}, [el('label', {}, 'Tätigkeit (Katalog)'), katSel]),
-        el('div', {}, [el('label', {}, 'Tätigkeit'), taetI]),
-      ]),
-      el('div', { class: 'grid-2' }, [
-        el('div', {}, [el('label', {}, 'Stunden'), stundenI]),
-        el('div', {}, [el('label', {}, 'Abweichender Satz (€/Std.)'), satzI]),
-      ]),
-      el('div', {}, [el('label', {}, 'Notiz'), notizI]),
-      el('div', { class: 'toolbar', style: 'margin-top:16px; margin-bottom:0;' }, [
-        el('button', { class: 'btn-primary', onClick: onSave }, 'Speichern'),
-        el('button', { onClick: close }, 'Abbrechen'),
-      ]),
-    ]));
-    overlay.addEventListener('click', e => { if (e.target === overlay) close(); });
-    document.body.appendChild(overlay);
-  }
-
   GR.views = GR.views || {};
   GR.views.renderArbeitszeiten = renderArbeitszeiten;
 })();

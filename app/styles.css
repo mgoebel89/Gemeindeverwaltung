@@ -606,6 +606,10 @@ tr:hover td { background: #fafbfc; }
   border: 1px solid var(--border); border-radius: 8px; padding: 10px; margin-bottom: 10px;
 }
 .az-abr { margin-top: 6px; }
+/* Freischalt-Checkbox über dem Satz-Feld (Abweichender Stundensatz) */
+.az-check { display: flex; align-items: center; gap: 6px; cursor: pointer; }
+.az-check input { width: 15px; height: 15px; }
+.az-check + input:disabled { background: #f2f4f7; color: var(--muted); cursor: not-allowed; }
 .az-abr summary { cursor: pointer; font-size: 0.85rem; color: var(--muted); }
 .az-abr table { margin-top: 8px; }
 .warn-inline { color: #c53030; font-size: 0.8rem; }

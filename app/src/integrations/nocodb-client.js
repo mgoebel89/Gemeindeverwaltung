@@ -83,6 +83,10 @@
     resolve('tableAuslagenName', 'tableAuslagenId');
     resolve('tableVertragspartnerName', 'tableVertragspartnerId');
     resolve('tableVertraegeName', 'tableVertraegeId');
+    resolve('tableVorgaengeName', 'tableVorgaengeId');
+    resolve('tableArbeiterName', 'tableArbeiterId');
+    resolve('tableArbeitszeitenName', 'tableArbeitszeitenId');
+    resolve('tableArbeitsabrechnungenName', 'tableArbeitsabrechnungenId');
     if (updated) store.saveSettings(s);
     return { tables, count: tables.length };
   }
@@ -217,6 +221,75 @@
     { title: 'LastModifiedAt', uidt: 'SingleLineText' },
     { title: 'Payload', uidt: 'LongText' },
   ];
+  // Vorgänge & Projekte: Spalten passend zu buildVorgangRow. (Fehlten bisher —
+  // dadurch schlug der Sync mit „Tabelle Vorgaenge fehlt" fehl.)
+  const VORGAENGE_COLUMNS = [
+    { title: 'VorgangId', uidt: 'SingleLineText' },
+    { title: 'Titel', uidt: 'SingleLineText' },
+    { title: 'Status', uidt: 'SingleLineText' },
+    { title: 'Kategorie', uidt: 'SingleLineText' },
+    { title: 'Vertraulich', uidt: 'SingleLineText' },
+    { title: 'Haushaltsjahr', uidt: 'Number' },
+    { title: 'Kostenstellen', uidt: 'LongText' },
+    { title: 'KostenIst', uidt: 'Number' },
+    { title: 'PlanBetrag', uidt: 'Number' },
+    { title: 'PlanZieljahr', uidt: 'SingleLineText' },
+    { title: 'AnzahlHistorie', uidt: 'Number' },
+    { title: 'LastModifiedAt', uidt: 'SingleLineText' },
+    { title: 'Payload', uidt: 'LongText' },
+  ];
+  // Modul Arbeitszeiten & Vergütung
+  const ARBEITER_COLUMNS = [
+    { title: 'ArbeiterId', uidt: 'SingleLineText' },
+    { title: 'Anzeigename', uidt: 'SingleLineText' },
+    { title: 'Firma', uidt: 'SingleLineText' },
+    { title: 'Vorname', uidt: 'SingleLineText' },
+    { title: 'Nachname', uidt: 'SingleLineText' },
+    { title: 'Strasse', uidt: 'SingleLineText' },
+    { title: 'Plz', uidt: 'SingleLineText' },
+    { title: 'Ort', uidt: 'SingleLineText' },
+    { title: 'Iban', uidt: 'SingleLineText' },
+    { title: 'Kontoinhaber', uidt: 'SingleLineText' },
+    { title: 'SvNummer', uidt: 'SingleLineText' },
+    { title: 'SteuerId', uidt: 'SingleLineText' },
+    { title: 'Geburtsdatum', uidt: 'SingleLineText' },
+    { title: 'Telefon', uidt: 'SingleLineText' },
+    { title: 'Email', uidt: 'SingleLineText' },
+    { title: 'Aktiv', uidt: 'SingleLineText' },
+    { title: 'LastModifiedAt', uidt: 'SingleLineText' },
+    { title: 'Payload', uidt: 'LongText' },
+  ];
+  const ARBEITSZEITEN_COLUMNS = [
+    { title: 'ArbeitszeitId', uidt: 'SingleLineText' },
+    { title: 'Arbeiter', uidt: 'SingleLineText' },
+    { title: 'Datum', uidt: 'Date' },
+    { title: 'Taetigkeit', uidt: 'SingleLineText' },
+    { title: 'Stunden', uidt: 'Number' },
+    { title: 'Satz', uidt: 'Number' },
+    { title: 'Betrag', uidt: 'Number' },
+    { title: 'Status', uidt: 'SingleLineText' },
+    { title: 'AbrechnungId', uidt: 'SingleLineText' },
+    { title: 'Notiz', uidt: 'LongText' },
+    { title: 'LastModifiedAt', uidt: 'SingleLineText' },
+    { title: 'Payload', uidt: 'LongText' },
+  ];
+  const ARBEITSABRECHNUNGEN_COLUMNS = [
+    { title: 'AbrechnungId', uidt: 'SingleLineText' },
+    { title: 'Arbeiter', uidt: 'SingleLineText' },
+    { title: 'ZeitraumVon', uidt: 'Date' },
+    { title: 'ZeitraumBis', uidt: 'Date' },
+    { title: 'ErstelltAm', uidt: 'Date' },
+    { title: 'Haushaltsstelle', uidt: 'SingleLineText' },
+    { title: 'Haushaltsjahr', uidt: 'Number' },
+    { title: 'SummeStunden', uidt: 'Number' },
+    { title: 'SummeBetrag', uidt: 'Number' },
+    { title: 'AnzahlPositionen', uidt: 'Number' },
+    { title: 'Status', uidt: 'SingleLineText' },
+    { title: 'AusgezahltAm', uidt: 'SingleLineText' },
+    { title: 'Notiz', uidt: 'LongText' },
+    { title: 'LastModifiedAt', uidt: 'SingleLineText' },
+    { title: 'Payload', uidt: 'LongText' },
+  ];
 
   async function createTable(title, columns) {
     const s = settings();
@@ -273,6 +346,10 @@
     await ensureTable(s.nocodb.tableAuslagenName || 'Auslagen', AUSLAGEN_COLUMNS, 'tableAuslagenId');
     await ensureTable(s.nocodb.tableVertragspartnerName || 'Vertragspartner', VERTRAGSPARTNER_COLUMNS, 'tableVertragspartnerId');
     await ensureTable(s.nocodb.tableVertraegeName || 'Vertraege', VERTRAEGE_COLUMNS, 'tableVertraegeId');
+    await ensureTable(s.nocodb.tableVorgaengeName || 'Vorgaenge', VORGAENGE_COLUMNS, 'tableVorgaengeId');
+    await ensureTable(s.nocodb.tableArbeiterName || 'Arbeiter', ARBEITER_COLUMNS, 'tableArbeiterId');
+    await ensureTable(s.nocodb.tableArbeitszeitenName || 'Arbeitszeiten', ARBEITSZEITEN_COLUMNS, 'tableArbeitszeitenId');
+    await ensureTable(s.nocodb.tableArbeitsabrechnungenName || 'Arbeitsabrechnungen', ARBEITSABRECHNUNGEN_COLUMNS, 'tableArbeitsabrechnungenId');
 
     store.saveSettings(s);
     return log;
@@ -735,9 +812,72 @@
     return { sitzungenHinzugefuegt: addedS, mitgliederHinzugefuegt: addedM };
   }
 
+  // --- Wiederherstellung der Payload-Module ---------------------------------
+  // Jede Modul-Tabelle führt eine Payload-Spalte mit dem vollständigen
+  // Datensatz als JSON. Damit lässt sich jedes Modul generisch zurückholen –
+  // vorher konnte die Wiederherstellung NUR Sitzungen und Mitglieder.
+  function payloadModule() {
+    return [
+      { kind: 'mieter', label: 'Mieter', idKey: 'tableMieterId', nameKey: 'tableMieterName', fallback: 'Mieter', list: () => store.listMieter(), save: (o) => store.saveMieter(o) },
+      { kind: 'raeume', label: 'Objekte', idKey: 'tableRaeumeId', nameKey: 'tableRaeumeName', fallback: 'Raeume', list: () => store.listRaeume(), save: (o) => store.saveRaum(o) },
+      { kind: 'vermietungen', label: 'Vermietungen', idKey: 'tableVermietungenId', nameKey: 'tableVermietungenName', fallback: 'Vermietungen', list: () => store.listVermietungen(), save: (o) => store.saveVermietung(o) },
+      { kind: 'empfaenger', label: 'Empfänger', idKey: 'tableEmpfaengerId', nameKey: 'tableEmpfaengerName', fallback: 'Empfaenger', list: () => store.listEmpfaenger(), save: (o) => store.saveEmpfaenger(o) },
+      { kind: 'haushaltsstellen', label: 'Haushaltsstellen', idKey: 'tableHaushaltsstellenId', nameKey: 'tableHaushaltsstellenName', fallback: 'Haushaltsstellen', list: () => store.listHaushaltsstellen(), save: (o) => store.saveHaushaltsstelle(o) },
+      { kind: 'auslagen', label: 'Auslagen', idKey: 'tableAuslagenId', nameKey: 'tableAuslagenName', fallback: 'Auslagen', list: () => store.listAuslagen(), save: (o) => store.saveAuslage(o) },
+      { kind: 'vertragspartner', label: 'Vertragspartner', idKey: 'tableVertragspartnerId', nameKey: 'tableVertragspartnerName', fallback: 'Vertragspartner', list: () => store.listVertragspartner(), save: (o) => store.saveVertragspartner(o) },
+      { kind: 'vertraege', label: 'Verträge', idKey: 'tableVertraegeId', nameKey: 'tableVertraegeName', fallback: 'Vertraege', list: () => store.listVertraege(), save: (o) => store.saveVertrag(o) },
+      { kind: 'vorgaenge', label: 'Vorgänge', idKey: 'tableVorgaengeId', nameKey: 'tableVorgaengeName', fallback: 'Vorgaenge', list: () => store.listVorgaenge(), save: (o) => store.saveVorgang(o) },
+      { kind: 'arbeiter', label: 'Arbeiter/Firmen', idKey: 'tableArbeiterId', nameKey: 'tableArbeiterName', fallback: 'Arbeiter', list: () => store.listArbeiter(), save: (o) => store.saveArbeiter(o) },
+      { kind: 'arbeitszeiten', label: 'Arbeitszeiten', idKey: 'tableArbeitszeitenId', nameKey: 'tableArbeitszeitenName', fallback: 'Arbeitszeiten', list: () => store.listArbeitszeiten(), save: (o) => store.saveArbeitszeit(o) },
+      { kind: 'arbeitsabrechnungen', label: 'Abrechnungen', idKey: 'tableArbeitsabrechnungenId', nameKey: 'tableArbeitsabrechnungenName', fallback: 'Arbeitsabrechnungen', list: () => store.listArbeitsabrechnungen(), save: (o) => store.saveArbeitsabrechnung(o) },
+    ];
+  }
+
+  // Holt ein Modul zurück. Lokal vorhandene IDs bleiben unangetastet (local
+  // wins) – es werden nur fehlende Datensätze ergänzt. Fehlt die Tabelle in
+  // NocoDB (Modul nie gesynct), wird das Modul stillschweigend übersprungen.
+  async function restoreModul(mod, tables) {
+    const s = store.getSettings().nocodb;
+    const tabName = s[mod.nameKey] || mod.fallback;
+    const t = tables.find(t => (t.title || t.table_name) === tabName);
+    const tableId = t ? (t.id || t.table_id) : s[mod.idKey];
+    if (!tableId) return { label: mod.label, added: 0, skipped: true };
+
+    const rows = await fetchAllRecords(tableId);
+    const lokaleIds = new Set(mod.list().map(x => x.id));
+    let added = 0, kaputt = 0;
+    for (const r of rows) {
+      if (!r.Payload) continue;
+      let parsed = null;
+      try { parsed = JSON.parse(r.Payload); } catch (_) { kaputt++; continue; }
+      if (!parsed || !parsed.id || lokaleIds.has(parsed.id)) continue;
+      mod.save(parsed);
+      store.markSynced(mod.kind, parsed.id);
+      added++;
+    }
+    return { label: mod.label, added, kaputt };
+  }
+
+  // Vollständige Wiederherstellung: Sitzungen/Mitglieder + alle Payload-Module.
+  // Einzelne Module dürfen scheitern, ohne den Rest zu verhindern.
   async function restoreFromNocoDb() {
     const remote = await fetchAllFromNocoDb();
-    return restoreLocalWins(remote);
+    const basis = restoreLocalWins(remote);
+    const tables = await listTables();
+    const details = [];
+    const fehler = [];
+    for (const mod of payloadModule()) {
+      try {
+        const res = await restoreModul(mod, tables);
+        if (!res.skipped && res.added > 0) details.push(`${res.added}× ${res.label}`);
+        if (res.kaputt) fehler.push(`${res.label}: ${res.kaputt} unlesbare(r) Datensatz/Datensätze`);
+      } catch (e) {
+        fehler.push(`${mod.label}: ${e.message}`);
+      }
+    }
+    if (basis.sitzungenHinzugefuegt) details.unshift(`${basis.sitzungenHinzugefuegt}× Sitzungen`);
+    if (basis.mitgliederHinzugefuegt) details.unshift(`${basis.mitgliederHinzugefuegt}× Mitglieder`);
+    return { ...basis, details, fehler };
   }
 
   GR.nocodb_client = {
