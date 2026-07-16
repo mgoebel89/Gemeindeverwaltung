@@ -2,7 +2,14 @@
   'use strict';
   window.GR = window.GR || {};
   const { store } = GR;
-  const { el, toast, downloadFile, pickFile, readFileAsText, readFileAsDataUrl, confirmDialog } = GR.ui;
+  const M = GR.models;
+  const { el, toast, downloadFile, pickFile, readFileAsText, readFileAsDataUrl, confirmDialog, formatDatum } = GR.ui;
+
+  const euro = (n) => (Number(n) || 0).toLocaleString('de-DE', { style: 'currency', currency: 'EUR' });
+  function heuteIso() {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  }
 
   function renderEinstellungen(mount) {
     const settings = store.getSettings();
@@ -82,7 +89,8 @@
     // Einstellungen nach Kategorien gegliedert – je Bereich ein eigener Container.
     const C = {
       allgemein: el('div'), darstellung: el('div'), dokumente: el('div'), kalender: el('div'), aufgaben: el('div'),
-      vorgaenge: el('div'), vermietung: el('div'), vertraege: el('div'), auslagen: el('div'), daten: el('div'),
+      vorgaenge: el('div'), vermietung: el('div'), vertraege: el('div'), auslagen: el('div'),
+      arbeitszeiten: el('div'), daten: el('div'),
     };
 
     C.allgemein.appendChild(el('div', { class: 'card' }, [
@@ -697,6 +705,76 @@
       ]),
     ]));
 
+    // --- Arbeitszeiten: Stundensatz-Historie + Tätigkeitskatalog ---
+    const az = settings.arbeitszeiten || (settings.arbeitszeiten = { satzHistorie: [], taetigkeiten: [] });
+    const satzBox = el('div', { style: 'margin-top:4px;' });
+
+    function refreshSatz() {
+      satzBox.innerHTML = '';
+      const liste = (az.satzHistorie || []).slice()
+        .sort((a, b) => String(b.gueltigAb || '').localeCompare(String(a.gueltigAb || '')));
+      if (!liste.length) {
+        satzBox.appendChild(el('p', { class: 'help', style: 'margin:4px 0;' },
+          'Noch kein Stundensatz hinterlegt – ohne Satz lässt sich keine Abrechnung erstellen.'));
+      }
+      for (const s of liste) {
+        const aktuell = M.satzFuer(az.satzHistorie, heuteIso()) === Number(s.betrag)
+          && String(s.gueltigAb) <= heuteIso();
+        satzBox.appendChild(el('div', { class: 'toolbar', style: 'margin:4px 0; align-items:center;' }, [
+          el('span', { style: 'min-width:150px;' }, 'ab ' + formatDatum(s.gueltigAb)),
+          el('strong', { style: 'min-width:90px;' }, euro(s.betrag) + ' / Std.'),
+          aktuell ? el('span', { class: 'tag ok' }, 'aktuell gültig') : null,
+          el('div', { class: 'spacer' }),
+          el('button', {
+            class: 'btn-sm btn-danger', onClick: () => {
+              if (!confirmDialog(`Stundensatz ab ${formatDatum(s.gueltigAb)} löschen?`)) return;
+              az.satzHistorie = az.satzHistorie.filter(x => x !== s);
+              store.saveSettings(settings); refreshSatz(); toast('Satz gelöscht');
+            },
+          }, '✕'),
+        ]));
+      }
+    }
+    refreshSatz();
+
+    const satzAbI = el('input', { type: 'date', value: heuteIso() });
+    const satzBetragI = el('input', { type: 'number', step: '0.01', min: '0', placeholder: 'z. B. 15,00' });
+    const satzAddBtn = el('button', {
+      class: 'btn-primary', onClick: () => {
+        const gueltigAb = satzAbI.value;
+        const betrag = Number(String(satzBetragI.value).replace(',', '.'));
+        if (!gueltigAb) { alert('Bitte ein „gültig ab"-Datum wählen.'); return; }
+        if (!(betrag >= 0)) { alert('Bitte einen gültigen Betrag eingeben.'); return; }
+        if (!Array.isArray(az.satzHistorie)) az.satzHistorie = [];
+        const vorhanden = az.satzHistorie.find(s => s.gueltigAb === gueltigAb);
+        if (vorhanden) vorhanden.betrag = betrag;
+        else az.satzHistorie.push({ gueltigAb, betrag });
+        store.saveSettings(settings);
+        satzBetragI.value = '';
+        refreshSatz();
+        toast('Stundensatz gespeichert');
+      },
+    }, 'Satz hinzufügen');
+
+    const azKatInput = el('textarea', { style: 'width:100%;' }, (az.taetigkeiten || []).join('\n'));
+    azKatInput.oninput = e => { az.taetigkeiten = e.target.value.split('\n').map(s => s.trim()).filter(Boolean); };
+    azKatInput.onchange = () => store.saveSettings(settings);
+
+    C.arbeitszeiten.appendChild(el('div', { class: 'card' }, [
+      el('h3', {}, 'Arbeitszeiten & Vergütung'),
+      el('p', { class: 'help' }, 'Der Stundensatz gilt einheitlich für alle Leistungserbringer. Maßgeblich ist der Satz, der am Leistungsdatum gültig war – ältere Einträge ändern sich also nicht, wenn der Satz später steigt. Beim Abrechnen wird der Satz zusätzlich eingefroren. Am einzelnen Eintrag lässt sich ein abweichender Satz setzen (z. B. bei Firmen).'),
+      el('h4', { style: 'margin:14px 0 4px;' }, 'Stundensatz (mit Historie)'),
+      satzBox,
+      el('div', { class: 'toolbar', style: 'margin-top:8px; align-items:flex-end;' }, [
+        el('div', {}, [el('label', {}, 'gültig ab'), satzAbI]),
+        el('div', {}, [el('label', {}, 'Betrag (€/Std.)'), satzBetragI]),
+        satzAddBtn,
+      ]),
+      el('h4', { style: 'margin:16px 0 4px;' }, 'Tätigkeitskatalog'),
+      el('p', { class: 'help' }, 'Auswahlliste bei der Erfassung. Freier Text bleibt zusätzlich möglich.'),
+      azKatInput,
+    ]));
+
     C.daten.appendChild(el('div', { class: 'card' }, [
       el('h3', {}, 'Backup'),
       el('p', { class: 'help' }, 'Sichern Sie regelmäßig den gesamten Datenbestand als JSON. Sie können diese Datei jederzeit wieder einspielen — z. B. nach Browserwechsel.'),
@@ -719,6 +797,7 @@
       ['vermietung', 'Vermietung'],
       ['vertraege', 'Verträge & Pacht'],
       ['auslagen', 'Bargeldauslagen'],
+      ['arbeitszeiten', 'Arbeitszeiten'],
       ['daten', 'Datensicherung'],
     ];
     const content = el('div', { class: 'settings-content' });

@@ -128,6 +128,25 @@ db.exec(`
     uploaded_at  TEXT NOT NULL
   );
   CREATE INDEX IF NOT EXISTS idx_vorgangfile_vorgang ON vorgang_files(vorgang_id);
+
+  -- Modul Arbeitszeiten & Vergütung (Leistungserbringer, Tätigkeiten, Abrechnungen)
+  CREATE TABLE IF NOT EXISTS arbeiter (
+    id           TEXT PRIMARY KEY,
+    payload      TEXT NOT NULL,
+    last_modified TEXT NOT NULL
+  );
+  CREATE TABLE IF NOT EXISTS arbeitszeiten (
+    id           TEXT PRIMARY KEY,
+    payload      TEXT NOT NULL,
+    last_modified TEXT NOT NULL
+  );
+  CREATE INDEX IF NOT EXISTS idx_arbeitszeiten_modified ON arbeitszeiten(last_modified);
+  CREATE TABLE IF NOT EXISTS arbeitsabrechnungen (
+    id           TEXT PRIMARY KEY,
+    payload      TEXT NOT NULL,
+    last_modified TEXT NOT NULL
+  );
+  CREATE INDEX IF NOT EXISTS idx_arbeitsabr_modified ON arbeitsabrechnungen(last_modified);
 `);
 
 const BELEG_DIR = path.join(ATTACH_DIR, 'auslagen');
@@ -402,6 +421,25 @@ function deleteVorgang(id) {
   vorgaengeStore.delete(id);
 }
 
+// --- Modul Arbeitszeiten & Vergütung ---
+const arbeiterStore = makePayloadStore('arbeiter');
+const listArbeiter = () => arbeiterStore.list();
+const getArbeiter = (id) => arbeiterStore.get(id);
+const saveArbeiter = (a) => arbeiterStore.save(a);
+const deleteArbeiter = (id) => arbeiterStore.delete(id);
+
+const arbeitszeitenStore = makePayloadStore('arbeitszeiten');
+const listArbeitszeiten = () => arbeitszeitenStore.list();
+const getArbeitszeit = (id) => arbeitszeitenStore.get(id);
+const saveArbeitszeit = (z) => arbeitszeitenStore.save(z);
+const deleteArbeitszeit = (id) => arbeitszeitenStore.delete(id);
+
+const arbeitsabrechnungenStore = makePayloadStore('arbeitsabrechnungen');
+const listArbeitsabrechnungen = () => arbeitsabrechnungenStore.list();
+const getArbeitsabrechnung = (id) => arbeitsabrechnungenStore.get(id);
+const saveArbeitsabrechnung = (a) => arbeitsabrechnungenStore.save(a);
+const deleteArbeitsabrechnung = (id) => arbeitsabrechnungenStore.delete(id);
+
 // --- Verlaufsfotos (zu einem Vorgang) ---
 function listVorgangFiles(vorgangId) {
   return db.prepare('SELECT id, vorgang_id AS vorgangId, kind, filename, mimetype, size, uploaded_at AS uploadedAt FROM vorgang_files WHERE vorgang_id = ? ORDER BY uploaded_at ASC').all(vorgangId);
@@ -515,4 +553,7 @@ module.exports = {
   listVorgaenge, getVorgang, saveVorgang, deleteVorgang,
   listVorgangFiles, getVorgangFile, vorgangFilePath, ensureVorgangFileDir,
   insertVorgangFile, deleteVorgangFile,
+  listArbeiter, getArbeiter, saveArbeiter, deleteArbeiter,
+  listArbeitszeiten, getArbeitszeit, saveArbeitszeit, deleteArbeitszeit,
+  listArbeitsabrechnungen, getArbeitsabrechnung, saveArbeitsabrechnung, deleteArbeitsabrechnung,
 };

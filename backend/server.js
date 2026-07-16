@@ -17,6 +17,7 @@ const createAuslagenRouter = require('./routes/auslagen');
 const createScanRouter = require('./routes/scan');
 const createVertraegeRouter = require('./routes/vertraege');
 const createVorgaengeRouter = require('./routes/vorgaenge');
+const createArbeitszeitenRouter = require('./routes/arbeitszeiten');
 
 const PORT = parseInt(process.env.PORT || '3000', 10);
 const HOST = process.env.HOST || '127.0.0.1';
@@ -63,6 +64,9 @@ app.use('/api/scan', createScanRouter(broadcast));
 app.use('/api', createVertraegeRouter(broadcast));
 app.use('/api', createVorgaengeRouter(broadcast));
 
+// --- Modul: Arbeitszeiten & Vergütung ---
+app.use('/api', createArbeitszeitenRouter(broadcast));
+
 // --- Snapshot (Bootstrap) ---
 app.get('/api/snapshot', (_req, res) => {
   res.json({
@@ -82,6 +86,9 @@ app.get('/api/snapshot', (_req, res) => {
     vertraege: db.listVertraege(),
     vorgaenge: db.listVorgaenge(),
     vorgangFiles: groupVorgangFotos(),
+    arbeiter: db.listArbeiter(),
+    arbeitszeiten: db.listArbeitszeiten(),
+    arbeitsabrechnungen: db.listArbeitsabrechnungen(),
     serverTime: new Date().toISOString(),
   });
 });

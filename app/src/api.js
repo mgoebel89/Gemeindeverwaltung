@@ -125,6 +125,14 @@
   // --- Modul: Vorgänge & Projekte ---
   async function putVorgang(v) { return jsonFetch(`/api/vorgaenge/${encodeURIComponent(v.id)}`, { method: 'PUT', body: v }); }
   async function deleteVorgangRemote(id) { return jsonFetch(`/api/vorgaenge/${encodeURIComponent(id)}`, { method: 'DELETE' }); }
+  // --- Modul: Arbeitszeiten & Vergütung ---
+  async function putArbeiter(a) { return jsonFetch(`/api/arbeiter/${encodeURIComponent(a.id)}`, { method: 'PUT', body: a }); }
+  async function deleteArbeiterRemote(id) { return jsonFetch(`/api/arbeiter/${encodeURIComponent(id)}`, { method: 'DELETE' }); }
+  async function putArbeitszeit(z) { return jsonFetch(`/api/arbeitszeiten/${encodeURIComponent(z.id)}`, { method: 'PUT', body: z }); }
+  async function deleteArbeitszeitRemote(id) { return jsonFetch(`/api/arbeitszeiten/${encodeURIComponent(id)}`, { method: 'DELETE' }); }
+  async function putArbeitsabrechnung(a) { return jsonFetch(`/api/arbeitsabrechnungen/${encodeURIComponent(a.id)}`, { method: 'PUT', body: a }); }
+  async function deleteArbeitsabrechnungRemote(id) { return jsonFetch(`/api/arbeitsabrechnungen/${encodeURIComponent(id)}`, { method: 'DELETE' }); }
+
   async function listVorgangFotos(vorgangId) { return jsonFetch(`/api/vorgaenge/${encodeURIComponent(vorgangId)}/fotos`); }
   async function uploadVorgangFoto(vorgangId, file, kind) {
     const fd = new FormData();
@@ -270,6 +278,9 @@
     putVertrag, deleteVertragRemote,
     putVorgang, deleteVorgangRemote,
     listVorgangFotos, uploadVorgangFoto, deleteVorgangFoto, vorgangFotoUrl,
+    putArbeiter, deleteArbeiterRemote,
+    putArbeitszeit, deleteArbeitszeitRemote,
+    putArbeitsabrechnung, deleteArbeitsabrechnungRemote,
     connectWs, subscribe,
     clientId: CLIENT_ID,
   };

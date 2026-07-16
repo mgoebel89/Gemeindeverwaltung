@@ -43,7 +43,8 @@
       const budget = (h.budget === null || h.budget === undefined || h.budget === '') ? null : Number(h.budget);
       const ausl = M.budgetVerbrauch(store.listAuslagen(), h.id, jahr, M.ABGERECHNET_STATUS);
       const vorg = M.vorgaengeVerbrauch(store.listVorgaenge(), h.id, jahr);
-      const verbrauch = ausl + vorg;
+      const arb = M.arbeitszeitenVerbrauch(store.listArbeitsabrechnungen(), h.id, jahr);
+      const verbrauch = ausl + vorg + arb;
       const rest = budget != null ? budget - verbrauch : null;
       if (budget != null) sumBudget += budget;
       sumVerbrauch += verbrauch;
@@ -51,7 +52,7 @@
         el('td', {}, el('strong', {}, h.nummer || '—')),
         el('td', {}, h.bezeichnung || '—'),
         el('td', { style: 'text-align:right;' }, budget != null ? eur(budget) : '—'),
-        el('td', { style: 'text-align:right;', title: 'Auslagen ' + eur(ausl) + ' · Vorgänge ' + eur(vorg) }, eur(verbrauch)),
+        el('td', { style: 'text-align:right;', title: 'Auslagen ' + eur(ausl) + ' · Vorgänge ' + eur(vorg) + ' · Arbeitszeiten ' + eur(arb) }, eur(verbrauch)),
         el('td', { style: 'text-align:right; font-weight:600;' }, rest != null ? eur(rest) : '—'),
         el('td', { style: 'text-align:right; white-space:nowrap;' }, [
           el('button', { class: 'btn-sm', onClick: () => GR.auslagen.haushaltsstelleDialog(h, refresh) }, 'Bearbeiten'), ' ',

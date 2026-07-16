@@ -599,6 +599,22 @@ tr:hover td { background: #fafbfc; }
   .dash-date { min-width: 84px; }
 }
 
+/* ===== Arbeitszeiten & Vergütung ===== */
+.az-form { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; align-items: end; }
+.az-form label { display: block; }
+.az-abr-box {
+  border: 1px solid var(--border); border-radius: 8px; padding: 10px; margin-bottom: 10px;
+}
+.az-abr { margin-top: 6px; }
+.az-abr summary { cursor: pointer; font-size: 0.85rem; color: var(--muted); }
+.az-abr table { margin-top: 8px; }
+.warn-inline { color: #c53030; font-size: 0.8rem; }
+
+@media (max-width: 760px) {
+  .az-form { grid-template-columns: 1fr 1fr; }
+  .az-form > div[style*="span 2"] { grid-column: span 2 !important; }
+}
+
 /* ===== Termine: Kalenderansichten (Monat/Woche) ===== */
 .cal-toolbar { align-items: center; flex-wrap: wrap; gap: 8px; }
 .cal-titel { margin: 0; font-size: 1.15rem; }

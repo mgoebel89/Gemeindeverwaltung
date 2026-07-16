@@ -46,6 +46,9 @@
     for (const p of store.listVertragspartner()) if (store.isDirty('vertragspartner', p)) n++;
     for (const v of store.listVertraege()) if (store.isDirty('vertraege', v)) n++;
     for (const v of store.listVorgaenge()) if (store.isDirty('vorgaenge', v)) n++;
+    for (const a of store.listArbeiter()) if (store.isDirty('arbeiter', a)) n++;
+    for (const z of store.listArbeitszeiten()) if (store.isDirty('arbeitszeiten', z)) n++;
+    for (const a of store.listArbeitsabrechnungen()) if (store.isDirty('arbeitsabrechnungen', a)) n++;
     return n;
   }
 
@@ -121,6 +124,9 @@
       { kind: 'vertragspartner', list: store.listVertragspartner(), fn: client.syncVertragspartner },
       { kind: 'vertraege', list: store.listVertraege(), fn: client.syncVertrag },
       { kind: 'vorgaenge', list: store.listVorgaenge(), fn: client.syncVorgang },
+      { kind: 'arbeiter', list: store.listArbeiter(), fn: client.syncArbeiter },
+      { kind: 'arbeitszeiten', list: store.listArbeitszeiten(), fn: client.syncArbeitszeit },
+      { kind: 'arbeitsabrechnungen', list: store.listArbeitsabrechnungen(), fn: client.syncArbeitsabrechnung },
     ];
     for (const mod of modules) {
       for (const item of mod.list) {

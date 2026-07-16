@@ -531,6 +531,46 @@ REST-API angebunden. Der Zugriff läuft **serverseitig** (`backend/vikunja.js`, 
 > **Migration:** Kein neues Schema nötig (nutzt die bestehende `settings`-Tabelle). Frontend
 > nach dem Update mit **Strg+F5** neu laden.
 
+## Modul „Arbeitszeiten & Vergütung"
+
+Erfasst Arbeitsleistungen für die Gemeinde – von **Gemeindearbeitern** ebenso wie von
+**beauftragten Firmen** – und rechnet sie je Person/Firma und Zeitraum ab. Drei Ansichten:
+`#/arbeitszeiten` (Erfassung), `#/arbeiter` (Stammdaten), `#/arbeitsabrechnungen`.
+
+- **Leistungserbringer** sind **ein** Stammdatentyp (kein Person/Firma-Umschalter): immer
+  Vor-/Nachname, dazu ein **optionales Feld „Firma"**. Ist es gesetzt, erscheint die Firma als
+  Name und die Person als *Ansprechpartner*. Weitere Felder (Anschrift, IBAN, SV-Nummer,
+  Steuer-ID, …) sind optional. Wer bereits Zeiten erfasst hat, lässt sich nicht löschen –
+  stattdessen den Haken **Aktiv** entfernen (bleibt in alten Abrechnungen erhalten).
+- **Stundensatz** gilt **einheitlich für alle**, aber mit **Historie**: Sätze werden mit
+  „gültig ab" gepflegt (*Einstellungen → Arbeitszeiten*). Maßgeblich ist der Satz, der am
+  **Leistungsdatum** gültig war – ältere Einträge ändern sich also nicht, wenn der Satz später
+  steigt. Am einzelnen Eintrag lässt sich ein **abweichender Satz** setzen (z. B. Firmen mit
+  eigener Rechnung).
+- **Status je Eintrag:** `erfasst` → `abgerechnet` → `ausgezahlt`. Nur „erfasst" ist
+  editier-/löschbar; danach ist der Eintrag gesperrt (🔒), Korrektur nur über **Storno**.
+- **Abrechnung:** Person + Zeitraum wählen → alle offenen Einträge werden automatisch
+  übernommen (Vorschau mit Summe), Haushaltsstelle + Haushaltsjahr wählen → *Erstellen*
+  **friert die Sätze ein** (Snapshot je Position). Spätere Satzänderungen wirken sich auf
+  fertige Abrechnungen **nicht** mehr aus. *Storno* setzt die Einträge auf „erfasst" zurück
+  und löscht die Abrechnung; *Als ausgezahlt markieren* setzt Abrechnung + Einträge auf
+  `ausgezahlt`.
+- **Haushalt:** Abrechnungen mindern ab Status **abgerechnet** die Restmittel ihrer
+  Haushaltsstelle – im Modul *Haushalt* und in der Budget-Tabelle der *Vorgänge* fließen sie
+  in denselben Topf wie Auslagen und Vorgangskosten (Spalte „Verbrauch", Tooltip schlüsselt
+  auf). Die Haushaltsstellen sind **dieselbe geteilte Liste** wie bei den Bargeldauslagen.
+- **PDF:** *Vorläufige PDF* erzeugt eine interne Abrechnung (Leistungserbringer + Bankdaten,
+  Positionstabelle, Summen, Haushaltsstelle, Unterschriftslinien inkl. Bürgermeisterbild) –
+  wahlweise als Download oder direkt **in Paperless**. Das **Formular der Verbandsgemeinde**
+  ist noch nicht umgesetzt und kommt später als zweite Ausgabe daneben.
+- **NocoDB:** Alle drei Tabellen (`Arbeiter`, `Arbeitszeiten`, `Arbeitsabrechnungen`) werden
+  vom Auto-Sync mitgesichert und beim ersten Sync automatisch angelegt. Sie enthalten
+  bewusst **auch IBAN/SV-Nummer/Steuer-ID** – NocoDB ist nur über VPN im privaten Netz
+  erreichbar.
+
+> **Migration:** Die drei SQLite-Tabellen legt das Backend beim Start selbst an
+> (`CREATE TABLE IF NOT EXISTS`). Frontend nach dem Update mit **Strg+F5** neu laden.
+
 ## Lizenz
 
 Creative Commons **CC BY-NC-SA 4.0** — siehe `LICENSE`.

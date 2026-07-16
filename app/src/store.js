@@ -21,6 +21,9 @@
     vertraege: [],        // [{...}]
     vorgaenge: [],        // [{...}] Modul Vorgänge & Projekte
     vorgangFiles: {},     // vorgangId -> [{id, kind, filename, ...}] Verlaufsfotos
+    arbeiter: [],         // [{...}] Modul Arbeitszeiten: Leistungserbringer
+    arbeitszeiten: [],    // [{...}] Tätigkeitseinträge
+    arbeitsabrechnungen: [], // [{...}] Abrechnungen je Person/Zeitraum
     ready: false,
     backendAvailable: false,
   };
@@ -128,6 +131,7 @@
       auslagen: defaultAuslagenSettings(),
       vertraege: defaultVertraegeSettings(),
       vorgaenge: defaultVorgaengeSettings(),
+      arbeitszeiten: defaultArbeitszeitenSettings(),
     };
   }
   // Modul-Einstellungen „Vorgänge & Projekte": Kategorienliste, festes Vikunja-
@@ -138,6 +142,15 @@
       kategorien: ['Bauprojekt', 'Beschaffung', 'Veranstaltung', 'Personal', 'Förderung', 'Sonstiges'],
       vikunjaProjektId: null,
       leitungPinHash: '',
+    };
+  }
+  // Modul Arbeitszeiten: EIN einheitlicher Stundensatz, aber mit Historie
+  // („gültig ab"). Maßgeblich ist der Satz zum Leistungsdatum; beim Abrechnen
+  // wird er eingefroren. Am Einzeleintrag überschreibbar (z. B. Firmen).
+  function defaultArbeitszeitenSettings() {
+    return {
+      satzHistorie: [],   // [{ gueltigAb: 'YYYY-MM-DD', betrag: Number }]
+      taetigkeiten: ['Rasen mähen', 'Hecke schneiden', 'Winterdienst', 'Reparatur', 'Reinigung', 'Sonstiges'],
     };
   }
   function defaultNocoDbSettings() {
@@ -152,6 +165,9 @@
       tableVertragspartnerName: 'Vertragspartner', tableVertraegeName: 'Vertraege',
       tableVertragspartnerId: '', tableVertraegeId: '',
       tableVorgaengeName: 'Vorgaenge', tableVorgaengeId: '',
+      tableArbeiterName: 'Arbeiter', tableArbeiterId: '',
+      tableArbeitszeitenName: 'Arbeitszeiten', tableArbeitszeitenId: '',
+      tableArbeitsabrechnungenName: 'Arbeitsabrechnungen', tableArbeitsabrechnungenId: '',
     };
   }
   // Absender-/Formulardaten für die Bargeldauslagen-PDFs (Defaults aus der Vorlage Hörschhausen).
@@ -209,6 +225,9 @@
       cache.vertraege = snap.vertraege || [];
       cache.vorgaenge = (snap.vorgaenge || []).map(migrateVorgang);
       cache.vorgangFiles = snap.vorgangFiles || {};
+      cache.arbeiter = snap.arbeiter || [];
+      cache.arbeitszeiten = snap.arbeitszeiten || [];
+      cache.arbeitsabrechnungen = snap.arbeitsabrechnungen || [];
       cache.backendAvailable = true;
       cache.ready = true;
       mergeSettingsDefaults();
@@ -238,7 +257,9 @@
     for (const k of ['tableMieterName', 'tableRaeumeName', 'tableVermietungenName', 'tableMieterId', 'tableRaeumeId', 'tableVermietungenId',
       'tableEmpfaengerName', 'tableHaushaltsstellenName', 'tableAuslagenName', 'tableEmpfaengerId', 'tableHaushaltsstellenId', 'tableAuslagenId',
       'tableVertragspartnerName', 'tableVertraegeName', 'tableVertragspartnerId', 'tableVertraegeId',
-      'tableVorgaengeName', 'tableVorgaengeId']) {
+      'tableVorgaengeName', 'tableVorgaengeId',
+      'tableArbeiterName', 'tableArbeiterId', 'tableArbeitszeitenName', 'tableArbeitszeitenId',
+      'tableArbeitsabrechnungenName', 'tableArbeitsabrechnungenId']) {
       if (cache.settings.nocodb[k] === undefined) cache.settings.nocodb[k] = dn[k];
     }
     if (!cache.settings.vermietung) cache.settings.vermietung = defaultVermietungSettings();
@@ -260,6 +281,11 @@
     else {
       const dvg = defaultVorgaengeSettings();
       for (const k of Object.keys(dvg)) if (cache.settings.vorgaenge[k] === undefined) cache.settings.vorgaenge[k] = dvg[k];
+    }
+    if (!cache.settings.arbeitszeiten) cache.settings.arbeitszeiten = defaultArbeitszeitenSettings();
+    else {
+      const daz = defaultArbeitszeitenSettings();
+      for (const k of Object.keys(daz)) if (cache.settings.arbeitszeiten[k] === undefined) cache.settings.arbeitszeiten[k] = daz[k];
     }
     // Globales Vikunja-Projekt: einmalig aus dem früheren Vorgänge-spezifischen
     // Wert übernehmen (nur wenn das Feld noch gar nicht existiert).
@@ -376,6 +402,12 @@
         notifyChange(); notifyRemote();
         break;
       }
+      case 'arbeiter:save': { upsertInto(cache.arbeiter, msg.arbeiter); notifyChange(); notifyRemote(); break; }
+      case 'arbeiter:delete': { cache.arbeiter = cache.arbeiter.filter(x => x.id !== msg.id); notifyChange(); notifyRemote(); break; }
+      case 'arbeitszeit:save': { upsertInto(cache.arbeitszeiten, msg.arbeitszeit); notifyChange(); notifyRemote(); break; }
+      case 'arbeitszeit:delete': { cache.arbeitszeiten = cache.arbeitszeiten.filter(x => x.id !== msg.id); notifyChange(); notifyRemote(); break; }
+      case 'arbeitsabrechnung:save': { upsertInto(cache.arbeitsabrechnungen, msg.arbeitsabrechnung); notifyChange(); notifyRemote(); break; }
+      case 'arbeitsabrechnung:delete': { cache.arbeitsabrechnungen = cache.arbeitsabrechnungen.filter(x => x.id !== msg.id); notifyChange(); notifyRemote(); break; }
       case 'bulk:imported': {
         // Komplettes Re-Bootstrap, damit alle Daten konsistent kommen
         bootstrap();
@@ -655,6 +687,129 @@
       delete cache.vorgangFiles[id];
       GR.api.deleteVorgangRemote(id).catch(e => console.warn('deleteVorgang Backend-Fehler', e));
       notifyChange();
+    },
+
+    // --- Modul Arbeitszeiten & Vergütung ---
+    listArbeiter() { return cache.arbeiter.slice(); },
+    getArbeiter(id) { return cache.arbeiter.find(a => a.id === id) || null; },
+    saveArbeiter(a) {
+      a.lastModifiedAt = nowIso();
+      upsertInto(cache.arbeiter, a);
+      GR.api.putArbeiter(a).catch(e => { console.warn('saveArbeiter Backend-Fehler', e); if (GR.ui && GR.ui.toast) GR.ui.toast('Backend-Fehler: ' + e.message, 4000); });
+      notifyChange();
+    },
+    deleteArbeiter(id) {
+      cache.arbeiter = cache.arbeiter.filter(a => a.id !== id);
+      GR.api.deleteArbeiterRemote(id).catch(e => console.warn('deleteArbeiter Backend-Fehler', e));
+      notifyChange();
+    },
+
+    listArbeitszeiten() { return cache.arbeitszeiten.slice(); },
+    getArbeitszeit(id) { return cache.arbeitszeiten.find(z => z.id === id) || null; },
+    saveArbeitszeit(z) {
+      z.lastModifiedAt = nowIso();
+      upsertInto(cache.arbeitszeiten, z);
+      GR.api.putArbeitszeit(z).catch(e => { console.warn('saveArbeitszeit Backend-Fehler', e); if (GR.ui && GR.ui.toast) GR.ui.toast('Backend-Fehler: ' + e.message, 4000); });
+      notifyChange();
+    },
+    deleteArbeitszeit(id) {
+      cache.arbeitszeiten = cache.arbeitszeiten.filter(z => z.id !== id);
+      GR.api.deleteArbeitszeitRemote(id).catch(e => console.warn('deleteArbeitszeit Backend-Fehler', e));
+      notifyChange();
+    },
+
+    listArbeitsabrechnungen() { return cache.arbeitsabrechnungen.slice(); },
+    getArbeitsabrechnung(id) { return cache.arbeitsabrechnungen.find(a => a.id === id) || null; },
+    saveArbeitsabrechnung(a) {
+      a.lastModifiedAt = nowIso();
+      upsertInto(cache.arbeitsabrechnungen, a);
+      GR.api.putArbeitsabrechnung(a).catch(e => { console.warn('saveArbeitsabrechnung Backend-Fehler', e); if (GR.ui && GR.ui.toast) GR.ui.toast('Backend-Fehler: ' + e.message, 4000); });
+      notifyChange();
+    },
+    deleteArbeitsabrechnung(id) {
+      cache.arbeitsabrechnungen = cache.arbeitsabrechnungen.filter(a => a.id !== id);
+      GR.api.deleteArbeitsabrechnungRemote(id).catch(e => console.warn('deleteArbeitsabrechnung Backend-Fehler', e));
+      notifyChange();
+    },
+
+    // Offene (erfasste) Einträge einer Person in einem Zeitraum – Grundlage der
+    // automatischen Abrechnungsauswahl.
+    offeneArbeitszeiten(arbeiterId, von, bis) {
+      return cache.arbeitszeiten
+        .filter(z => z.arbeiterId === arbeiterId && (z.status || 'erfasst') === 'erfasst'
+          && (!von || String(z.datum) >= String(von)) && (!bis || String(z.datum) <= String(bis)))
+        .sort((a, b) => String(a.datum).localeCompare(String(b.datum)));
+    },
+
+    // Abrechnung erstellen: friert je Position den zum Leistungsdatum gültigen
+    // Satz ein (bzw. den manuell gesetzten) und sperrt die Einträge. Spätere
+    // Satzänderungen wirken dadurch NICHT mehr auf fertige Abrechnungen.
+    erstelleArbeitsabrechnung({ arbeiterId, von, bis, haushaltsstelleId, haushaltsjahr, notiz }) {
+      const M = GR.models;
+      const historie = (this.getSettings().arbeitszeiten || {}).satzHistorie || [];
+      const eintraege = this.offeneArbeitszeiten(arbeiterId, von, bis);
+      if (!eintraege.length) throw new Error('Keine offenen Einträge im Zeitraum.');
+
+      const abr = Object.assign(M.emptyArbeitsabrechnung(), {
+        arbeiterId, zeitraumVon: von, zeitraumBis: bis,
+        haushaltsstelleId: haushaltsstelleId || '',
+        haushaltsjahr: haushaltsjahr || new Date(bis || Date.now()).getFullYear(),
+        notiz: notiz || '',
+      });
+      for (const z of eintraege) {
+        const satz = M.arbeitszeitSatz(z, historie);
+        if (satz == null) throw new Error(`Für den ${z.datum} ist kein Stundensatz hinterlegt.`);
+        const betrag = Math.round(satz * (Number(z.stunden) || 0) * 100) / 100;
+        abr.positionen.push({
+          arbeitszeitId: z.id, datum: z.datum, taetigkeit: z.taetigkeit,
+          stunden: Number(z.stunden) || 0, satz, betrag,
+        });
+      }
+      abr.summeStunden = Math.round(abr.positionen.reduce((s, p) => s + p.stunden, 0) * 100) / 100;
+      abr.summeBetrag = Math.round(abr.positionen.reduce((s, p) => s + p.betrag, 0) * 100) / 100;
+      this.saveArbeitsabrechnung(abr);
+
+      for (const p of abr.positionen) {
+        const z = this.getArbeitszeit(p.arbeitszeitId);
+        if (!z) continue;
+        z.status = 'abgerechnet';
+        z.abrechnungId = abr.id;
+        z.satzSnapshot = p.satz;
+        z.betragSnapshot = p.betrag;
+        this.saveArbeitszeit(z);
+      }
+      return abr;
+    },
+
+    // Storno: Einträge zurück auf „erfasst" (Snapshots weg), Abrechnung löschen.
+    storniereArbeitsabrechnung(id) {
+      const abr = this.getArbeitsabrechnung(id);
+      if (!abr) return;
+      for (const p of (abr.positionen || [])) {
+        const z = this.getArbeitszeit(p.arbeitszeitId);
+        if (!z) continue;
+        z.status = 'erfasst';
+        z.abrechnungId = null;
+        z.satzSnapshot = null;
+        z.betragSnapshot = null;
+        this.saveArbeitszeit(z);
+      }
+      this.deleteArbeitsabrechnung(id);
+    },
+
+    // Auszahlung: gilt für die ganze Abrechnung inkl. ihrer Einträge.
+    markiereAbrechnungAusgezahlt(id, datum) {
+      const abr = this.getArbeitsabrechnung(id);
+      if (!abr) return;
+      abr.status = 'ausgezahlt';
+      abr.ausgezahltAm = datum || nowIso().slice(0, 10);
+      this.saveArbeitsabrechnung(abr);
+      for (const p of (abr.positionen || [])) {
+        const z = this.getArbeitszeit(p.arbeitszeitId);
+        if (!z) continue;
+        z.status = 'ausgezahlt';
+        this.saveArbeitszeit(z);
+      }
     },
 
     // --- Verlaufsfotos (zu einem Vorgang; async) ---

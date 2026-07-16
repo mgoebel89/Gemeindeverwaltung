@@ -459,6 +459,114 @@
     return sum;
   }
 
+  // ===== Modul Arbeitszeiten & Vergütung =====
+  // Leistungserbringer sind EIN Stammdatentyp (kein Person/Firma-Umschalter):
+  // immer Vor-/Nachname, zusätzlich ein optionales Feld „Firma". Ist es gesetzt,
+  // ist die Firma der Anzeigename und der Name der Ansprechpartner.
+  const ARBEITSZEIT_STATUS = ['erfasst', 'abgerechnet', 'ausgezahlt'];
+  const ARBEITSZEIT_STATUS_LABEL = {
+    erfasst: 'Erfasst', abgerechnet: 'Abgerechnet', ausgezahlt: 'Ausgezahlt',
+  };
+  // Arbeitszeiten, die das Budget einer Haushaltsstelle mindern: ab „abgerechnet"
+  // (reine Erfassungen zählen noch nicht) – analog zu ABGERECHNET_STATUS.
+  const ARBEITSZEIT_GEBUCHT_STATUS = ['abgerechnet', 'ausgezahlt'];
+
+  function emptyArbeiter() {
+    return {
+      id: uuid(),
+      vorname: '', nachname: '',
+      firma: '',            // optional; gesetzt ⇒ Anzeigename, Name = Ansprechpartner
+      strasse: '', plz: '', ort: '',
+      iban: '', kontoinhaber: '',
+      svNummer: '', steuerId: '', geburtsdatum: '',
+      telefon: '', email: '', notiz: '',
+      aktiv: true,
+    };
+  }
+
+  // Anzeigename: Firma falls gesetzt, sonst „Vorname Nachname".
+  function arbeiterName(a) {
+    if (!a) return '';
+    const firma = (a.firma || '').trim();
+    if (firma) return firma;
+    return [(a.vorname || '').trim(), (a.nachname || '').trim()].filter(Boolean).join(' ') || '(ohne Namen)';
+  }
+  // Zusatzzeile: bei Firma der Ansprechpartner, sonst leer.
+  function arbeiterZusatz(a) {
+    if (!a || !(a.firma || '').trim()) return '';
+    const p = [(a.vorname || '').trim(), (a.nachname || '').trim()].filter(Boolean).join(' ');
+    return p ? 'Ansprechpartner: ' + p : '';
+  }
+
+  function emptyArbeitszeit() {
+    return {
+      id: uuid(),
+      arbeiterId: '',
+      datum: heuteIso(),      // Leistungsdatum – bestimmt den gültigen Satz
+      taetigkeit: '',
+      stunden: 0,
+      satzManuell: null,      // überschreibt den einheitlichen Satz (z. B. Firmen)
+      notiz: '',
+      status: 'erfasst',      // 'erfasst' | 'abgerechnet' | 'ausgezahlt'
+      abrechnungId: null,
+      satzSnapshot: null,     // beim Abrechnen eingefroren
+      betragSnapshot: null,
+    };
+  }
+
+  function emptyArbeitsabrechnung() {
+    return {
+      id: uuid(),
+      arbeiterId: '',
+      zeitraumVon: '', zeitraumBis: '',
+      erstelltAm: heuteIso(),
+      haushaltsstelleId: '',
+      haushaltsjahr: new Date().getFullYear(),
+      positionen: [],         // [{arbeitszeitId, datum, taetigkeit, stunden, satz, betrag}]
+      summeStunden: 0, summeBetrag: 0,
+      status: 'abgerechnet',  // 'abgerechnet' | 'ausgezahlt'
+      ausgezahltAm: '', notiz: '',
+    };
+  }
+
+  function heuteIso() {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  }
+
+  // Einheitlicher Stundensatz zum Leistungsdatum: jüngster Satz mit gueltigAb ≤ datum.
+  // historie = [{gueltigAb:'YYYY-MM-DD', betrag:Number}]
+  function satzFuer(historie, datum) {
+    const liste = (historie || [])
+      .filter(s => s && s.gueltigAb && Number(s.betrag) >= 0)
+      .filter(s => String(s.gueltigAb) <= String(datum || ''))
+      .sort((a, b) => String(a.gueltigAb).localeCompare(String(b.gueltigAb)));
+    return liste.length ? Number(liste[liste.length - 1].betrag) : null;
+  }
+
+  // Effektiver Satz eines Eintrags: manueller Satz schlägt den einheitlichen.
+  function arbeitszeitSatz(z, historie) {
+    if (z && z.satzSnapshot != null) return Number(z.satzSnapshot); // eingefroren
+    if (z && z.satzManuell != null && z.satzManuell !== '') return Number(z.satzManuell);
+    return satzFuer(historie, z && z.datum);
+  }
+  function arbeitszeitBetrag(z, historie) {
+    if (z && z.betragSnapshot != null) return Number(z.betragSnapshot);
+    const satz = arbeitszeitSatz(z, historie);
+    if (satz == null) return null;
+    return Math.round(satz * (Number(z && z.stunden) || 0) * 100) / 100;
+  }
+
+  // Verbrauch der Arbeitsabrechnungen auf einer Haushaltsstelle (fürs Modul
+  // Haushalt). Zählt ab Status „abgerechnet" – Erfassungen noch nicht.
+  function arbeitszeitenVerbrauch(abrechnungen, haushaltsstelleId, jahr) {
+    return (abrechnungen || [])
+      .filter(a => a.haushaltsstelleId === haushaltsstelleId
+        && String(a.haushaltsjahr) === String(jahr)
+        && ARBEITSZEIT_GEBUCHT_STATUS.includes(a.status || 'abgerechnet'))
+      .reduce((s, a) => s + (Number(a.summeBetrag) || 0), 0);
+  }
+
   GR.models = {
     SCHEMA_VERSION, uuid,
     emptyAbstimmung, emptyTop, emptySitzung,
@@ -475,5 +583,9 @@
     jahresbetrag, addMonths, dateToIso, spaetesterKuendigungstermin, fristStatus, tageBisKuendigung,
     VORGANG_STATUS, VORGANG_STATUS_LABEL, HISTORIE_TYPEN, HISTORIE_TYP_LABEL,
     emptyVorgang, emptyHistorieEintrag, vorgangKosten, vorgangKostenAuf, vorgaengeVerbrauch,
+    ARBEITSZEIT_STATUS, ARBEITSZEIT_STATUS_LABEL, ARBEITSZEIT_GEBUCHT_STATUS,
+    emptyArbeiter, arbeiterName, arbeiterZusatz,
+    emptyArbeitszeit, emptyArbeitsabrechnung,
+    satzFuer, arbeitszeitSatz, arbeitszeitBetrag, arbeitszeitenVerbrauch,
   };
 })();

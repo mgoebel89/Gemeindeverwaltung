@@ -579,6 +579,82 @@
     return { vorgaenge: 1 };
   }
 
+  // --- Modul Arbeitszeiten & Vergütung ---
+  // Auf Matthias' ausdrücklichen Wunsch werden auch IBAN/SV-Nummer/Steuer-ID
+  // mitgesichert – NocoDB ist nur über VPN im isolierten Heimnetz erreichbar.
+  function buildArbeiterRow(a) {
+    return {
+      ArbeiterId: a.id,
+      Anzeigename: GR.models.arbeiterName(a),
+      Firma: a.firma || '',
+      Vorname: a.vorname || '',
+      Nachname: a.nachname || '',
+      Strasse: a.strasse || '',
+      Plz: a.plz || '',
+      Ort: a.ort || '',
+      Iban: a.iban || '',
+      Kontoinhaber: a.kontoinhaber || '',
+      SvNummer: a.svNummer || '',
+      SteuerId: a.steuerId || '',
+      Geburtsdatum: a.geburtsdatum || '',
+      Telefon: a.telefon || '',
+      Email: a.email || '',
+      Aktiv: a.aktiv === false ? 'nein' : 'ja',
+      LastModifiedAt: a.lastModifiedAt || '',
+      Payload: JSON.stringify(a),
+    };
+  }
+  function buildArbeitszeitRow(z) {
+    const a = store.getArbeiter(z.arbeiterId);
+    return {
+      ArbeitszeitId: z.id,
+      Arbeiter: a ? GR.models.arbeiterName(a) : '',
+      Datum: z.datum || '',
+      Taetigkeit: z.taetigkeit || '',
+      Stunden: Number(z.stunden) || 0,
+      Satz: z.satzSnapshot != null ? Number(z.satzSnapshot) : (z.satzManuell != null ? Number(z.satzManuell) : ''),
+      Betrag: z.betragSnapshot != null ? Number(z.betragSnapshot) : '',
+      Status: GR.models.ARBEITSZEIT_STATUS_LABEL[z.status || 'erfasst'] || z.status || '',
+      AbrechnungId: z.abrechnungId || '',
+      Notiz: z.notiz || '',
+      LastModifiedAt: z.lastModifiedAt || '',
+      Payload: JSON.stringify(z),
+    };
+  }
+  function buildArbeitsabrechnungRow(abr) {
+    const a = store.getArbeiter(abr.arbeiterId);
+    const h = store.getHaushaltsstelle(abr.haushaltsstelleId);
+    return {
+      AbrechnungId: abr.id,
+      Arbeiter: a ? GR.models.arbeiterName(a) : '',
+      ZeitraumVon: abr.zeitraumVon || '',
+      ZeitraumBis: abr.zeitraumBis || '',
+      ErstelltAm: abr.erstelltAm || '',
+      Haushaltsstelle: h ? ((h.nummer ? h.nummer + ' ' : '') + (h.bezeichnung || '')).trim() : '',
+      Haushaltsjahr: abr.haushaltsjahr || '',
+      SummeStunden: Number(abr.summeStunden) || 0,
+      SummeBetrag: Number(abr.summeBetrag) || 0,
+      AnzahlPositionen: (abr.positionen || []).length,
+      Status: abr.status === 'ausgezahlt' ? 'Ausgezahlt' : 'Abgerechnet',
+      AusgezahltAm: abr.ausgezahltAm || '',
+      Notiz: abr.notiz || '',
+      LastModifiedAt: abr.lastModifiedAt || '',
+      Payload: JSON.stringify(abr),
+    };
+  }
+  async function syncArbeiter(a) {
+    await upsertRecord(await ensureTableId('tableArbeiterId', 'Arbeiter'), 'ArbeiterId', buildArbeiterRow(a));
+    return { arbeiter: 1 };
+  }
+  async function syncArbeitszeit(z) {
+    await upsertRecord(await ensureTableId('tableArbeitszeitenId', 'Arbeitszeiten'), 'ArbeitszeitId', buildArbeitszeitRow(z));
+    return { arbeitszeiten: 1 };
+  }
+  async function syncArbeitsabrechnung(abr) {
+    await upsertRecord(await ensureTableId('tableArbeitsabrechnungenId', 'Arbeitsabrechnungen'), 'AbrechnungId', buildArbeitsabrechnungRow(abr));
+    return { arbeitsabrechnungen: 1 };
+  }
+
   async function syncQueue() {
     const queue = store.listQueue();
     let ok = 0, fail = 0;
@@ -678,6 +754,7 @@
     syncVertragspartner,
     syncVertrag,
     syncVorgang,
+    syncArbeiter, syncArbeitszeit, syncArbeitsabrechnung,
     syncQueue,
     restoreFromNocoDb,
     isConfigured,

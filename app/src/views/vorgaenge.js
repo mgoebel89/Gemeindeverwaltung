@@ -363,13 +363,14 @@
         const eigenAuf = M.vorgangKostenAuf(v, id);
         const ausl = M.budgetVerbrauch(store.listAuslagen(), id, v.haushaltsjahr, M.ABGERECHNET_STATUS);
         const vorg = M.vorgaengeVerbrauch(store.listVorgaenge(), id, v.haushaltsjahr);
-        const gesamt = ausl + vorg;
+        const arb = M.arbeitszeitenVerbrauch(store.listArbeitsabrechnungen(), id, v.haushaltsjahr);
+        const gesamt = ausl + vorg + arb;
         const rest = budget != null ? budget - gesamt : null;
         return el('tr', { class: rest != null && rest < 0 ? 'vg-row-neg' : '' }, [
           el('td', {}, h ? ((h.nummer ? h.nummer + ' · ' : '') + (h.bezeichnung || '(ohne)')) : '(unbekannt)'),
           el('td', { style: 'text-align:right;' }, eur(eigenAuf)),
           el('td', { style: 'text-align:right;' }, budget != null ? eur(budget) : '—'),
-          el('td', { style: 'text-align:right;', title: 'Auslagen ' + eur(ausl) + ' · Vorgänge ' + eur(vorg) }, eur(gesamt)),
+          el('td', { style: 'text-align:right;', title: 'Auslagen ' + eur(ausl) + ' · Vorgänge ' + eur(vorg) + ' · Arbeitszeiten ' + eur(arb) }, eur(gesamt)),
           el('td', { style: 'text-align:right; font-weight:600;' }, rest != null ? eur(rest) : '—'),
         ]);
       });
