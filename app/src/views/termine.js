@@ -1,12 +1,17 @@
 (function () {
   'use strict';
   window.GR = window.GR || {};
+  const { store } = GR;
   const { el, formatDatum, wochentag } = GR.ui;
 
   // ---- Termine (Kalender) ----
   // Zeigt die aggregierten Termine aller abonnierten iCal-Kalender in drei
   // Ansichten: Monat, Woche (je 7 Tagesspalten) und Liste. Die Kalender werden
   // serverseitig geholt/geparst (Backend-Proxy).
+  //
+  // Zusätzlich laufen die offenen Vikunja-Aufgaben mit Fälligkeitsdatum mit
+  // (farblich abgesetzt, überfällige rot). Sie kommen aus dem app-weit
+  // gewählten Projekt – dasselbe wie im Aufgaben-Modul.
   //
   // Geladen wird immer GENAU der angezeigte Zeitraum (`from`+`days`), nicht
   // „heute + n Tage". Nur so sind auch Termine Jahre in der Zukunft erreichbar.
@@ -61,12 +66,17 @@
     }
 
     mount.appendChild(buildToolbar(view, anker, days, titel));
+    mount.appendChild(legende());
 
     const body = el('div', {});
     mount.appendChild(body);
     body.appendChild(el('p', { class: 'help' }, 'Termine werden geladen…'));
 
-    GR.api.listCalEvents(spanDays, iso(from)).then(res => {
+    const bis = addDays(from, spanDays);
+    Promise.all([
+      GR.api.listCalEvents(spanDays, iso(from)),
+      ladeAufgaben(from, bis),
+    ]).then(([res, aufg]) => {
       body.innerHTML = '';
       const errors = res.errors || [];
       if (errors.length) {
@@ -74,14 +84,61 @@
           'Einige Kalender konnten nicht geladen werden: ' +
           errors.map(e => `${e.calName || '?'} (${e.error})`).join(' · ')));
       }
-      const events = res.events || [];
-      if (view === 'monat') body.appendChild(monatsGitter(anker, from, events));
-      else if (view === 'woche') body.appendChild(wochenGitter(from, events));
-      else body.appendChild(listenAnsicht(events, errors));
+      if (aufg.error) {
+        body.appendChild(el('div', { class: 'warn' },
+          'Aufgaben konnten nicht geladen werden: ' + aufg.error +
+          ' — Zugang unter Einstellungen → Aufgaben prüfen.'));
+      }
+      // Aufgaben laufen als termin-ähnliche Einträge mit; sie werden über
+      // `isTask` überall abgesetzt dargestellt.
+      const eintraege = (res.events || []).concat(aufg.items);
+      if (view === 'monat') body.appendChild(monatsGitter(anker, from, eintraege));
+      else if (view === 'woche') body.appendChild(wochenGitter(from, eintraege));
+      else body.appendChild(listenAnsicht(eintraege, errors));
     }).catch(err => {
       body.innerHTML = '';
       body.appendChild(el('div', { class: 'warn' }, 'Termine konnten nicht geladen werden: ' + err.message));
     });
+  }
+
+  // Offene Aufgaben mit Fälligkeit im Fenster [from, bis) als Pseudo-Termine.
+  // Ohne konfiguriertes Vikunja-Projekt bleibt es still leer (kein Fehler) –
+  // der Kalender soll auch ohne Aufgaben-Anbindung funktionieren.
+  function ladeAufgaben(from, bis) {
+    const s = store.getSettings();
+    const pid = s && s.vikunjaProjektId ? s.vikunjaProjektId : null;
+    if (!pid) return Promise.resolve({ items: [], error: null });
+
+    return GR.api.listOpenTasks().then(res => {
+      const heute = new Date(); heute.setHours(0, 0, 0, 0);
+      const items = [];
+      for (const t of (res.tasks || [])) {
+        if (!t.dueDate || String(t.projectId) !== String(pid)) continue;
+        const due = new Date(t.dueDate);
+        if (!(due >= from && due < bis)) continue;
+        // Vikunja hängt an jede Fälligkeit eine Uhrzeit; 00:00 heißt in der
+        // Praxis „an dem Tag" → dann ohne Uhrzeit anzeigen.
+        const zeit = (due.getHours() === 0 && due.getMinutes() === 0)
+          ? null : `${p2(due.getHours())}:${p2(due.getMinutes())}`;
+        items.push({
+          isTask: true, taskId: t.id, priority: t.priority || 0,
+          ueberfaellig: due < heute,
+          summary: t.title, allDay: false, location: '', calName: 'Aufgabe',
+          startMs: due.getTime(), date: iso(due), time: zeit,
+          endDate: iso(due), endTime: zeit,
+        });
+      }
+      return { items, error: null };
+    }).catch(err => ({ items: [], error: err.message }));
+  }
+
+  function legende() {
+    return el('div', { class: 'cal-legende' }, [
+      el('span', { class: 'cal-leg' }, [el('i', { class: 'cal-punkt is-termin' }), 'Termin']),
+      el('span', { class: 'cal-leg' }, [el('i', { class: 'cal-punkt is-allday' }), 'ganztägig']),
+      el('span', { class: 'cal-leg' }, [el('i', { class: 'cal-punkt is-aufgabe' }), 'Aufgabe']),
+      el('span', { class: 'cal-leg' }, [el('i', { class: 'cal-punkt is-ueberfaellig' }), 'überfällig']),
+    ]);
   }
 
   function buildToolbar(view, anker, days, titel) {
@@ -136,27 +193,39 @@
         for (let i = 0; i < 60 && (d = addDays(d, 1)) <= ende; i++) add(iso(d), Object.assign({}, ev, { weiter: true }));
       }
     }
+    // Tagesweite Einträge (ganztägig, Aufgaben ohne Uhrzeit) nach oben.
+    const obenRang = (ev) => (ev.allDay || (ev.isTask && !ev.time)) ? 0 : 1;
     for (const list of map.values()) {
-      list.sort((a, b) => (a.allDay === b.allDay ? 0 : (a.allDay ? -1 : 1)) || a.startMs - b.startMs);
+      list.sort((a, b) => obenRang(a) - obenRang(b) || a.startMs - b.startMs);
     }
     return map;
   }
 
   function zeitLabel(ev) {
+    if (ev.isTask) return ev.time || 'Aufgabe';
     if (ev.allDay) return 'ganztägig';
     if (ev.weiter) return 'bis ' + (ev.endTime || '');
     return ev.time || '';
   }
 
+  function chipClass(ev) {
+    if (ev.isTask) return ' is-aufgabe' + (ev.ueberfaellig ? ' is-ueberfaellig' : '');
+    return (ev.allDay ? ' is-allday' : '') + (ev.weiter ? ' is-weiter' : '');
+  }
+
   function chip(ev) {
-    const c = el('div', {
-      class: 'cal-chip' + (ev.allDay ? ' is-allday' : '') + (ev.weiter ? ' is-weiter' : ''),
-      title: [zeitLabel(ev), ev.summary, ev.location, ev.calName].filter(Boolean).join(' · '),
+    const zeit = zeitLabel(ev);
+    return el('div', {
+      class: 'cal-chip' + chipClass(ev),
+      title: [ev.isTask ? (ev.ueberfaellig ? 'Aufgabe (überfällig)' : 'Aufgabe') : zeit,
+        ev.summary, ev.location, ev.isTask ? null : ev.calName].filter(Boolean).join(' · '),
     }, [
-      ev.allDay ? null : el('span', { class: 'cal-chip-zeit' }, zeitLabel(ev)),
+      // Aufgaben tragen ein Häkchen-Zeichen, damit sie auch ohne Farbe
+      // (Ausdruck, Farbsehschwäche) von Terminen unterscheidbar sind.
+      ev.isTask ? el('span', { class: 'cal-chip-icon' }, '☑') : null,
+      (ev.allDay || (ev.isTask && !ev.time)) ? null : el('span', { class: 'cal-chip-zeit' }, zeit),
       el('span', { class: 'cal-chip-titel' }, ev.summary),
     ]);
-    return c;
   }
 
   // --- Monatsansicht: 6 Wochen × 7 Tage ---
@@ -208,7 +277,7 @@
     return grid;
   }
 
-  // --- Listenansicht (wie bisher: nach Tag gruppiert) ---
+  // --- Listenansicht (nach Tag gruppiert) ---
   function listenAnsicht(events, errors) {
     const wrap = el('div', {});
     if (!events.length) {
@@ -219,13 +288,9 @@
       ]));
       return wrap;
     }
-    const groups = [];
-    const byDate = new Map();
-    for (const ev of events) {
-      if (!byDate.has(ev.date)) { const g = { date: ev.date, items: [] }; byDate.set(ev.date, g); groups.push(g); }
-      byDate.get(ev.date).items.push(ev);
-    }
-    for (const g of groups) wrap.appendChild(dayBlock(g));
+    // Aufgaben kommen aus einer zweiten Quelle → hier gemeinsam sortieren.
+    const map = nachTag(events);
+    for (const date of [...map.keys()].sort()) wrap.appendChild(dayBlock({ date, items: map.get(date) }));
     return wrap;
   }
 
@@ -240,6 +305,16 @@
   }
 
   function eventItem(ev) {
+    if (ev.isTask) {
+      const meta = ['Aufgabe' + (ev.ueberfaellig ? ' · überfällig' : '')];
+      return el('li', { class: 'termine-item is-aufgabe' + (ev.ueberfaellig ? ' is-ueberfaellig' : '') }, [
+        el('span', { class: 'termine-time is-task' }, '☑ ' + (ev.time || 'fällig')),
+        el('span', { class: 'termine-main' }, [
+          el('strong', {}, ev.summary),
+          el('span', { class: 'help', style: 'margin:0; display:block;' }, meta.join(' · ')),
+        ]),
+      ]);
+    }
     const zeit = ev.allDay ? 'ganztägig'
       : (ev.time + (ev.endTime && ev.endTime !== ev.time && ev.endDate === ev.date ? '–' + ev.endTime : ''));
     const meta = [];

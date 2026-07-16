@@ -653,8 +653,27 @@ tr:hover td { background: #fafbfc; }
 }
 .cal-chip.is-allday { background: #e6f6ec; border-left-color: #2f9e5f; }
 .cal-chip.is-weiter { opacity: 0.75; border-left-style: dotted; }
+/* Aufgaben (Vikunja) deutlich von Terminen abgesetzt: bernstein, überfällig rot */
+.cal-chip.is-aufgabe { background: #fdf2dd; border-left-color: #d08700; color: #6b4700; }
+.cal-chip.is-aufgabe.is-ueberfaellig { background: #fde8e8; border-left-color: #c62828; color: #8c1c1c; font-weight: 600; }
+.cal-chip-icon { margin-right: 2px; }
 .cal-chip-zeit { font-weight: 600; font-variant-numeric: tabular-nums; margin-right: 3px; }
 .cal-chip-titel { overflow-wrap: anywhere; }
+
+/* Legende über dem Raster */
+.cal-legende { display: flex; flex-wrap: wrap; gap: 12px; margin: 10px 2px 0; }
+.cal-leg { display: inline-flex; align-items: center; gap: 5px; font-size: 0.74rem; color: var(--muted); }
+.cal-punkt { width: 10px; height: 10px; border-radius: 2px; display: inline-block; }
+.cal-punkt.is-termin { background: #e8f0fd; border-left: 3px solid var(--primary); }
+.cal-punkt.is-allday { background: #e6f6ec; border-left: 3px solid #2f9e5f; }
+.cal-punkt.is-aufgabe { background: #fdf2dd; border-left: 3px solid #d08700; }
+.cal-punkt.is-ueberfaellig { background: #fde8e8; border-left: 3px solid #c62828; }
+
+/* Aufgaben in der Listenansicht */
+.termine-item.is-aufgabe { background: #fffaf0; }
+.termine-item.is-aufgabe.is-ueberfaellig { background: #fdf1f1; }
+.termine-time.is-task { color: #b36b00; }
+.termine-item.is-ueberfaellig .termine-time.is-task { color: #c62828; }
 
 /* Handy: Monatsraster kompakter, Woche als Zeilen untereinander */
 @media (max-width: 760px) {
