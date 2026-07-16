@@ -20,6 +20,7 @@
     vertragspartner: [],  // [{...}]
     vertraege: [],        // [{...}]
     vorgaenge: [],        // [{...}] Modul Vorgänge & Projekte
+    vorgangFiles: {},     // vorgangId -> [{id, kind, filename, ...}] Verlaufsfotos
     ready: false,
     backendAvailable: false,
   };
@@ -205,6 +206,7 @@
       cache.vertragspartner = snap.vertragspartner || [];
       cache.vertraege = snap.vertraege || [];
       cache.vorgaenge = (snap.vorgaenge || []).map(migrateVorgang);
+      cache.vorgangFiles = snap.vorgangFiles || {};
       cache.backendAvailable = true;
       cache.ready = true;
       mergeSettingsDefaults();
@@ -359,7 +361,19 @@
       case 'vertrag:save': { upsertInto(cache.vertraege, msg.vertrag); notifyChange(); notifyRemote(); break; }
       case 'vertrag:delete': { cache.vertraege = cache.vertraege.filter(x => x.id !== msg.id); notifyChange(); notifyRemote(); break; }
       case 'vorgang:save': { upsertInto(cache.vorgaenge, migrateVorgang(msg.vorgang)); notifyChange(); notifyRemote(); break; }
-      case 'vorgang:delete': { cache.vorgaenge = cache.vorgaenge.filter(x => x.id !== msg.id); notifyChange(); notifyRemote(); break; }
+      case 'vorgang:delete': { cache.vorgaenge = cache.vorgaenge.filter(x => x.id !== msg.id); delete cache.vorgangFiles[msg.id]; notifyChange(); notifyRemote(); break; }
+      case 'vorgangFoto:add': {
+        const f = msg.foto;
+        if (!cache.vorgangFiles[f.vorgangId]) cache.vorgangFiles[f.vorgangId] = [];
+        if (!cache.vorgangFiles[f.vorgangId].some(x => x.id === f.id)) cache.vorgangFiles[f.vorgangId].push(f);
+        notifyChange(); notifyRemote();
+        break;
+      }
+      case 'vorgangFoto:delete': {
+        if (cache.vorgangFiles[msg.vorgangId]) cache.vorgangFiles[msg.vorgangId] = cache.vorgangFiles[msg.vorgangId].filter(f => f.id !== msg.id);
+        notifyChange(); notifyRemote();
+        break;
+      }
       case 'bulk:imported': {
         // Komplettes Re-Bootstrap, damit alle Daten konsistent kommen
         bootstrap();
@@ -636,9 +650,26 @@
     },
     deleteVorgang(id) {
       cache.vorgaenge = cache.vorgaenge.filter(v => v.id !== id);
+      delete cache.vorgangFiles[id];
       GR.api.deleteVorgangRemote(id).catch(e => console.warn('deleteVorgang Backend-Fehler', e));
       notifyChange();
     },
+
+    // --- Verlaufsfotos (zu einem Vorgang; async) ---
+    listVorgangFotos(vorgangId) { return (cache.vorgangFiles[vorgangId] || []).slice(); },
+    async uploadVorgangFoto(vorgangId, file, kind) {
+      const rec = await GR.api.uploadVorgangFoto(vorgangId, file, kind);
+      if (!cache.vorgangFiles[vorgangId]) cache.vorgangFiles[vorgangId] = [];
+      cache.vorgangFiles[vorgangId].push(rec);
+      notifyChange();
+      return rec;
+    },
+    async deleteVorgangFoto(vorgangId, fileId) {
+      await GR.api.deleteVorgangFoto(fileId);
+      if (cache.vorgangFiles[vorgangId]) cache.vorgangFiles[vorgangId] = cache.vorgangFiles[vorgangId].filter(f => f.id !== fileId);
+      notifyChange();
+    },
+    vorgangFotoUrl(fileId) { return GR.api.vorgangFotoUrl(fileId); },
 
     // --- Sync-Queue (NocoDB-Backup; bleibt im localStorage als Browser-eigener Cache) ---
     listQueue() { try { return JSON.parse(localStorage.getItem('gr.syncQueue') || '[]'); } catch (_) { return []; } },

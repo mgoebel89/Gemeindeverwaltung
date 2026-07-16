@@ -117,6 +117,17 @@ db.exec(`
     last_modified TEXT NOT NULL
   );
   CREATE INDEX IF NOT EXISTS idx_vorgaenge_modified ON vorgaenge(last_modified);
+  -- Fotos zu Verlaufseinträgen eines Vorgangs (kind = hist_<eintragId>)
+  CREATE TABLE IF NOT EXISTS vorgang_files (
+    id           TEXT PRIMARY KEY,
+    vorgang_id   TEXT NOT NULL,
+    kind         TEXT NOT NULL,
+    filename     TEXT NOT NULL,
+    mimetype     TEXT NOT NULL,
+    size         INTEGER NOT NULL,
+    uploaded_at  TEXT NOT NULL
+  );
+  CREATE INDEX IF NOT EXISTS idx_vorgangfile_vorgang ON vorgang_files(vorgang_id);
 `);
 
 const BELEG_DIR = path.join(ATTACH_DIR, 'auslagen');
@@ -124,6 +135,9 @@ fs.mkdirSync(BELEG_DIR, { recursive: true });
 
 const VERM_FILE_DIR = path.join(ATTACH_DIR, 'vermietung');
 fs.mkdirSync(VERM_FILE_DIR, { recursive: true });
+
+const VORGANG_FILE_DIR = path.join(ATTACH_DIR, 'vorgaenge');
+fs.mkdirSync(VORGANG_FILE_DIR, { recursive: true });
 
 function nowIso() { return new Date().toISOString(); }
 
@@ -380,7 +394,42 @@ const vorgaengeStore = makePayloadStore('vorgaenge');
 const listVorgaenge = () => vorgaengeStore.list();
 const getVorgang = (id) => vorgaengeStore.get(id);
 const saveVorgang = (v) => vorgaengeStore.save(v);
-const deleteVorgang = (id) => vorgaengeStore.delete(id);
+function deleteVorgang(id) {
+  // Verlaufsfotos auf Disk wegräumen (wie bei den Vermietungen)
+  const dir = path.join(VORGANG_FILE_DIR, id);
+  if (fs.existsSync(dir)) fs.rmSync(dir, { recursive: true, force: true });
+  db.prepare('DELETE FROM vorgang_files WHERE vorgang_id = ?').run(id);
+  vorgaengeStore.delete(id);
+}
+
+// --- Verlaufsfotos (zu einem Vorgang) ---
+function listVorgangFiles(vorgangId) {
+  return db.prepare('SELECT id, vorgang_id AS vorgangId, kind, filename, mimetype, size, uploaded_at AS uploadedAt FROM vorgang_files WHERE vorgang_id = ? ORDER BY uploaded_at ASC').all(vorgangId);
+}
+function getVorgangFile(id) {
+  return db.prepare('SELECT id, vorgang_id AS vorgangId, kind, filename, mimetype, size, uploaded_at AS uploadedAt FROM vorgang_files WHERE id = ?').get(id);
+}
+function vorgangFilePath(vorgangId, id) {
+  return path.join(VORGANG_FILE_DIR, vorgangId, id);
+}
+function ensureVorgangFileDir(vorgangId) {
+  const dir = path.join(VORGANG_FILE_DIR, vorgangId);
+  fs.mkdirSync(dir, { recursive: true });
+  return dir;
+}
+function insertVorgangFile({ id, vorgangId, kind, filename, mimetype, size }) {
+  db.prepare('INSERT INTO vorgang_files (id, vorgang_id, kind, filename, mimetype, size, uploaded_at) VALUES (?, ?, ?, ?, ?, ?, ?)')
+    .run(id, vorgangId, kind, filename, mimetype, size, nowIso());
+  return getVorgangFile(id);
+}
+function deleteVorgangFile(id) {
+  const f = getVorgangFile(id);
+  if (!f) return null;
+  const p = vorgangFilePath(f.vorgangId, id);
+  if (fs.existsSync(p)) fs.unlinkSync(p);
+  db.prepare('DELETE FROM vorgang_files WHERE id = ?').run(id);
+  return f;
+}
 
 // Beim ersten Start die beiden Standard-Objekte anlegen (Preise aus den Vorlagen).
 function seedRaeume() {
@@ -464,4 +513,6 @@ module.exports = {
   listVertragspartner, getVertragspartner, saveVertragspartner, deleteVertragspartner,
   listVertraege, getVertrag, saveVertrag, deleteVertrag,
   listVorgaenge, getVorgang, saveVorgang, deleteVorgang,
+  listVorgangFiles, getVorgangFile, vorgangFilePath, ensureVorgangFileDir,
+  insertVorgangFile, deleteVorgangFile,
 };

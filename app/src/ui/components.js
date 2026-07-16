@@ -55,6 +55,33 @@
     });
   }
 
+  // Handy-Fotos sind 4-12 MP groß — fürs PDF (Box ~85×60 mm) und die Vorschau
+  // reicht die lange Kante von maxPx. Verkleinert seitenverhältnistreu und gibt
+  // ein JPEG als File zurück; ist das Bild schon klein genug, bleibt es unberührt.
+  // createImageBitmap dreht dabei nach EXIF (sonst lägen Hochkant-Fotos quer).
+  async function resizeImageFile(file, opts = {}) {
+    const { maxPx = 1600, quality = 0.82 } = opts;
+    if (!file || !/^image\//.test(file.type) || /svg/.test(file.type)) return file;
+    let bmp;
+    try {
+      bmp = await createImageBitmap(file, { imageOrientation: 'from-image' });
+    } catch (_) {
+      return file; // z. B. HEIC, das der Browser nicht dekodiert → unverändert hochladen
+    }
+    const scale = Math.min(1, maxPx / Math.max(bmp.width, bmp.height));
+    if (scale === 1 && /jpe?g/.test(file.type)) { bmp.close(); return file; }
+    const canvas = document.createElement('canvas');
+    canvas.width = Math.round(bmp.width * scale);
+    canvas.height = Math.round(bmp.height * scale);
+    const ctx = canvas.getContext('2d');
+    ctx.drawImage(bmp, 0, 0, canvas.width, canvas.height);
+    bmp.close();
+    const blob = await new Promise(res => canvas.toBlob(res, 'image/jpeg', quality));
+    if (!blob) return file;
+    const name = String(file.name || 'foto').replace(/\.[^.]+$/, '') + '.jpg';
+    return new File([blob], name, { type: 'image/jpeg', lastModified: Date.now() });
+  }
+
   function readFileAsText(file) {
     return new Promise((resolve, reject) => {
       const fr = new FileReader();
@@ -89,5 +116,5 @@
     return new Date().toTimeString().slice(0, 5);
   }
 
-  GR.ui = { el, toast, confirmDialog, downloadFile, pickFile, readFileAsText, readFileAsDataUrl, formatDatum, wochentag, nowTime };
+  GR.ui = { el, toast, confirmDialog, downloadFile, pickFile, resizeImageFile, readFileAsText, readFileAsDataUrl, formatDatum, wochentag, nowTime };
 })();

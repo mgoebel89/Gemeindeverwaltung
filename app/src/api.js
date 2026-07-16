@@ -125,6 +125,20 @@
   // --- Modul: Vorgänge & Projekte ---
   async function putVorgang(v) { return jsonFetch(`/api/vorgaenge/${encodeURIComponent(v.id)}`, { method: 'PUT', body: v }); }
   async function deleteVorgangRemote(id) { return jsonFetch(`/api/vorgaenge/${encodeURIComponent(id)}`, { method: 'DELETE' }); }
+  async function listVorgangFotos(vorgangId) { return jsonFetch(`/api/vorgaenge/${encodeURIComponent(vorgangId)}/fotos`); }
+  async function uploadVorgangFoto(vorgangId, file, kind) {
+    const fd = new FormData();
+    fd.append('file', file, file.name);
+    if (kind) fd.append('kind', kind);
+    const res = await fetch(`/api/vorgaenge/${encodeURIComponent(vorgangId)}/fotos`, { method: 'POST', body: fd, headers: { 'X-Client-Id': CLIENT_ID } });
+    if (!res.ok) {
+      const txt = await res.text().catch(() => '');
+      throw new Error(`Upload ${res.status}: ${txt.slice(0, 200)}`);
+    }
+    return res.json();
+  }
+  async function deleteVorgangFoto(fileId) { return jsonFetch(`/api/vorgang-files/${encodeURIComponent(fileId)}`, { method: 'DELETE' }); }
+  function vorgangFotoUrl(fileId) { return `/api/vorgang-files/${encodeURIComponent(fileId)}`; }
 
   // --- Modul: Dokumente (Paperless-Proxy im Backend) ---
   function docQuery(params = {}) {
@@ -169,7 +183,11 @@
   async function getCalConfig() { return jsonFetch('/api/kalender/config'); }
   async function putCalConfig(calendars) { return jsonFetch('/api/kalender/config', { method: 'PUT', body: { calendars } }); }
   async function testCalUrl(url) { return jsonFetch('/api/kalender/test', { method: 'POST', body: { url } }); }
-  async function listCalEvents(days = 90) { return jsonFetch(`/api/kalender/events?days=${encodeURIComponent(days)}`); }
+  // from: 'YYYY-MM-DD' (lokal) – ohne Angabe beginnt das Fenster heute.
+  async function listCalEvents(days = 90, from = null) {
+    const q = `days=${encodeURIComponent(days)}` + (from ? `&from=${encodeURIComponent(from)}` : '');
+    return jsonFetch(`/api/kalender/events?${q}`);
+  }
 
   // --- Aufgaben (Vikunja, Backend-Proxy) ---
   async function getTaskConfig() { return jsonFetch('/api/aufgaben/config'); }
@@ -251,6 +269,7 @@
     putVertragspartner, deleteVertragspartnerRemote,
     putVertrag, deleteVertragRemote,
     putVorgang, deleteVorgangRemote,
+    listVorgangFotos, uploadVorgangFoto, deleteVorgangFoto, vorgangFotoUrl,
     connectWs, subscribe,
     clientId: CLIENT_ID,
   };

@@ -33,11 +33,23 @@ router.post('/test', async (req, res) => {
   } catch (err) { res.status(200).json({ ok: false, error: err.message }); }
 });
 
-// Aggregierte Termine aller Kalender im Fenster [heute .. +days].
+// Aggregierte Termine aller Kalender im Fenster [from .. +days].
+// `from` (YYYY-MM-DD, lokal) ist optional – ohne Angabe beginnt das Fenster
+// heute. Die Kalenderansichten blättern damit zu beliebigen Monaten/Wochen,
+// auch Jahre in der Zukunft.
 router.get('/events', async (req, res) => {
   try {
     const days = Math.min(730, Math.max(1, parseInt(req.query.days, 10) || 90));
-    res.json(await kalender.getEvents({ days }));
+    let from;
+    const q = String(req.query.from || '').trim();
+    if (q) {
+      const m = q.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+      if (!m) return res.status(400).json({ error: 'from muss YYYY-MM-DD sein' });
+      // Lokale Mitternacht – nicht Date.parse(), das läse YYYY-MM-DD als UTC
+      // und verschöbe den Fensterstart um einen Tag.
+      from = new Date(+m[1], +m[2] - 1, +m[3], 0, 0, 0).getTime();
+    }
+    res.json(await kalender.getEvents({ days, from }));
   } catch (err) { sendError(res, err); }
 });
 

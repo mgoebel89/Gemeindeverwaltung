@@ -401,9 +401,9 @@
     pausiert: 'Pausiert', beendet: 'Beendet',
   };
   // Typen der getippten Vorgangshistorie (Zeitleiste).
-  const HISTORIE_TYPEN = ['notiz', 'todo', 'dokument', 'referenz', 'kosten'];
+  const HISTORIE_TYPEN = ['notiz', 'todo', 'foto', 'dokument', 'referenz', 'kosten'];
   const HISTORIE_TYP_LABEL = {
-    notiz: 'Notiz', todo: 'ToDo', dokument: 'Dokument',
+    notiz: 'Notiz', todo: 'ToDo', foto: 'Foto', dokument: 'Dokument',
     referenz: 'Referenz', kosten: 'Kosten',
   };
 

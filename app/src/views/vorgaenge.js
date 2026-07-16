@@ -32,6 +32,7 @@
     dokument: { label: 'Dokument', icon: '📄' },
     todo: { label: 'ToDo', icon: '☑' },
     kosten: { label: 'Kosten', icon: '€' },
+    foto: { label: 'Foto', icon: '📷' },
   };
 
   const PRIO_OPTS = [['', 'Keine Priorität'], ['1', 'Niedrig'], ['2', 'Mittel'], ['3', 'Hoch'], ['4', 'Dringend'], ['5', 'Sofort']];
@@ -224,6 +225,7 @@
 
     // Ablauf-Dokumentation als PDF (Download bzw. in Paperless ablegen).
     function exportPdf(target) {
+      // async, seit Verlaufsfotos nachgeladen werden
       GR.vorgaengePdf.buildVorgangDokumentation(v, {
         target,
         onUploaded: (docRec) => {
@@ -236,7 +238,7 @@
           toast('Dokumentation in Paperless abgelegt und verknüpft');
           refresh();
         },
-      });
+      }).catch(err => { console.error(err); toast('PDF fehlgeschlagen: ' + err.message, 4000); });
     }
 
     // Kopf-Toolbar
@@ -432,6 +434,7 @@
       el('span', { class: 'vg-addbar-label' }, 'Eintrag hinzufügen:'),
       el('button', { class: 'btn-sm', onClick: () => addEntry('notiz', { textMd: '' }) }, '📝 Notiz'),
       el('button', { class: 'btn-sm', onClick: () => addEntry('todo', { titel: '', faellig: '', prioritaet: '', vikunjaTaskId: null, erledigt: false }) }, '☑ ToDo'),
+      el('button', { class: 'btn-sm', onClick: () => addEntry('foto', { bildunterschrift: '' }) }, '📷 Foto'),
       el('button', { class: 'btn-sm', onClick: () => addEntry('kosten', { betrag: 0, beschreibung: '', haendler: '', belegdatum: '', haushaltsstelleId: (v.haushaltsstellen && v.haushaltsstellen.length === 1 ? v.haushaltsstellen[0] : ''), paperlessDocs: [] }) }, '€ Kosten'),
       el('button', { class: 'btn-sm', onClick: () => addEntry('referenz', { refVorgangId: '', notiz: '' }) }, '↪ Referenz'),
       el('button', { class: 'btn-sm', onClick: () => addEntry('dokument', { titel: '', paperlessDocs: [] }) }, '📄 Dokument'),
@@ -492,7 +495,52 @@
     if (e.typ === 'kosten') return kostenBody(v, e, persist, refresh);
     if (e.typ === 'referenz') return referenzBody(v, e, persist);
     if (e.typ === 'dokument') return dokumentBody(v, e, persist);
+    if (e.typ === 'foto') return fotoBody(v, e, persist, refresh);
     return el('div', { class: 'help' }, '(unbekannter Typ)');
+  }
+
+  // --- Foto (Kamera/Galerie wie in der Vermietung; Dateien in vorgang_files) ---
+  // Fotos hängen über kind = 'hist_<eintragId>' am Eintrag.
+  function fotoBody(v, e, persist, refresh) {
+    const box = el('div', { class: 'vg-hist-body' });
+    const kind = 'hist_' + e.id;
+    const fotos = store.listVorgangFotos(v.id).filter(f => f.kind === kind);
+
+    box.appendChild(el('input', {
+      class: 'input', type: 'text', placeholder: 'Bildunterschrift (optional)',
+      value: e.bildunterschrift || '',
+      onChange: (ev) => { e.bildunterschrift = ev.target.value; persist(); },
+    }));
+
+    if (fotos.length) {
+      box.appendChild(el('div', { class: 'vg-foto-grid' }, fotos.map(f => el('figure', { class: 'vg-foto' }, [
+        el('a', { href: store.vorgangFotoUrl(f.id), target: '_blank', rel: 'noopener' },
+          [el('img', { src: store.vorgangFotoUrl(f.id), alt: f.filename || 'Foto', loading: 'lazy' })]),
+        el('button', {
+          class: 'btn-sm btn-danger vg-foto-del', title: 'Foto löschen', onClick: async () => {
+            if (!confirmDialog('Dieses Foto löschen?')) return;
+            try { await store.deleteVorgangFoto(v.id, f.id); refresh(); }
+            catch (err) { toast('Löschen fehlgeschlagen: ' + err.message, 4000); }
+          },
+        }, '✕'),
+      ]))));
+    }
+
+    // Vorgänge müssen serverseitig existieren, bevor eine Datei anhängen kann.
+    const onPick = async (file) => {
+      try {
+        toast('Foto wird hochgeladen …');
+        const klein = await GR.ui.resizeImageFile(file);
+        await store.uploadVorgangFoto(v.id, klein, kind);
+        refresh();
+      } catch (err) { toast('Upload fehlgeschlagen: ' + err.message, 4000); }
+    };
+    const pick = async (capture) => { const f = await GR.ui.pickFile('image/*', capture); if (f) onPick(f); };
+    box.appendChild(el('div', { class: 'vg-foto-actions' }, [
+      el('button', { class: 'btn-sm', onClick: () => pick('environment') }, '📷 Kamera'),
+      el('button', { class: 'btn-sm', onClick: () => pick(null) }, '🖼 Galerie'),
+    ]));
+    return box;
   }
 
   // --- ToDo (in festem Vikunja-Projekt anlegen, Status zurückgespiegelt) ---

@@ -311,30 +311,38 @@ function expandOccurrences(ev, windowStart, windowEnd) {
   }
 
   // Einfache Schrittfolge ab Startdatum – für alte Serien vorspulen, damit die
-  // Schutzgrenze nicht vor dem Fenster zuschlägt (nur ohne COUNT).
+  // Schutzgrenze (guard) nicht zuschlägt, bevor das Fenster erreicht ist.
+  // WICHTIG: das muss auch MIT COUNT passieren. Sonst läuft eine Serie mit COUNT
+  // ab dem Seriendatum Schritt für Schritt los und bricht nach `guard` ab, bevor
+  // sie das Fenster erreicht – der Termin fehlt dann kommentarlos (bei täglichen
+  // Serien schon nach gut zwei Jahren). Die übersprungenen Vorkommen müssen für
+  // COUNT mitgezählt werden, darum `emitted = n`.
   const cursor = new Date(startMs);
-  if (count == null && windowStart > startMs + durMs) {
+  if (windowStart > startMs + durMs) {
+    let n = 0;
     if (freq === 'DAILY') {
       const perStep = interval * 86400000;
-      const n = Math.floor((windowStart - durMs - startMs) / perStep);
+      n = Math.floor((windowStart - durMs - startMs) / perStep);
       if (n > 0) cursor.setDate(cursor.getDate() + n * interval);
     } else if (freq === 'WEEKLY') {
       const perStep = interval * 7 * 86400000;
-      const n = Math.floor((windowStart - durMs - startMs) / perStep);
+      n = Math.floor((windowStart - durMs - startMs) / perStep);
       if (n > 0) cursor.setDate(cursor.getDate() + n * 7 * interval);
     } else if (freq === 'MONTHLY') {
       const bd = new Date(windowStart);
       let months = (bd.getFullYear() - base.getFullYear()) * 12 + (bd.getMonth() - base.getMonth()) - 1;
       months = Math.floor(months / interval) * interval;
       if (months > 0) {
+        n = months / interval;
         cursor.setMonth(cursor.getMonth() + months);
         if (bymonthday && bymonthday.length) cursor.setDate(Math.min(bymonthday[0], daysInMonth(cursor.getFullYear(), cursor.getMonth())));
       }
     } else if (freq === 'YEARLY') {
       let years = new Date(windowStart).getFullYear() - base.getFullYear() - 1;
       years = Math.floor(years / interval) * interval;
-      if (years > 0) cursor.setFullYear(cursor.getFullYear() + years);
+      if (years > 0) { n = years / interval; cursor.setFullYear(cursor.getFullYear() + years); }
     }
+    if (n > 0) emitted = n; // übersprungene Vorkommen zählen gegen COUNT
     cursor.setHours(H, Min, S, 0);
   }
 

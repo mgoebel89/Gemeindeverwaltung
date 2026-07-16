@@ -81,6 +81,7 @@ app.get('/api/snapshot', (_req, res) => {
     vertragspartner: db.listVertragspartner(),
     vertraege: db.listVertraege(),
     vorgaenge: db.listVorgaenge(),
+    vorgangFiles: groupVorgangFotos(),
     serverTime: new Date().toISOString(),
   });
 });
@@ -107,6 +108,15 @@ function groupVermietungFotos() {
   const grouped = {};
   for (const v of db.listVermietungen()) {
     const files = db.listVermietungFiles(v.id);
+    if (files.length) grouped[v.id] = files;
+  }
+  return grouped;
+}
+
+function groupVorgangFotos() {
+  const grouped = {};
+  for (const v of db.listVorgaenge()) {
+    const files = db.listVorgangFiles(v.id);
     if (files.length) grouped[v.id] = files;
   }
   return grouped;

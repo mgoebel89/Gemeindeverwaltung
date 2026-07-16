@@ -14,7 +14,39 @@
 
   function euro(n) { return (Number(n) || 0).toLocaleString('de-DE', { style: 'currency', currency: 'EUR' }); }
   const PRIO_LABEL = { 1: 'Niedrig', 2: 'Mittel', 3: 'Hoch', 4: 'Dringend', 5: 'Sofort' };
-  const TYP_LABEL = { notiz: 'Notiz', todo: 'ToDo', dokument: 'Dokument', referenz: 'Referenz', kosten: 'Kosten' };
+  const TYP_LABEL = { notiz: 'Notiz', todo: 'ToDo', dokument: 'Dokument', referenz: 'Referenz', kosten: 'Kosten', foto: 'Foto' };
+
+  // Die jsPDF-Standardschriften können nur WinAnsi (CP1252). Enthält eine Zeile
+  // ein Zeichen darüber hinaus (Emoji, Pfeile, Haken), kodiert jsPDF die GANZE
+  // Zeile anders — sichtbar als Buchstabensalat („Ø=ÜÄ") in Sperrschrift.
+  // Darum alles Fremde ersetzen bzw. entfernen, bevor es in doc.text() geht.
+  const WINANSI_EXTRA = '€‚ƒ„…†‡ˆ‰Š‹Œ Ž‘’“”•–—˜™š›œžŸ';
+  const ERSATZ = { '→': '»', '←': '«', '✓': '-', '✔': '-', '☑': '-', '☐': '-', '·': '·', '‑': '-', '−': '-', ' ': ' ', '\t': ' ' };
+  function winAnsi(text) {
+    let s = String(text == null ? '' : text);
+    s = s.replace(/[→←✓✔☑☐‑− \t]/g, ch => ERSATZ[ch] || ' ');
+    let out = '';
+    for (const ch of s) {
+      const cp = ch.codePointAt(0);
+      if (cp <= 0xff || WINANSI_EXTRA.includes(ch)) out += ch;
+      else if (cp >= 0x1f000 || (cp >= 0x2190 && cp <= 0x2bff)) continue; // Emoji/Symbole ersatzlos
+      else out += '?';
+    }
+    return out.replace(/ {2,}/g, ' ').replace(/^ +| +$/g, '');
+  }
+
+  // Ankreuzfeld als Vektor (statt ☐/☑ — die kann die PDF-Standardschrift nicht).
+  function checkbox(doc, x, baselineY, checked, size = 3.2) {
+    const top = baselineY - size + 0.4;
+    doc.setDrawColor(80); doc.setLineWidth(0.3);
+    doc.rect(x, top, size, size);
+    if (checked) {
+      doc.setLineWidth(0.5);
+      doc.line(x + 0.7, top + size * 0.55, x + size * 0.42, top + size - 0.6);
+      doc.line(x + size * 0.42, top + size - 0.6, x + size - 0.5, top + 0.6);
+    }
+    doc.setLineWidth(0.2);
+  }
 
   function getWappenDataUrl() {
     const s = store.getSettings();
@@ -46,7 +78,7 @@
     const { size = 11, bold = false, italic = false, color, indent = 0, gap = 5.4, maxWidth } = opts;
     setFont(doc, size, bold, italic, color);
     const mw = maxWidth || (CONTENT_W - indent);
-    const lines = doc.splitTextToSize(String(text == null ? '' : text), mw);
+    const lines = doc.splitTextToSize(winAnsi(text), mw);
     for (const ln of lines) { ensureSpace(doc, state, gap); doc.text(ln, MARGIN_X + indent, state.y); state.y += gap; }
   }
   function gap(state, mm) { state.y += mm; }
@@ -88,29 +120,66 @@
     return h ? ((h.nummer ? h.nummer + ' · ' : '') + (h.bezeichnung || '(ohne)')) : '(unbekannte Stelle)';
   }
 
+  // Bild (URL → Data-URL + Naturmaße) laden; für Verlaufsfotos.
+  function loadImage(url, mimetype) {
+    return new Promise((resolve, reject) => {
+      fetch(url).then(r => r.blob()).then(blob => {
+        const fr = new FileReader();
+        fr.onload = () => {
+          const img = new Image();
+          img.onload = () => resolve({ dataUrl: fr.result, w: img.naturalWidth, h: img.naturalHeight, format: (mimetype || blob.type || '').includes('png') ? 'PNG' : 'JPEG' });
+          img.onerror = reject;
+          img.src = fr.result;
+        };
+        fr.onerror = reject;
+        fr.readAsDataURL(blob);
+      }).catch(reject);
+    });
+  }
+
+  // Bild seitenverhältnistreu in eine Box einpassen → tatsächliche mm-Maße.
+  function fitBox(natW, natH, maxW, maxH) {
+    if (!natW || !natH) return { w: maxW, h: maxH };
+    const s = Math.min(maxW / natW, maxH / natH);
+    return { w: natW * s, h: natH * s };
+  }
+
   // === Gesamt-Dokumentation eines Vorgangs ===
   // opts.target: 'download' (Standard) | 'paperless'; opts.onUploaded (Paperless).
-  function buildVorgangDokumentation(v, opts = {}) {
+  async function buildVorgangDokumentation(v, opts = {}) {
     if (!v) return;
     const doc = newDoc(); if (!doc) return;
     const settings = store.getSettings();
     const ort = (settings.vermietung && settings.vermietung.ortsgemeinde) || settings.ortsname || '';
     const state = { y: MARGIN_TOP };
 
-    // Kopf
+    // Kopf — das Wappen sitzt rechts oben; die Kopftexte dürfen nicht darunter
+    // laufen, daher ist ihre Breite um die Wappenspalte verkürzt.
+    const WAPPEN_BOX = { w: 20, h: 24 };
+    let kopfW = CONTENT_W;
     const wappen = getWappenDataUrl();
-    if (wappen) { try { doc.addImage(wappen, 'PNG', RIGHT_X - 20, state.y - 2, 20, 24, undefined, 'SLOW'); } catch (_) {} }
+    if (wappen) {
+      try {
+        const p = doc.getImageProperties(wappen);
+        const fit = fitBox(p.width, p.height, WAPPEN_BOX.w, WAPPEN_BOX.h);
+        doc.addImage(wappen, 'PNG', RIGHT_X - fit.w, state.y - 2, fit.w, fit.h, undefined, 'SLOW');
+        kopfW = CONTENT_W - fit.w - 5;
+      } catch (_) { kopfW = CONTENT_W - WAPPEN_BOX.w - 5; }
+    }
     setFont(doc, 15, true);
-    doc.text('Vorgang: ' + (v.titel || '(ohne Titel)'), MARGIN_X, state.y + 4, { maxWidth: CONTENT_W - 24 });
-    state.y += 11;
+    const titelZeilen = doc.splitTextToSize(winAnsi('Vorgang: ' + (v.titel || '(ohne Titel)')), kopfW);
+    for (const tz of titelZeilen) { doc.text(tz, MARGIN_X, state.y + 4); state.y += 7; }
+    state.y += 4;
     const kopf = [
       'Ortsgemeinde ' + ort,
       'Status: ' + (M.VORGANG_STATUS_LABEL[v.status] || v.status || '—'),
       v.kategorie ? 'Kategorie: ' + v.kategorie : null,
       'angelegt ' + (v.erstelltAm ? formatDatum(v.erstelltAm) : '—'),
     ].filter(Boolean).join('  ·  ');
-    line(doc, state, kopf, { size: 9.5, color: C_MUTED });
-    if (v.vertraulich) line(doc, state, '🔒 VERTRAULICH', { size: 9.5, bold: true, color: [183, 121, 31] });
+    line(doc, state, kopf, { size: 9.5, color: C_MUTED, maxWidth: kopfW });
+    if (v.vertraulich) line(doc, state, 'VERTRAULICH', { size: 9.5, bold: true, color: [183, 121, 31], maxWidth: kopfW });
+    // Unter das Wappen zurückfallen, damit die erste Sektion frei steht.
+    state.y = Math.max(state.y, MARGIN_TOP + WAPPEN_BOX.h);
     hr(doc, state, 4);
 
     // Beschreibung
@@ -153,9 +222,9 @@
     for (const e of sichtbar) {
       gap(state, 1.5);
       ensureSpace(doc, state, 12);
-      const head = (e.datum ? formatDatum(e.datum) : '—') + '  ·  ' + (TYP_LABEL[e.typ] || e.typ) + (e.vertraulich ? '  🔒' : '');
+      const head = (e.datum ? formatDatum(e.datum) : '—') + '  ·  ' + (TYP_LABEL[e.typ] || e.typ) + (e.vertraulich ? '  (vertraulich)' : '');
       line(doc, state, head, { size: 10.5, bold: true });
-      renderEntry(doc, state, v, e);
+      await renderEntry(doc, state, v, e);
     }
 
     if (versteckt > 0) {
@@ -178,7 +247,7 @@
     else openPdf(doc, filename);
   }
 
-  function renderEntry(doc, state, v, e) {
+  async function renderEntry(doc, state, v, e) {
     const IND = 4;
     if (e.typ === 'notiz') {
       if (!e.textMd || !e.textMd.trim()) { line(doc, state, '(leere Notiz)', { size: 10, italic: true, color: C_MUTED, indent: IND }); return; }
@@ -190,7 +259,13 @@
       const meta = [];
       if (e.faellig) meta.push('fällig ' + formatDatum(e.faellig));
       if (e.prioritaet && PRIO_LABEL[e.prioritaet]) meta.push('Priorität ' + PRIO_LABEL[e.prioritaet]);
-      line(doc, state, (e.erledigt ? '☑ ' : '☐ ') + (e.titel || '(ohne Titel)') + (meta.length ? '  (' + meta.join(' · ') + ')' : ''), { size: 10, indent: IND });
+      // Ankreuzfeld vor dem Text; der Text rückt um die Box ein.
+      const BOX_IND = IND + 5.2;
+      ensureSpace(doc, state, 6); // > gap der Textzeile, sonst bricht line() um und die Box bliebe allein zurück
+      checkbox(doc, MARGIN_X + IND, state.y, !!e.erledigt);
+      line(doc, state, (e.titel || '(ohne Titel)') + (meta.length ? '  (' + meta.join(' · ') + ')' : ''), { size: 10, indent: BOX_IND });
+    } else if (e.typ === 'foto') {
+      await renderFotos(doc, state, v, e, IND);
     } else if (e.typ === 'kosten') {
       line(doc, state, `${euro(e.betrag)} — ${e.beschreibung || 'Kosten'}`, { size: 10, bold: true, indent: IND });
       const parts = [];
@@ -198,16 +273,42 @@
       if (e.belegdatum) parts.push('Beleg: ' + formatDatum(e.belegdatum));
       if (e.haushaltsstelleId) parts.push('Kostenstelle: ' + stelleName(e.haushaltsstelleId));
       if (parts.length) line(doc, state, parts.join('  ·  '), { size: 9.5, color: C_MUTED, indent: IND });
-      for (const d of (e.paperlessDocs || [])) line(doc, state, '📄 ' + (d.title || ('Dokument ' + d.id)), { size: 9.5, indent: IND + 2 });
+      for (const d of (e.paperlessDocs || [])) line(doc, state, 'Beleg: ' + (d.title || ('Dokument ' + d.id)), { size: 9.5, indent: IND + 2 });
     } else if (e.typ === 'dokument') {
       const docs = e.paperlessDocs || [];
       if (docs.length === 0) line(doc, state, '(kein Dokument)', { size: 10, italic: true, color: C_MUTED, indent: IND });
-      for (const d of docs) line(doc, state, '📄 ' + (d.title || ('Dokument ' + d.id)) + '  (#' + d.id + ')', { size: 10, indent: IND });
+      for (const d of docs) line(doc, state, 'Dokument: ' + (d.title || d.id) + '  (#' + d.id + ')', { size: 10, indent: IND });
     } else if (e.typ === 'referenz') {
       const target = store.getVorgang(e.refVorgangId);
       const label = target && roles.canSeeVorgang(target) ? (target.titel || '(ohne Titel)') + ' (' + (M.VORGANG_STATUS_LABEL[target.status] || target.status) + ')' : (target ? '(vertraulicher Vorgang)' : '(Vorgang nicht gefunden)');
-      line(doc, state, '→ ' + label, { size: 10, indent: IND });
+      line(doc, state, '» ' + label, { size: 10, indent: IND });
       if (e.notiz) line(doc, state, e.notiz, { size: 9.5, color: C_MUTED, indent: IND + 2 });
+    }
+  }
+
+  // Fotos eines Verlaufseintrags: je Bild seitenverhältnistreu in eine feste
+  // Box (Breite/Höhe), darunter die Bildunterschrift.
+  async function renderFotos(doc, state, v, e, IND) {
+    const BOX_W = 85, BOX_H = 60;
+    if (e.bildunterschrift && e.bildunterschrift.trim()) {
+      line(doc, state, e.bildunterschrift, { size: 10, indent: IND });
+    }
+    const fotos = store.listVorgangFotos(v.id).filter(f => f.kind === 'hist_' + e.id);
+    if (fotos.length === 0) {
+      line(doc, state, '(kein Foto)', { size: 10, italic: true, color: C_MUTED, indent: IND });
+      return;
+    }
+    for (const f of fotos) {
+      try {
+        const img = await loadImage(store.vorgangFotoUrl(f.id), f.mimetype);
+        const fit = fitBox(img.w, img.h, BOX_W, BOX_H);
+        ensureSpace(doc, state, fit.h + 3);
+        doc.addImage(img.dataUrl, img.format, MARGIN_X + IND, state.y, fit.w, fit.h, undefined, 'FAST');
+        state.y += fit.h + 3;
+      } catch (err) {
+        console.warn('Foto konnte nicht ins PDF geladen werden', f.id, err);
+        line(doc, state, '(Foto nicht ladbar: ' + (f.filename || f.id) + ')', { size: 9, italic: true, color: C_MUTED, indent: IND });
+      }
     }
   }
 
