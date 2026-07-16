@@ -165,11 +165,19 @@
     const lineY = y + 40;
     setFont(doc, 9.5, false);
     for (const c of cols) doc.text(c.label, c.cx, labelY, { align: 'center' });
-    // Bürgermeister-Unterschrift als Bild über die Linie legen
+    // Bürgermeister-Unterschrift als Bild über die Linie legen. Mit
+    // hinterlegten Pixelmaßen seitenverhältnistreu in die 44×15-mm-Box
+    // einpassen (sonst wäre sie gestreckt); ohne Maße wie bisher fester Kasten.
     if (cfg.unterschriftDataUrl) {
       try {
         const fmt = cfg.unterschriftDataUrl.includes('image/png') ? 'PNG' : 'JPEG';
-        doc.addImage(cfg.unterschriftDataUrl, fmt, cols[0].cx - 22, lineY - 16, 44, 15, undefined, 'SLOW');
+        const maxW = 44, maxH = 15;
+        let w = maxW, h = maxH;
+        if (cfg.unterschriftW > 0 && cfg.unterschriftH > 0) {
+          const r = Math.min(maxW / cfg.unterschriftW, maxH / cfg.unterschriftH);
+          w = cfg.unterschriftW * r; h = cfg.unterschriftH * r;
+        }
+        doc.addImage(cfg.unterschriftDataUrl, fmt, cols[0].cx - w / 2, lineY - h - 1, w, h, undefined, 'SLOW');
       } catch (_) {}
     }
     for (const c of cols) {

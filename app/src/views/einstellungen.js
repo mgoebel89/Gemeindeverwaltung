@@ -515,28 +515,70 @@
       return i;
     };
 
-    // Unterschrift-Bild
+    // Unterschrift Bürgermeister: direkt unterschreiben (wie bei den
+    // Vermietungen) ODER ein Bild hochladen. Beide Wege legen zusätzlich die
+    // Pixelmaße (w/h) ab, damit die PDFs seitenverhältnistreu einbetten können
+    // statt in einen festen Kasten zu quetschen.
     const sigPreview = el('div', { style: 'margin:8px 0;' });
     function refreshSigPreview() {
       sigPreview.innerHTML = '';
       if (au.unterschriftDataUrl) {
-        sigPreview.appendChild(el('img', { src: au.unterschriftDataUrl, style: 'max-height:70px; border:1px solid var(--border); border-radius:4px; background:white; padding:4px;' }));
+        sigPreview.appendChild(el('img', {
+          src: au.unterschriftDataUrl,
+          style: 'max-height:70px; border:1px solid var(--border); border-radius:4px; background:white; padding:4px;',
+        }));
+        if (!(au.unterschriftW > 0 && au.unterschriftH > 0)) {
+          sigPreview.appendChild(el('div', { class: 'help', style: 'margin-top:4px;' },
+            'Ältere Unterschrift ohne Maßangabe – wird im PDF in einen festen Kasten gezeichnet und kann verzerrt wirken. Einmal neu unterschreiben oder neu hochladen behebt das.'));
+        }
       } else {
         sigPreview.appendChild(el('div', { class: 'help' }, 'Keine Unterschrift hinterlegt – die Bürgermeister-Linie bleibt im PDF leer.'));
       }
     }
     refreshSigPreview();
+
+    function saveSig(dataUrl, w, h) {
+      au.unterschriftDataUrl = dataUrl;
+      au.unterschriftW = w || null;
+      au.unterschriftH = h || null;
+      store.saveSettings(settings);
+      toast('Unterschrift gespeichert');
+      refreshSigPreview();
+    }
+
+    const onSignSig = () => {
+      GR.ui.captureSignature({
+        title: 'Unterschrift Bürgermeister',
+        subtitle: 'Wird in Kostenabrechnung, Mietvertrag und Auslagen-PDF über die Bürgermeister-Linie gesetzt.',
+        name: au.buergermeisterName || '',
+        onDone: (res) => { if (res && res.dataUrl) saveSig(res.dataUrl, res.w, res.h); },
+      });
+    };
+
     const onUploadSig = async () => {
       const file = await pickFile('image/png,image/*');
       if (!file) return;
       try {
-        au.unterschriftDataUrl = await readFileAsDataUrl(file);
-        store.saveSettings(settings);
-        toast('Unterschrift gespeichert');
-        refreshSigPreview();
+        const dataUrl = await readFileAsDataUrl(file);
+        // Naturmaße messen, damit auch hochgeladene Bilder unverzerrt bleiben.
+        const masse = await new Promise((resolve) => {
+          const img = new Image();
+          img.onload = () => resolve({ w: img.naturalWidth, h: img.naturalHeight });
+          img.onerror = () => resolve({ w: null, h: null });
+          img.src = dataUrl;
+        });
+        saveSig(dataUrl, masse.w, masse.h);
       } catch (e) { alert('Datei konnte nicht gelesen werden: ' + e.message); }
     };
-    const onResetSig = () => { au.unterschriftDataUrl = ''; store.saveSettings(settings); toast('Unterschrift entfernt'); refreshSigPreview(); };
+
+    const onResetSig = () => {
+      au.unterschriftDataUrl = '';
+      au.unterschriftW = null;
+      au.unterschriftH = null;
+      store.saveSettings(settings);
+      toast('Unterschrift entfernt');
+      refreshSigPreview();
+    };
 
     // Scanner
     const scannerInput = el('input', { type: 'text', value: au.scannerUrl || '', placeholder: 'z. B. http://192.168.1.30' });
@@ -579,10 +621,11 @@
         el('div', {}, [el('label', {}, 'Name Ortsbeigeordneter (unter der Linie)'), bindAu('ortsbeigeordneterName')]),
       ]),
       el('h4', { style: 'margin:14px 0 4px;' }, 'Unterschrift Bürgermeister'),
-      el('p', { class: 'help' }, 'Wird automatisch über die Bürgermeister-Linie ins PDF gesetzt. PNG mit transparentem Hintergrund empfohlen.'),
+      el('p', { class: 'help' }, 'Wird automatisch über die Bürgermeister-Linie ins PDF gesetzt (Auslagen-Formular, Mietvertrag, Kostenabrechnung). Am einfachsten direkt hier unterschreiben – mit Finger oder Stift auf Handy/Tablet. Alternativ ein Bild hochladen (PNG mit transparentem Hintergrund empfohlen).'),
       sigPreview,
       el('div', { class: 'toolbar' }, [
-        el('button', { class: 'btn-primary', onClick: onUploadSig }, 'Unterschrift hochladen…'),
+        el('button', { class: 'btn-primary', onClick: onSignSig }, '✍ Jetzt unterschreiben'),
+        el('button', { onClick: onUploadSig }, 'Bild hochladen…'),
         el('button', { onClick: onResetSig }, 'Entfernen'),
       ]),
       el('h4', { style: 'margin:14px 0 4px;' }, 'Netzwerkscanner (eSCL/AirScan · SANE/WSD)'),

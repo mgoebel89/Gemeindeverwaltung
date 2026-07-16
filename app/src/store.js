@@ -162,6 +162,8 @@
       ortsbeigeordneterName: 'C. Arenz',
       quittungOrt: 'Kelberg',
       unterschriftDataUrl: '',
+      unterschriftW: null,   // Pixelmaße der Unterschrift – ohne sie zeichnen
+      unterschriftH: null,   // die PDFs einen festen Kasten (kann verzerren)
       scannerUrl: '',
     };
   }

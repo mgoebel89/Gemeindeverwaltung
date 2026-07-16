@@ -127,11 +127,15 @@
     } catch (_) {}
   }
 
-  // Bürgermeister-Unterschrift (aus den Bargeldauslagen-Einstellungen)
-  // mittig über eine Signaturlinie legen (fester Kasten wie bisher).
+  // Bürgermeister-Unterschrift (aus den Bargeldauslagen-Einstellungen) mittig
+  // über eine Signaturlinie legen. Sind die Maße hinterlegt (direkt
+  // unterschrieben oder neu hochgeladen), wird seitenverhältnistreu
+  // eingepasst; ältere Bilder ohne Maße bleiben beim festen Kasten.
   function drawBuergermeisterSignatur(doc, centerX, lineY) {
     const cfg = (store.getSettings().auslagen) || {};
-    drawSignatureImage(doc, cfg.unterschriftDataUrl, centerX, lineY);
+    drawSignatureImage(doc, cfg.unterschriftDataUrl, centerX, lineY, {
+      natW: cfg.unterschriftW, natH: cfg.unterschriftH, maxW: 44, maxH: 15,
+    });
   }
 
   function zeitraumText(v) {
