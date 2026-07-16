@@ -44,12 +44,14 @@ Die Navigation wird aus einer zentralen Config in `app/src/app.js` (`NAV`) aufge
 neues Modul ist dort ein Eintrag.
 
 Die Startseite (`#/`) ist ein **Dashboard** (`app/src/views/uebersicht.js`) mit Karten für
-anstehende Saalvermietungen, Vertrags-Kündigungsfristen, **anstehende Termine** (aus den
-abonnierten Kalendern) und **offene Aufgaben** (aus Vikunja). Die frühere Sitzungsliste liegt
-unter `#/sitzungen`, die vollständige Terminliste unter `#/termine`, die Aufgaben unter `#/aufgaben`.
+**laufende Vorgänge**, anstehende Saalvermietungen, Vertrags-Kündigungsfristen, **anstehende
+Termine** (aus den abonnierten Kalendern) und **offene Aufgaben** (aus Vikunja). Die frühere
+Sitzungsliste liegt unter `#/sitzungen`, die vollständige Terminliste unter `#/termine`, die
+Aufgaben unter `#/aufgaben`.
 
 Die **Einstellungen** sind in Kategorien gegliedert (Unter-Navigation): Allgemein, Darstellung,
-Dokumente, Kalender, Aufgaben, Vermietung, Verträge & Pacht, Bargeldauslagen, Datensicherung.
+Dokumente, Kalender, Aufgaben, Vorgänge & Projekte, Vermietung, Verträge & Pacht,
+Bargeldauslagen, Arbeitszeiten, Datensicherung.
 
 ## Struktur
 
@@ -377,6 +379,55 @@ initialisieren" in den Einstellungen an.
 > Datenbank – die neuen Tabellen werden per `CREATE TABLE IF NOT EXISTS` beim Start
 > ergänzt. Frontend nach dem Update mit **Strg+F5** neu laden.
 
+## Modul „Haushalt"
+
+Zentrale Verwaltung der **Haushaltsstellen** (`#/haushalt`) und die Übersicht, was von jedem
+Budget noch übrig ist. Die Haushaltsstellen sind eine **geteilte Liste**: Bargeldauslagen,
+Vorgänge und Arbeitszeiten buchen alle auf dieselben Stellen – keine Doppelpflege.
+
+- **Tabelle je Haushaltsstelle** für ein wählbares **Haushaltsjahr**: Nummer, Bezeichnung,
+  Budget, Verbrauch und **Restmittel** (rot bei Überschreitung), dazu eine Summenzeile. Die
+  Jahresauswahl bietet alle Jahre an, die in Auslagen, Vorgängen oder Abrechnungen vorkommen.
+- **Verbrauch** = eingereichte + erstattete **Bargeldauslagen** + alle Kosten aus **Vorgängen**
+  + abgerechnete und ausgezahlte **Arbeitszeiten**. Offene Auslagen-Entwürfe und reine
+  Zeiterfassungen zählen bewusst noch nicht. Der Tooltip der Spalte schlüsselt auf, welcher
+  Anteil woher kommt.
+- **Anlegen/Bearbeiten/Löschen** direkt hier (derselbe Dialog wie früher unter den
+  Auslagen-Stammdaten; dort stehen jetzt nur noch die Empfänger).
+
+## Modul „Vorgänge & Projekte"
+
+Vorgangsverfolgung und -dokumentation (`#/vorgaenge`): von der Beschaffung bis zum Bauprojekt.
+Übersicht als Kacheln (abgeschlossene eingeklappt), Detailseite mit Eckdaten, Budget und
+Zeitleiste. Kategorien sind unter *Einstellungen → Vorgänge & Projekte* pflegbar.
+
+- **Zeitleiste (Historie)** mit getippten Einträgen je Datum, absteigend sortiert:
+  **Notiz** (Markdown mit Live-Vorschau), **ToDo**, **Foto**, **Dokument**, **Referenz** auf
+  einen anderen Vorgang und **Kosten**. Beim Ändern des Datums sortiert sich der Eintrag
+  automatisch ein.
+- **ToDos** werden im app-weit gewählten **Vikunja**-Projekt angelegt (*Einstellungen →
+  Aufgaben*); Erledigt-Status, Titel, Fälligkeit und Priorität werden von dort
+  zurückgespiegelt. Abhaken geht direkt am Eintrag.
+- **Fotos** hängen als echte Dateien am Eintrag (Tabelle `vorgang_files`, Ablage unter
+  `attachments/vorgaenge/<id>/`), wahlweise über **📷 Kamera** oder **🖼 Galerie**; sie werden
+  vor dem Upload auf 1600 px verkleinert und erscheinen im PDF.
+- **Budget/Kostenstellen:** einem Vorgang lassen sich **mehrere Haushaltsstellen** zuweisen,
+  jeder Kosten-Eintrag bucht auf genau eine davon. Die Tabelle zeigt je Stelle den eigenen
+  Anteil, das Budget, den Gesamtverbrauch und die Restmittel. Dazu ein **Planbetrag mit
+  Zieljahr** für künftige Haushalte – gesammelt unter *📊 Haushaltsplanung*
+  (`#/vorgaenge?view=planung`), nach Zieljahr gruppiert.
+- **Vertraulichkeit:** ganze Vorgänge oder einzelne Einträge lassen sich als *vertraulich*
+  markieren; sie sind nur in der **Leitungs-Ansicht** sichtbar. Umschalter oben rechts,
+  optional per **PIN** geschützt (*Einstellungen → Vorgänge & Projekte*; SHA-256-Hash, Rolle in
+  der Browser-Session). **Wichtig:** Das ist eine Sichtfilterung als Vorstufe zu einer echten
+  Nutzerverwaltung – **kein Zugriffsschutz**. Die Daten liegen unverändert im Snapshot und im
+  Backup.
+- **Ablauf-PDF:** die vollständige Dokumentation eines Vorgangs (Kopf, Beschreibung,
+  Budget/Restmittel, chronologischer Verlauf inkl. Fotos) als Download oder direkt **in
+  Paperless** – dort abgelegt, erscheint sie als Dokument-Eintrag in der eigenen Zeitleiste.
+  In der Rat-Ansicht bleiben vertrauliche Einträge draußen (mit Hinweis auf die Anzahl).
+- **Dashboard:** Karte *Laufende Vorgänge*; **NocoDB:** Tabelle `Vorgaenge` wird mitgesichert.
+
 ## Modul „Bargeldauslagen"
 
 Digitalisiert die Rückzahlung privat vorgelegter Gelder. Erreichbar über den
@@ -433,6 +484,46 @@ die übrigen Unterschriftsfelder bleiben leer.
 > Backend-Start; das Backend braucht die zusätzliche npm-Dependency
 > `bonjour-service` (Deploy zieht sie per `npm install`). Frontend nach dem Update
 > mit **Strg+F5** neu laden.
+
+## Modul „Arbeitszeiten & Vergütung"
+
+Erfasst Arbeitsleistungen für die Gemeinde – von **Gemeindearbeitern** ebenso wie von
+**beauftragten Firmen** – und rechnet sie je Person/Firma und Zeitraum ab. Drei Ansichten:
+`#/arbeitszeiten` (Erfassung), `#/arbeiter` (Stammdaten), `#/arbeitsabrechnungen`.
+
+- **Leistungserbringer** sind **ein** Stammdatentyp (kein Person/Firma-Umschalter): immer
+  Vor-/Nachname, dazu ein **optionales Feld „Firma"**. Ist es gesetzt, erscheint die Firma als
+  Name und die Person als *Ansprechpartner*. Weitere Felder (Anschrift, IBAN, SV-Nummer,
+  Steuer-ID, …) sind optional. Wer bereits Zeiten erfasst hat, lässt sich nicht löschen –
+  stattdessen den Haken **Aktiv** entfernen (bleibt in alten Abrechnungen erhalten).
+- **Stundensatz** gilt **einheitlich für alle**, aber mit **Historie**: Sätze werden mit
+  „gültig ab" gepflegt (*Einstellungen → Arbeitszeiten*). Maßgeblich ist der Satz, der am
+  **Leistungsdatum** gültig war – ältere Einträge ändern sich also nicht, wenn der Satz später
+  steigt. Am einzelnen Eintrag lässt sich ein **abweichender Satz** setzen (z. B. Firmen mit
+  eigener Rechnung).
+- **Status je Eintrag:** `erfasst` → `abgerechnet` → `ausgezahlt`. Nur „erfasst" ist
+  editier-/löschbar; danach ist der Eintrag gesperrt (🔒), Korrektur nur über **Storno**.
+- **Abrechnung:** Person + Zeitraum wählen → alle offenen Einträge werden automatisch
+  übernommen (Vorschau mit Summe), Haushaltsstelle + Haushaltsjahr wählen → *Erstellen*
+  **friert die Sätze ein** (Snapshot je Position). Spätere Satzänderungen wirken sich auf
+  fertige Abrechnungen **nicht** mehr aus. *Storno* setzt die Einträge auf „erfasst" zurück
+  und löscht die Abrechnung; *Als ausgezahlt markieren* setzt Abrechnung + Einträge auf
+  `ausgezahlt`.
+- **Haushalt:** Abrechnungen mindern ab Status **abgerechnet** die Restmittel ihrer
+  Haushaltsstelle – im Modul *Haushalt* und in der Budget-Tabelle der *Vorgänge* fließen sie
+  in denselben Topf wie Auslagen und Vorgangskosten (Spalte „Verbrauch", Tooltip schlüsselt
+  auf). Die Haushaltsstellen sind **dieselbe geteilte Liste** wie bei den Bargeldauslagen.
+- **PDF:** *Vorläufige PDF* erzeugt eine interne Abrechnung (Leistungserbringer + Bankdaten,
+  Positionstabelle, Summen, Haushaltsstelle, Unterschriftslinien inkl. Bürgermeisterbild) –
+  wahlweise als Download oder direkt **in Paperless**. Das **Formular der Verbandsgemeinde**
+  ist noch nicht umgesetzt und kommt später als zweite Ausgabe daneben.
+- **NocoDB:** Alle drei Tabellen (`Arbeiter`, `Arbeitszeiten`, `Arbeitsabrechnungen`) werden
+  vom Auto-Sync mitgesichert und beim ersten Sync automatisch angelegt. Sie enthalten
+  bewusst **auch IBAN/SV-Nummer/Steuer-ID** – NocoDB ist nur über VPN im privaten Netz
+  erreichbar.
+
+> **Migration:** Die drei SQLite-Tabellen legt das Backend beim Start selbst an
+> (`CREATE TABLE IF NOT EXISTS`). Frontend nach dem Update mit **Strg+F5** neu laden.
 
 ## Modul „Verträge und Pacht"
 
@@ -530,46 +621,6 @@ REST-API angebunden. Der Zugriff läuft **serverseitig** (`backend/vikunja.js`, 
 
 > **Migration:** Kein neues Schema nötig (nutzt die bestehende `settings`-Tabelle). Frontend
 > nach dem Update mit **Strg+F5** neu laden.
-
-## Modul „Arbeitszeiten & Vergütung"
-
-Erfasst Arbeitsleistungen für die Gemeinde – von **Gemeindearbeitern** ebenso wie von
-**beauftragten Firmen** – und rechnet sie je Person/Firma und Zeitraum ab. Drei Ansichten:
-`#/arbeitszeiten` (Erfassung), `#/arbeiter` (Stammdaten), `#/arbeitsabrechnungen`.
-
-- **Leistungserbringer** sind **ein** Stammdatentyp (kein Person/Firma-Umschalter): immer
-  Vor-/Nachname, dazu ein **optionales Feld „Firma"**. Ist es gesetzt, erscheint die Firma als
-  Name und die Person als *Ansprechpartner*. Weitere Felder (Anschrift, IBAN, SV-Nummer,
-  Steuer-ID, …) sind optional. Wer bereits Zeiten erfasst hat, lässt sich nicht löschen –
-  stattdessen den Haken **Aktiv** entfernen (bleibt in alten Abrechnungen erhalten).
-- **Stundensatz** gilt **einheitlich für alle**, aber mit **Historie**: Sätze werden mit
-  „gültig ab" gepflegt (*Einstellungen → Arbeitszeiten*). Maßgeblich ist der Satz, der am
-  **Leistungsdatum** gültig war – ältere Einträge ändern sich also nicht, wenn der Satz später
-  steigt. Am einzelnen Eintrag lässt sich ein **abweichender Satz** setzen (z. B. Firmen mit
-  eigener Rechnung).
-- **Status je Eintrag:** `erfasst` → `abgerechnet` → `ausgezahlt`. Nur „erfasst" ist
-  editier-/löschbar; danach ist der Eintrag gesperrt (🔒), Korrektur nur über **Storno**.
-- **Abrechnung:** Person + Zeitraum wählen → alle offenen Einträge werden automatisch
-  übernommen (Vorschau mit Summe), Haushaltsstelle + Haushaltsjahr wählen → *Erstellen*
-  **friert die Sätze ein** (Snapshot je Position). Spätere Satzänderungen wirken sich auf
-  fertige Abrechnungen **nicht** mehr aus. *Storno* setzt die Einträge auf „erfasst" zurück
-  und löscht die Abrechnung; *Als ausgezahlt markieren* setzt Abrechnung + Einträge auf
-  `ausgezahlt`.
-- **Haushalt:** Abrechnungen mindern ab Status **abgerechnet** die Restmittel ihrer
-  Haushaltsstelle – im Modul *Haushalt* und in der Budget-Tabelle der *Vorgänge* fließen sie
-  in denselben Topf wie Auslagen und Vorgangskosten (Spalte „Verbrauch", Tooltip schlüsselt
-  auf). Die Haushaltsstellen sind **dieselbe geteilte Liste** wie bei den Bargeldauslagen.
-- **PDF:** *Vorläufige PDF* erzeugt eine interne Abrechnung (Leistungserbringer + Bankdaten,
-  Positionstabelle, Summen, Haushaltsstelle, Unterschriftslinien inkl. Bürgermeisterbild) –
-  wahlweise als Download oder direkt **in Paperless**. Das **Formular der Verbandsgemeinde**
-  ist noch nicht umgesetzt und kommt später als zweite Ausgabe daneben.
-- **NocoDB:** Alle drei Tabellen (`Arbeiter`, `Arbeitszeiten`, `Arbeitsabrechnungen`) werden
-  vom Auto-Sync mitgesichert und beim ersten Sync automatisch angelegt. Sie enthalten
-  bewusst **auch IBAN/SV-Nummer/Steuer-ID** – NocoDB ist nur über VPN im privaten Netz
-  erreichbar.
-
-> **Migration:** Die drei SQLite-Tabellen legt das Backend beim Start selbst an
-> (`CREATE TABLE IF NOT EXISTS`). Frontend nach dem Update mit **Strg+F5** neu laden.
 
 ## Lizenz
 

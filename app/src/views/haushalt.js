@@ -16,10 +16,11 @@
 
     const hss = store.listHaushaltsstellen().sort((a, b) => (a.nummer || '').localeCompare(b.nummer || '', 'de'));
 
-    // Jahre für die Auswahl (aus Auslagen + Vorgängen + aktuellem Jahr).
+    // Jahre für die Auswahl (aus Auslagen + Vorgängen + Arbeitsabrechnungen + aktuellem Jahr).
     const jahre = new Set([new Date().getFullYear(), Number(uiState.jahr)]);
     for (const a of store.listAuslagen()) if (a.haushaltsjahr) jahre.add(Number(a.haushaltsjahr));
     for (const v of store.listVorgaenge()) if (v.haushaltsjahr) jahre.add(Number(v.haushaltsjahr));
+    for (const a of store.listArbeitsabrechnungen()) if (a.haushaltsjahr) jahre.add(Number(a.haushaltsjahr));
     const jahrSel = el('select', { class: 'input', style: 'width:auto;', onChange: (e) => { uiState.jahr = Number(e.target.value); refresh(); } },
       [...jahre].sort((a, b) => b - a).map(j => el('option', { value: j, selected: Number(uiState.jahr) === j }, String(j))));
 
@@ -30,7 +31,7 @@
       jahrSel,
       el('button', { class: 'btn-primary', onClick: () => GR.auslagen.haushaltsstelleDialog(null, refresh) }, '+ Neue Haushaltsstelle'),
     ]));
-    mount.appendChild(el('p', { class: 'help' }, 'Restmittel = Budget − (eingereichte + erstattete Bargeldauslagen + alle Kosten aus Vorgängen) im gewählten Haushaltsjahr.'));
+    mount.appendChild(el('p', { class: 'help' }, 'Restmittel = Budget − (eingereichte + erstattete Bargeldauslagen + alle Kosten aus Vorgängen + abgerechnete und ausgezahlte Arbeitszeiten) im gewählten Haushaltsjahr.'));
 
     if (hss.length === 0) {
       mount.appendChild(el('div', { class: 'card empty' }, 'Noch keine Haushaltsstellen angelegt. Oben „+ Neue Haushaltsstelle".'));
