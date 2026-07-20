@@ -984,6 +984,86 @@ tr:hover td { background: #fafbfc; }
 .vg-budget-table tbody tr:last-child td { border-bottom: none; }
 .vg-budget-table .vg-row-neg td { color: var(--danger); }
 
+/* Vorgänge: Angebote-Liste in der Budget/Kostenstellen-Karte */
+.vg-angebot-list { display: flex; flex-direction: column; gap: 6px; margin-top: 8px; }
+.vg-angebot-item {
+  display: flex; align-items: flex-start; gap: 10px;
+  padding: 8px 10px; border: 1px solid var(--border); border-radius: var(--radius);
+  background: var(--bg);
+}
+.vg-angebot-chosen { border-color: var(--success); box-shadow: inset 3px 0 0 var(--success); }
+.vg-angebot-main { flex: 1; min-width: 0; }
+.vg-angebot-name { font-weight: 600; }
+.vg-angebot-preis { font-weight: 600; white-space: nowrap; }
+.vg-angebot-docs { white-space: nowrap; align-self: center; }
+.vg-tag-chosen { color: var(--success); font-weight: 600; font-size: 0.82rem; }
+.vg-tag-win { color: var(--primary); font-weight: 700; }
+
+/* Vorgänge: Historien-Aktionsknöpfe (Angebot/Auswahl) */
+.vg-hist-actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
+
+/* Vorgänge: Entscheidungsmatrix (Anzeige) */
+.vg-matrix-wrap { overflow-x: auto; margin: 8px 0; }
+.vg-matrix { width: 100%; border-collapse: collapse; font-size: 0.86rem; }
+.vg-matrix th, .vg-matrix td { padding: 5px 8px; border: 1px solid var(--border); }
+.vg-matrix thead th { background: #eef1f5; font-weight: 600; color: var(--text); }
+.vg-matrix .vg-matrix-crit { text-align: center; }
+.vg-matrix tr.vg-matrix-win { background: #eef4fb; }
+.vg-matrix tr.vg-matrix-chosen { background: #eaf6ee; }
+.vg-empfehlung {
+  margin: 8px 0; padding: 6px 10px; border-radius: var(--radius);
+  background: #eef4fb; color: var(--primary); font-weight: 600; font-size: 0.9rem;
+}
+.vg-entsch-final { margin-top: 12px; }
+
+/* Vorgänge: geführte Overlays (Auswahl-Assistent, Bewertung) */
+.vg-wiz, .vg-bewert { max-width: 640px; width: 94vw; }
+.vg-wiz-steps { display: flex; gap: 8px; margin-bottom: 12px; flex-wrap: wrap; }
+.vg-wiz-step {
+  font-size: 0.8rem; padding: 3px 10px; border-radius: 999px;
+  background: var(--bg); color: var(--muted); border: 1px solid var(--border);
+}
+.vg-wiz-step.active { background: var(--primary); color: #fff; border-color: var(--primary); }
+.vg-wiz-list { display: flex; flex-direction: column; gap: 6px; max-height: 46vh; overflow-y: auto; }
+.vg-wiz-check {
+  display: flex; align-items: flex-start; gap: 10px;
+  padding: 8px 10px; border: 1px solid var(--border); border-radius: var(--radius); cursor: pointer;
+}
+.vg-wiz-check:hover { border-color: var(--primary); }
+.vg-wiz-check input { margin-top: 3px; }
+.vg-wiz-check-main { flex: 1; min-width: 0; }
+.vg-wiz-preis { margin-left: 8px; color: var(--muted); font-weight: 600; }
+.vg-wiz-eigs { display: flex; flex-direction: column; gap: 8px; max-height: 46vh; overflow-y: auto; }
+.vg-eig-row { display: flex; gap: 8px; align-items: flex-end; }
+.vg-eig-gewicht-field { width: 90px; flex: none; }
+.vg-eig-gewicht { text-align: center; }
+
+/* Vorgänge: Bewertungs-Overlay (Punkte 0–5 je Anbieter) */
+.vg-bewert-list { display: flex; flex-direction: column; gap: 12px; max-height: 52vh; overflow-y: auto; }
+.vg-bewert-item { padding-bottom: 8px; border-bottom: 1px solid var(--border); }
+.vg-bewert-crit { font-weight: 600; margin-bottom: 6px; }
+.vg-score-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.vg-score { display: inline-flex; gap: 4px; }
+.vg-score-btn {
+  width: 34px; height: 34px; padding: 0; border-radius: var(--radius);
+  border: 1px solid var(--border); background: var(--surface); cursor: pointer;
+  font-weight: 600; color: var(--text);
+}
+.vg-score-btn:hover { border-color: var(--primary); }
+.vg-score-btn.active { background: var(--primary); color: #fff; border-color: var(--primary); }
+.vg-score-cap { font-size: 0.8rem; color: var(--muted); }
+
+/* Vorgänge: Rangliste in der Auswertung */
+.vg-rank { display: flex; flex-direction: column; gap: 4px; margin: 8px 0; }
+.vg-rank-row {
+  display: flex; align-items: center; gap: 10px;
+  padding: 6px 10px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg);
+}
+.vg-rank-win { border-color: var(--primary); background: #eef4fb; }
+.vg-rank-pos { font-weight: 700; color: var(--muted); min-width: 22px; }
+.vg-rank-name { flex: 1; font-weight: 600; }
+.vg-rank-score { white-space: nowrap; }
+
 /* Bargeldauslagen: Status-Dropdown direkt in der Liste */
 .auslage-status-sel { padding: 3px 6px; font-size: 0.85rem; min-width: 120px; }
 

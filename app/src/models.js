@@ -401,10 +401,16 @@
     pausiert: 'Pausiert', beendet: 'Beendet',
   };
   // Typen der getippten Vorgangshistorie (Zeitleiste).
-  const HISTORIE_TYPEN = ['notiz', 'todo', 'foto', 'dokument', 'referenz', 'kosten'];
+  const HISTORIE_TYPEN = ['notiz', 'todo', 'foto', 'dokument', 'referenz', 'kosten', 'angebot', 'entscheidung'];
   const HISTORIE_TYP_LABEL = {
     notiz: 'Notiz', todo: 'ToDo', foto: 'Foto', dokument: 'Dokument',
-    referenz: 'Referenz', kosten: 'Kosten',
+    referenz: 'Referenz', kosten: 'Kosten', angebot: 'Angebot', entscheidung: 'Auswahl',
+  };
+  // Klartext-Skala der Bewertungspunkte in der Entscheidungsmatrix (0–5).
+  const SCORE_MIN = 0, SCORE_MAX = 5;
+  const SCORE_LABEL = {
+    0: 'trifft nicht zu', 1: 'trifft kaum zu', 2: 'trifft wenig zu',
+    3: 'trifft teilweise zu', 4: 'trifft weitgehend zu', 5: 'trifft voll zu',
   };
 
   function emptyVorgang() {
@@ -457,6 +463,50 @@
       sum += vorgangKostenAuf(v, haushaltsstelleId);
     }
     return sum;
+  }
+
+  // ===== Angebote & Entscheidungsmatrix (Vorgangshistorie) =====
+  // Alle Angebots-Historieneinträge eines Vorgangs.
+  function vorgangAngebote(v) {
+    return (v && v.historie || []).filter(e => e.typ === 'angebot');
+  }
+
+  // Gewichtete Gesamtpunktzahl eines Teilnehmers in einer Entscheidungsmatrix:
+  // Σ (Punkt 0–5 × Gewicht der Eigenschaft). Fehlende Punkte zählen als 0.
+  function entscheidungScore(e, angebotId) {
+    if (!e || !Array.isArray(e.eigenschaften)) return 0;
+    const zeile = (e.bewertung && e.bewertung[angebotId]) || {};
+    let sum = 0;
+    for (const eig of e.eigenschaften) {
+      const p = Number(zeile[eig.id]) || 0;
+      const g = eig.gewicht != null ? Number(eig.gewicht) : 1;
+      sum += p * (isNaN(g) ? 1 : g);
+    }
+    return sum;
+  }
+
+  // Maximal erreichbare Punktzahl (SCORE_MAX × Σ Gewichte) – für Prozentanzeige.
+  function entscheidungMaxScore(e) {
+    if (!e || !Array.isArray(e.eigenschaften)) return 0;
+    const gsum = e.eigenschaften.reduce((s, eig) => s + (eig.gewicht != null ? (Number(eig.gewicht) || 0) : 1), 0);
+    return SCORE_MAX * gsum;
+  }
+
+  // angebotId des punkthöchsten Teilnehmers (Empfehlung). Bei Gleichstand der
+  // erste in der Teilnehmerreihenfolge. null, wenn keine Teilnehmer.
+  function entscheidungGewinner(e) {
+    if (!e || !Array.isArray(e.teilnehmer) || e.teilnehmer.length === 0) return null;
+    let best = null, bestScore = -Infinity;
+    for (const t of e.teilnehmer) {
+      const s = entscheidungScore(e, t.angebotId);
+      if (s > bestScore) { bestScore = s; best = t.angebotId; }
+    }
+    return best;
+  }
+
+  // Ist der Auswahlprozess abgeschlossen? (Anbieter gewählt + Begründung gesetzt)
+  function entscheidungAbgeschlossen(e) {
+    return !!(e && e.gewaehltId && String(e.begruendung || '').trim());
   }
 
   // ===== Modul Arbeitszeiten & Vergütung =====
@@ -582,7 +632,9 @@
     emptyVertragspartner, emptyVertrag,
     jahresbetrag, addMonths, dateToIso, spaetesterKuendigungstermin, fristStatus, tageBisKuendigung,
     VORGANG_STATUS, VORGANG_STATUS_LABEL, HISTORIE_TYPEN, HISTORIE_TYP_LABEL,
+    SCORE_MIN, SCORE_MAX, SCORE_LABEL,
     emptyVorgang, emptyHistorieEintrag, vorgangKosten, vorgangKostenAuf, vorgaengeVerbrauch,
+    vorgangAngebote, entscheidungScore, entscheidungMaxScore, entscheidungGewinner, entscheidungAbgeschlossen,
     ARBEITSZEIT_STATUS, ARBEITSZEIT_STATUS_LABEL, ARBEITSZEIT_GEBUCHT_STATUS,
     emptyArbeiter, arbeiterName, arbeiterZusatz,
     emptyArbeitszeit, emptyArbeitsabrechnung,

@@ -13,8 +13,9 @@
   const C_TEXT = [0, 0, 0], C_MUTED = [90, 90, 90], C_LEAD = [44, 82, 130];
 
   function euro(n) { return (Number(n) || 0).toLocaleString('de-DE', { style: 'currency', currency: 'EUR' }); }
+  function fmtPts(n) { const x = Math.round((Number(n) || 0) * 10) / 10; return String(x).replace('.', ','); }
   const PRIO_LABEL = { 1: 'Niedrig', 2: 'Mittel', 3: 'Hoch', 4: 'Dringend', 5: 'Sofort' };
-  const TYP_LABEL = { notiz: 'Notiz', todo: 'ToDo', dokument: 'Dokument', referenz: 'Referenz', kosten: 'Kosten', foto: 'Foto' };
+  const TYP_LABEL = { notiz: 'Notiz', todo: 'ToDo', dokument: 'Dokument', referenz: 'Referenz', kosten: 'Kosten', foto: 'Foto', angebot: 'Angebot', entscheidung: 'Auswahl' };
 
   // Die jsPDF-Standardschriften können nur WinAnsi (CP1252). Enthält eine Zeile
   // ein Zeichen darüber hinaus (Emoji, Pfeile, Haken), kodiert jsPDF die GANZE
@@ -283,7 +284,87 @@
       const label = target && roles.canSeeVorgang(target) ? (target.titel || '(ohne Titel)') + ' (' + (M.VORGANG_STATUS_LABEL[target.status] || target.status) + ')' : (target ? '(vertraulicher Vorgang)' : '(Vorgang nicht gefunden)');
       line(doc, state, '» ' + label, { size: 10, indent: IND });
       if (e.notiz) line(doc, state, e.notiz, { size: 9.5, color: C_MUTED, indent: IND + 2 });
+    } else if (e.typ === 'angebot') {
+      line(doc, state, (e.anbieter || '(ohne Anbieter)') + (e.preis != null ? '  —  ' + euro(e.preis) : ''), { size: 10, bold: true, indent: IND });
+      if (e.beschreibung) line(doc, state, e.beschreibung, { size: 9.5, color: C_MUTED, indent: IND });
+      for (const d of (e.paperlessDocs || [])) line(doc, state, 'Angebot: ' + (d.title || ('Dokument ' + d.id)), { size: 9.5, indent: IND + 2 });
+    } else if (e.typ === 'entscheidung') {
+      if (e.titel) line(doc, state, e.titel, { size: 10, bold: true, indent: IND });
+      if (!e.teilnehmer || !e.teilnehmer.length || !e.eigenschaften || !e.eigenschaften.length) {
+        line(doc, state, '(Matrix unvollständig)', { size: 10, italic: true, color: C_MUTED, indent: IND });
+      } else {
+        gap(state, 1);
+        drawMatrix(doc, state, e);
+        const win = e.teilnehmer.find(t => t.angebotId === M.entscheidungGewinner(e));
+        if (win) line(doc, state, 'Empfehlung (höchste Punktzahl): ' + (win.name || '(ohne Anbieter)'), { size: 9.5, indent: IND });
+        const chosen = e.teilnehmer.find(t => t.angebotId === e.gewaehltId);
+        if (chosen) line(doc, state, 'Gewählter Anbieter: ' + (chosen.name || '(ohne Anbieter)'), { size: 10, bold: true, indent: IND });
+        if (e.begruendung && e.begruendung.trim()) {
+          line(doc, state, 'Begründung:', { size: 9.5, bold: true, indent: IND });
+          for (const l of mdLines(e.begruendung)) { if (l.text === '') { gap(state, l.gap || 2.2); continue; } line(doc, state, l.text, { size: 9.5, indent: IND + (l.indent || 0), gap: 4.6 }); }
+        }
+      }
     }
+  }
+
+  // Eine Tabellenzelle mit Rahmen (und optionaler Füllung) + umbrochenem Text.
+  function matrixCell(doc, x, y, w, h, text, opts = {}) {
+    if (opts.fill) doc.setFillColor(opts.fill[0], opts.fill[1], opts.fill[2]);
+    doc.setDrawColor(200); doc.setLineWidth(0.2);
+    doc.rect(x, y, w, h, opts.fill ? 'FD' : 'S');
+    setFont(doc, opts.size || 8.5, !!opts.bold, false, opts.color || C_TEXT);
+    const pad = 1.3;
+    const lines = doc.splitTextToSize(winAnsi(String(text == null ? '' : text)), w - 2 * pad);
+    const maxLines = Math.max(1, Math.floor((h - 1) / 3.1));
+    let ty = y + 3.4;
+    for (let i = 0; i < lines.length && i < maxLines; i++) {
+      if (opts.align === 'right') doc.text(lines[i], x + w - pad, ty, { align: 'right' });
+      else if (opts.align === 'center') doc.text(lines[i], x + w / 2, ty, { align: 'center' });
+      else doc.text(lines[i], x + pad, ty);
+      ty += 3.1;
+    }
+  }
+
+  // Entscheidungsmatrix als gezeichnete Tabelle (Anbieter × Eigenschaften).
+  function drawMatrix(doc, state, e) {
+    const gewinnerId = M.entscheidungGewinner(e);
+    const crits = e.eigenschaften || [];
+    const nameW = 44, preisW = 22, summeW = 20;
+    const critTotal = CONTENT_W - nameW - preisW - summeW;
+    const critW = crits.length ? Math.max(11, critTotal / crits.length) : critTotal;
+    const headH = 11, rowH = 7;
+    const HEAD_FILL = [235, 238, 243];
+
+    function header(y) {
+      let x = MARGIN_X;
+      matrixCell(doc, x, y, nameW, headH, 'Anbieter', { bold: true, fill: HEAD_FILL }); x += nameW;
+      for (const eig of crits) {
+        const gw = Number(eig.gewicht);
+        matrixCell(doc, x, y, critW, headH, eig.name + (gw !== 1 ? ' (x' + fmtPts(eig.gewicht) + ')' : ''), { bold: true, fill: HEAD_FILL, align: 'center', size: 8 }); x += critW;
+      }
+      matrixCell(doc, x, y, preisW, headH, 'Preis', { bold: true, fill: HEAD_FILL, align: 'right' }); x += preisW;
+      matrixCell(doc, x, y, summeW, headH, 'Summe', { bold: true, fill: HEAD_FILL, align: 'right' });
+      return y + headH;
+    }
+
+    ensureSpace(doc, state, headH + rowH + 2);
+    state.y = header(state.y);
+
+    for (const t of e.teilnehmer) {
+      if (state.y + rowH > PAGE_H - 16) { doc.addPage(); state.y = MARGIN_TOP; state.y = header(state.y); }
+      const zeile = (e.bewertung && e.bewertung[t.angebotId]) || {};
+      const isChosen = t.angebotId === e.gewaehltId;
+      const isWin = t.angebotId === gewinnerId;
+      const fill = isChosen ? [214, 234, 219] : (isWin ? [235, 243, 250] : undefined);
+      let x = MARGIN_X;
+      const nameTxt = (t.name || '(ohne Anbieter)') + (isChosen ? '  [gewählt]' : (isWin ? '  [Empf.]' : ''));
+      matrixCell(doc, x, state.y, nameW, rowH, nameTxt, { fill, bold: isChosen, size: 8.5 }); x += nameW;
+      for (const eig of crits) { const p = zeile[eig.id]; matrixCell(doc, x, state.y, critW, rowH, p != null ? String(p) : '–', { fill, align: 'center' }); x += critW; }
+      matrixCell(doc, x, state.y, preisW, rowH, t.preis != null ? euro(t.preis) : '—', { fill, align: 'right', size: 8 }); x += preisW;
+      matrixCell(doc, x, state.y, summeW, rowH, fmtPts(M.entscheidungScore(e, t.angebotId)), { fill, align: 'right', bold: true });
+      state.y += rowH;
+    }
+    state.y += 2;
   }
 
   // Fotos eines Verlaufseintrags: je Bild seitenverhältnistreu in eine feste
@@ -312,5 +393,79 @@
     }
   }
 
-  GR.vorgaengePdf = { buildVorgangDokumentation };
+  // === Separates PDF einer Entscheidungsmatrix (aus dem Auswahl-Eintrag) ===
+  // opts.target: 'download' (Standard) | 'paperless'; opts.onUploaded (Paperless).
+  async function buildEntscheidungPdf(v, e, opts = {}) {
+    if (!v || !e) return;
+    const doc = newDoc(); if (!doc) return;
+    const settings = store.getSettings();
+    const ort = (settings.vermietung && settings.vermietung.ortsgemeinde) || settings.ortsname || '';
+    const state = { y: MARGIN_TOP };
+
+    // Kopf mit Wappen rechts oben
+    const WAPPEN_BOX = { w: 20, h: 24 };
+    let kopfW = CONTENT_W;
+    const wappen = getWappenDataUrl();
+    if (wappen) {
+      try {
+        const p = doc.getImageProperties(wappen);
+        const fit = fitBox(p.width, p.height, WAPPEN_BOX.w, WAPPEN_BOX.h);
+        doc.addImage(wappen, 'PNG', RIGHT_X - fit.w, state.y - 2, fit.w, fit.h, undefined, 'SLOW');
+        kopfW = CONTENT_W - fit.w - 5;
+      } catch (_) { kopfW = CONTENT_W - WAPPEN_BOX.w - 5; }
+    }
+    setFont(doc, 15, true);
+    doc.text(winAnsi('Entscheidungsmatrix'), MARGIN_X, state.y + 4); state.y += 9;
+    const kopf = [
+      'Ortsgemeinde ' + ort,
+      'Vorgang: ' + (v.titel || '(ohne Titel)'),
+      e.titel ? ('Auswahl: ' + e.titel) : null,
+      e.datum ? ('Datum: ' + formatDatum(e.datum)) : null,
+    ].filter(Boolean).join('  ·  ');
+    line(doc, state, kopf, { size: 9.5, color: C_MUTED, maxWidth: kopfW });
+    state.y = Math.max(state.y, MARGIN_TOP + WAPPEN_BOX.h);
+    hr(doc, state, 4);
+
+    if (!e.teilnehmer || !e.teilnehmer.length || !e.eigenschaften || !e.eigenschaften.length) {
+      line(doc, state, 'Die Matrix ist unvollständig.', { size: 11, italic: true, color: C_MUTED });
+    } else {
+      line(doc, state, 'Bewertung: 0 = trifft nicht zu … 5 = trifft voll zu', { size: 9.5, color: C_MUTED });
+      gap(state, 1.5);
+      drawMatrix(doc, state, e);
+
+      const max = M.entscheidungMaxScore(e);
+      const win = e.teilnehmer.find(t => t.angebotId === M.entscheidungGewinner(e));
+      if (win) line(doc, state, 'Empfehlung (höchste Punktzahl): ' + (win.name || '(ohne Anbieter)') + '  —  ' + fmtPts(M.entscheidungScore(e, win.angebotId)) + (max ? ' / ' + fmtPts(max) : '') + ' Punkte', { size: 10.5, bold: true, color: C_LEAD });
+      gap(state, 2);
+      const chosen = e.teilnehmer.find(t => t.angebotId === e.gewaehltId);
+      line(doc, state, 'Gewählter Anbieter: ' + (chosen ? (chosen.name || '(ohne Anbieter)') : '(noch offen)'), { size: 11, bold: true });
+      if (e.begruendung && e.begruendung.trim()) {
+        gap(state, 1);
+        line(doc, state, 'Begründung der Auswahl', { size: 10.5, bold: true, color: C_LEAD });
+        for (const l of mdLines(e.begruendung)) { if (l.text === '') { gap(state, l.gap || 2.4); continue; } line(doc, state, l.text, { size: 10, indent: l.indent || 0, gap: 5 }); }
+      }
+      gap(state, 3);
+      hr(doc, state, 3);
+      line(doc, state, 'Verglichene Angebote', { size: 10.5, bold: true, color: C_LEAD });
+      for (const t of e.teilnehmer) {
+        line(doc, state, (t.name || '(ohne Anbieter)') + ': ' + (t.preis != null ? euro(t.preis) : 'kein Preis angegeben'), { size: 10, indent: 2 });
+      }
+    }
+
+    // Fußzeile mit Seitenzahlen
+    const pages = doc.getNumberOfPages();
+    for (let i = 1; i <= pages; i++) {
+      doc.setPage(i);
+      setFont(doc, 8, false, false, C_MUTED);
+      doc.text(winAnsi(ort + ' · Entscheidungsmatrix · Seite ' + i + '/' + pages), MARGIN_X, PAGE_H - 8);
+      doc.text(new Date().toLocaleDateString('de-DE'), RIGHT_X, PAGE_H - 8, { align: 'right' });
+    }
+
+    const safe = ((v.titel || 'Vorgang') + '-Auswahl').replace(/[^\wäöüÄÖÜß ]+/g, '').replace(/\s+/g, '_').slice(0, 45);
+    const filename = 'Entscheidungsmatrix-' + safe + '.pdf';
+    if (opts.target === 'paperless') GR.ui.savePdfToPaperless(doc, filename, { prefillTitle: 'Entscheidungsmatrix: ' + (v.titel || '') + (e.titel ? ' – ' + e.titel : ''), onUploaded: opts.onUploaded });
+    else openPdf(doc, filename);
+  }
+
+  GR.vorgaengePdf = { buildVorgangDokumentation, buildEntscheidungPdf };
 })();

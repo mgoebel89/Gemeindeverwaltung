@@ -403,8 +403,17 @@ Zeitleiste. Kategorien sind unter *Einstellungen → Vorgänge & Projekte* pfleg
 
 - **Zeitleiste (Historie)** mit getippten Einträgen je Datum, absteigend sortiert:
   **Notiz** (Markdown mit Live-Vorschau), **ToDo**, **Foto**, **Dokument**, **Referenz** auf
-  einen anderen Vorgang und **Kosten**. Beim Ändern des Datums sortiert sich der Eintrag
-  automatisch ein.
+  einen anderen Vorgang, **Kosten**, **Angebot** und **Auswahl** (Entscheidungsmatrix). Beim
+  Ändern des Datums sortiert sich der Eintrag automatisch ein.
+- **Angebote & Entscheidungsmatrix:** Ein **Angebot** hat Anbieter, Angebotspreis, Beschreibung
+  und einen verknüpften **Paperless**-Beleg. Über **⚖ Auswahl** startet ein geführter Assistent:
+  Schritt 1 die zu vergleichenden Angebote anhaken, Schritt 2 die Vergleichs­eigenschaften mit
+  optionalem **Gewicht** (Nutzwertanalyse) festlegen. Die Punkte (0 = *trifft nicht zu* … 5 =
+  *trifft voll zu*) werden anschließend **Anbieter für Anbieter** in einem eigenen Overlay
+  vergeben. Die gewichtete Summe ergibt eine **Empfehlung** (höchste Punktzahl); der finale
+  Anbieter wird aber **manuell gewählt** und **begründet**. Ist die Auswahl abgeschlossen, lässt
+  sich die Matrix als **eigenes PDF** exportieren (Download oder direkt nach Paperless). Alle
+  vorliegenden Angebote erscheinen zusätzlich unter *Budget / Kostenstellen*, das gewählte mit ✓.
 - **ToDos** werden im app-weit gewählten **Vikunja**-Projekt angelegt (*Einstellungen →
   Aufgaben*); Erledigt-Status, Titel, Fälligkeit und Priorität werden von dort
   zurückgespiegelt. Abhaken geht direkt am Eintrag.

@@ -33,7 +33,15 @@
     todo: { label: 'ToDo', icon: '☑' },
     kosten: { label: 'Kosten', icon: '€' },
     foto: { label: 'Foto', icon: '📷' },
+    angebot: { label: 'Angebot', icon: '🧾' },
+    entscheidung: { label: 'Auswahl', icon: '⚖' },
   };
+
+  // Kleiner ID-Helfer für Matrix-Eigenschaften (models.uuid ist nicht exportiert).
+  function uid() {
+    if (window.crypto && crypto.randomUUID) return crypto.randomUUID();
+    return 'id-' + Math.random().toString(36).slice(2) + Date.now().toString(36);
+  }
 
   const PRIO_OPTS = [['', 'Keine Priorität'], ['1', 'Niedrig'], ['2', 'Mittel'], ['3', 'Hoch'], ['4', 'Dringend'], ['5', 'Sofort']];
   const PRIO_LABEL = { 1: 'Niedrig', 2: 'Mittel', 3: 'Hoch', 4: 'Dringend', 5: 'Sofort' };
@@ -388,6 +396,32 @@
       card.appendChild(el('p', { class: 'help' }, 'Weise eine oder mehrere Kostenstellen zu, um Restmittel im Blick zu behalten. Kosten erfasst du unten in der Historie als „€ Kosten" und buchst sie je Anschaffung auf eine der Stellen.'));
     }
 
+    // --- Vorliegende Angebote (Übersicht; günstigstes zuerst) ---
+    const angebote = M.vorgangAngebote(v);
+    if (angebote.length > 0) {
+      const chosenIds = new Set((v.historie || []).filter(e => e.typ === 'entscheidung' && e.gewaehltId).map(e => e.gewaehltId));
+      card.appendChild(el('div', { class: 'vg-label', style: 'margin-top:16px;' }, 'Vorliegende Angebote'));
+      const alist = el('div', { class: 'vg-angebot-list' });
+      angebote.slice()
+        .sort((a, b) => (a.preis != null ? Number(a.preis) : Infinity) - (b.preis != null ? Number(b.preis) : Infinity))
+        .forEach(a => {
+          const chosen = chosenIds.has(a.id);
+          const docs = Array.isArray(a.paperlessDocs) ? a.paperlessDocs.length : 0;
+          alist.appendChild(el('div', { class: 'vg-angebot-item' + (chosen ? ' vg-angebot-chosen' : '') }, [
+            el('div', { class: 'vg-angebot-main' }, [
+              el('span', { class: 'vg-angebot-name' }, [
+                document.createTextNode(a.anbieter || '(ohne Anbieter)'),
+                chosen ? el('span', { class: 'vg-tag-chosen' }, ' ✓ gewählt') : null,
+              ]),
+              a.beschreibung ? el('span', { class: 'help', style: 'display:block;' }, a.beschreibung) : null,
+            ]),
+            docs ? el('span', { class: 'vg-angebot-docs help', title: docs + ' verknüpfte(r) Paperless-Beleg(e)' }, '📎 ' + docs) : null,
+            el('span', { class: 'vg-angebot-preis' }, a.preis != null ? eur(a.preis) : '—'),
+          ]));
+        });
+      card.appendChild(alist);
+    }
+
     // Planung für künftigen Haushalt
     const planBetragI = el('input', {
       class: 'input', type: 'number', step: '0.01', min: '0', value: (v.planung && v.planung.betrag != null) ? v.planung.betrag : '',
@@ -439,6 +473,8 @@
       el('button', { class: 'btn-sm', onClick: () => addEntry('kosten', { betrag: 0, beschreibung: '', haendler: '', belegdatum: '', haushaltsstelleId: (v.haushaltsstellen && v.haushaltsstellen.length === 1 ? v.haushaltsstellen[0] : ''), paperlessDocs: [] }) }, '€ Kosten'),
       el('button', { class: 'btn-sm', onClick: () => addEntry('referenz', { refVorgangId: '', notiz: '' }) }, '↪ Referenz'),
       el('button', { class: 'btn-sm', onClick: () => addEntry('dokument', { titel: '', paperlessDocs: [] }) }, '📄 Dokument'),
+      el('button', { class: 'btn-sm', onClick: () => addEntry('angebot', { anbieter: '', preis: null, beschreibung: '', paperlessDocs: [] }) }, '🧾 Angebot'),
+      el('button', { class: 'btn-sm', onClick: () => openAuswahlAssistent(v, null, persist, refresh) }, '⚖ Auswahl'),
     ]));
 
     // Zeitleiste (nur sichtbare Einträge; neueste zuerst nach Datum)
@@ -497,6 +533,8 @@
     if (e.typ === 'referenz') return referenzBody(v, e, persist);
     if (e.typ === 'dokument') return dokumentBody(v, e, persist);
     if (e.typ === 'foto') return fotoBody(v, e, persist, refresh);
+    if (e.typ === 'angebot') return angebotBody(v, e, persist, refresh);
+    if (e.typ === 'entscheidung') return entscheidungBody(v, e, persist, refresh);
     return el('div', { class: 'help' }, '(unbekannter Typ)');
   }
 
@@ -771,6 +809,327 @@
       emptyText: 'Noch kein Dokument – verknüpfen oder hochladen.',
     }));
     return box;
+  }
+
+  // =================== Angebote & Entscheidungsmatrix ===================
+  // Punktzahl (kann durch Gewichte gebrochen sein) hübsch mit Komma.
+  function fmtPts(n) {
+    const x = Math.round((Number(n) || 0) * 10) / 10;
+    return String(x).replace('.', ',');
+  }
+
+  // --- Angebot: Anbieter, Preis, Beschreibung + Paperless-Beleg ---
+  function angebotBody(v, e, persist, refresh) {
+    const box = el('div', { class: 'vg-hist-body' });
+    if (!Array.isArray(e.paperlessDocs)) e.paperlessDocs = [];
+    const anbieterI = el('input', { class: 'input', type: 'text', placeholder: 'Anbieter/Firma', value: e.anbieter || '', onChange: (ev) => { e.anbieter = ev.target.value; persist(); refresh(); } });
+    const preisI = el('input', { class: 'input', type: 'number', step: '0.01', min: '0', placeholder: '0,00', value: e.preis != null ? e.preis : '', onChange: (ev) => { e.preis = ev.target.value === '' ? null : Number(ev.target.value); persist(); refresh(); } });
+    const beschrI = el('input', { class: 'input', type: 'text', placeholder: 'Leistung/Beschreibung', value: e.beschreibung || '', onChange: (ev) => { e.beschreibung = ev.target.value; persist(); } });
+    box.appendChild(el('div', { class: 'vg-kosten-form' }, [
+      el('div', { class: 'vg-field' }, [el('label', { class: 'vg-label' }, 'Anbieter/Firma'), anbieterI]),
+      el('div', { class: 'vg-field' }, [el('label', { class: 'vg-label' }, 'Angebotspreis (€)'), preisI]),
+      el('div', { class: 'vg-field vg-field-grow' }, [el('label', { class: 'vg-label' }, 'Beschreibung'), beschrI]),
+    ]));
+    box.appendChild(el('div', { class: 'vg-label', style: 'margin-top:8px;' }, 'Angebot (Paperless)'));
+    box.appendChild(GR.ui.renderPaperlessDocsSection(e, () => persist(), {
+      prefillTitle: (v.titel ? v.titel + ' – ' : '') + 'Angebot ' + (e.anbieter || ''),
+      emptyText: 'Angebot verknüpfen oder hochladen.',
+    }));
+    return box;
+  }
+
+  // --- Anzeige-Tabelle einer Entscheidungsmatrix (read-only) ---
+  function matrixTable(e, gewinnerId) {
+    const head = el('tr', {}, [
+      el('th', {}, 'Anbieter'),
+      ...e.eigenschaften.map(eig => {
+        const gw = Number(eig.gewicht);
+        return el('th', { class: 'vg-matrix-crit' }, eig.name + (gw !== 1 ? ' (×' + fmtPts(eig.gewicht) + ')' : ''));
+      }),
+      el('th', { style: 'text-align:right;' }, 'Preis'),
+      el('th', { style: 'text-align:right;' }, 'Summe'),
+    ]);
+    const rows = e.teilnehmer.map(t => {
+      const zeile = (e.bewertung && e.bewertung[t.angebotId]) || {};
+      const isChosen = t.angebotId === e.gewaehltId;
+      const isWin = t.angebotId === gewinnerId;
+      return el('tr', { class: isChosen ? 'vg-matrix-chosen' : (isWin ? 'vg-matrix-win' : '') }, [
+        el('td', {}, [
+          document.createTextNode(t.name || '(ohne Anbieter)'),
+          isChosen ? el('span', { class: 'vg-tag-chosen' }, ' ✓ gewählt') : (isWin ? el('span', { class: 'vg-tag-win' }, ' ★') : null),
+        ]),
+        ...e.eigenschaften.map(eig => { const p = zeile[eig.id]; return el('td', { style: 'text-align:center;' }, p != null ? String(p) : '–'); }),
+        el('td', { style: 'text-align:right;' }, t.preis != null ? eur(t.preis) : '—'),
+        el('td', { style: 'text-align:right; font-weight:600;' }, fmtPts(M.entscheidungScore(e, t.angebotId))),
+      ]);
+    });
+    return el('div', { class: 'vg-matrix-wrap' }, [
+      el('table', { class: 'vg-matrix' }, [el('thead', {}, head), el('tbody', {}, rows)]),
+    ]);
+  }
+
+  // --- Entscheidungs-Eintrag (Auswahlprozess) ---
+  function entscheidungBody(v, e, persist, refresh) {
+    const box = el('div', { class: 'vg-hist-body' });
+    if (!Array.isArray(e.teilnehmer)) e.teilnehmer = [];
+    if (!Array.isArray(e.eigenschaften)) e.eigenschaften = [];
+    if (!e.bewertung) e.bewertung = {};
+    if (!Array.isArray(e.paperlessDocs)) e.paperlessDocs = [];
+
+    const titelI = el('input', { class: 'input', type: 'text', placeholder: 'Titel des Auswahlprozesses (optional)', value: e.titel || '', onChange: (ev) => { e.titel = ev.target.value; persist(); } });
+    box.appendChild(el('div', { class: 'vg-field', style: 'margin-bottom:10px;' }, [el('label', { class: 'vg-label' }, 'Titel'), titelI]));
+
+    if (e.teilnehmer.length === 0 || e.eigenschaften.length === 0) {
+      box.appendChild(el('p', { class: 'help' }, 'Noch keine vollständige Matrix. Lege über „Matrix bearbeiten" die Anbieter und Vergleichseigenschaften fest.'));
+      box.appendChild(el('div', { class: 'vg-hist-actions' }, [
+        el('button', { class: 'btn-sm btn-primary', onClick: () => openAuswahlAssistent(v, e, persist, refresh) }, '⚙ Matrix bearbeiten'),
+      ]));
+      return box;
+    }
+
+    const gewinnerId = M.entscheidungGewinner(e);
+    box.appendChild(matrixTable(e, gewinnerId));
+
+    const gWin = e.teilnehmer.find(t => t.angebotId === gewinnerId);
+    if (gWin) {
+      const max = M.entscheidungMaxScore(e);
+      const sc = M.entscheidungScore(e, gewinnerId);
+      box.appendChild(el('div', { class: 'vg-empfehlung' }, '★ Empfehlung (höchste Punktzahl): ' + (gWin.name || '(ohne Anbieter)') + ' – ' + fmtPts(sc) + (max ? ' / ' + fmtPts(max) : '') + ' Punkte'));
+    }
+
+    box.appendChild(el('div', { class: 'vg-hist-actions' }, [
+      el('button', { class: 'btn-sm btn-primary', onClick: () => openBewertungOverlay(v, e, persist, refresh) }, '✎ Punkte eintragen/bearbeiten'),
+      el('button', { class: 'btn-sm', onClick: () => openAuswahlAssistent(v, e, persist, refresh) }, '⚙ Matrix bearbeiten'),
+    ]));
+
+    // Finale Auswahl + Begründung
+    const sel = el('select', { class: 'input', onChange: (ev) => { e.gewaehltId = ev.target.value || null; persist(); refresh(); } }, [
+      el('option', { value: '' }, '– noch offen –'),
+      ...e.teilnehmer.map(t => el('option', { value: t.angebotId, selected: e.gewaehltId === t.angebotId }, (t.name || '(ohne Anbieter)') + (t.angebotId === gewinnerId ? ' (Empfehlung)' : ''))),
+    ]);
+    const begr = el('textarea', { class: 'input', rows: '3', placeholder: 'Warum wurde dieser Anbieter gewählt?', onChange: (ev) => { e.begruendung = ev.target.value; persist(); refresh(); } });
+    begr.value = e.begruendung || '';
+    box.appendChild(el('div', { class: 'vg-entsch-final' }, [
+      el('label', { class: 'vg-label' }, 'Gewählter Anbieter'), sel,
+      el('label', { class: 'vg-label', style: 'margin-top:8px;' }, 'Begründung'), begr,
+    ]));
+
+    // PDF-Export – erst wenn abgeschlossen (Anbieter + Begründung)
+    if (M.entscheidungAbgeschlossen(e)) {
+      const docsSection = GR.ui.renderPaperlessDocsSection(e, () => persist(), { showAdd: false, emptyText: 'Noch nicht in Paperless abgelegt.' });
+      const pdfErr = (err) => { console.error(err); toast('PDF fehlgeschlagen: ' + err.message, 4000); };
+      box.appendChild(el('div', { class: 'vg-label', style: 'margin-top:12px;' }, 'Matrix als PDF'));
+      box.appendChild(el('div', { class: 'vg-hist-actions' }, [
+        el('button', { class: 'btn-sm', onClick: () => GR.vorgaengePdf.buildEntscheidungPdf(v, e).catch(pdfErr) }, '📄 Matrix-PDF'),
+        el('button', { class: 'btn-sm', onClick: () => GR.vorgaengePdf.buildEntscheidungPdf(v, e, { target: 'paperless', onUploaded: (doc) => docsSection.linkDoc(doc) }).catch(pdfErr) }, '📥 In Paperless speichern'),
+      ]));
+      box.appendChild(docsSection);
+    } else {
+      box.appendChild(el('p', { class: 'help', style: 'margin-top:10px;' }, 'PDF-Export möglich, sobald ein Anbieter gewählt und eine Begründung eingetragen ist.'));
+    }
+    return box;
+  }
+
+  // --- 0–5-Punktewähler mit Klartext-Skala ---
+  function scoreSelector(e, angebotId, eig, persist, rerender) {
+    if (!e.bewertung[angebotId]) e.bewertung[angebotId] = {};
+    const zeile = e.bewertung[angebotId];
+    const cur = zeile[eig.id];
+    const btns = el('div', { class: 'vg-score' });
+    for (let n = M.SCORE_MIN; n <= M.SCORE_MAX; n++) {
+      const active = Number(cur) === n;
+      btns.appendChild(el('button', {
+        class: 'vg-score-btn' + (active ? ' active' : ''), type: 'button',
+        title: n + ' – ' + (M.SCORE_LABEL[n] || ''),
+        onClick: () => { zeile[eig.id] = n; persist(); rerender(); },
+      }, String(n)));
+    }
+    const cap = el('span', { class: 'vg-score-cap' }, (cur != null && M.SCORE_LABEL[cur] != null) ? (cur + ' – ' + M.SCORE_LABEL[cur]) : 'noch nicht bewertet');
+    return el('div', { class: 'vg-score-row' }, [btns, cap]);
+  }
+
+  // --- Geführtes Overlay: Anbieter wählen + Eigenschaften festlegen ---
+  // entry === null: neuen Auswahl-Eintrag anlegen; sonst bestehenden bearbeiten.
+  function openAuswahlAssistent(v, entry, persist, onDone) {
+    const angebote = M.vorgangAngebote(v);
+    if (angebote.length === 0) { toast('Lege zuerst mindestens ein Angebot an.', 3000); return; }
+
+    const selected = new Set();
+    if (entry && Array.isArray(entry.teilnehmer) && entry.teilnehmer.length) {
+      entry.teilnehmer.forEach(t => { if (angebote.some(a => a.id === t.angebotId)) selected.add(t.angebotId); });
+    } else {
+      angebote.forEach(a => selected.add(a.id));
+    }
+    let eigs = (entry && Array.isArray(entry.eigenschaften) && entry.eigenschaften.length)
+      ? entry.eigenschaften.map(x => ({ id: x.id, name: x.name, gewicht: x.gewicht != null ? x.gewicht : 1 }))
+      : [{ id: uid(), name: '', gewicht: 1 }];
+
+    let step = 1;
+    const overlay = el('div', { class: 'modal-overlay' });
+    const close = () => overlay.remove();
+    const modal = el('div', { class: 'modal vg-wiz' });
+    overlay.appendChild(modal);
+    overlay.addEventListener('click', ev => { if (ev.target === overlay) close(); });
+
+    function render() {
+      modal.innerHTML = '';
+      modal.appendChild(el('div', { class: 'vg-wiz-steps' }, [
+        el('span', { class: 'vg-wiz-step' + (step === 1 ? ' active' : '') }, '1 · Anbieter'),
+        el('span', { class: 'vg-wiz-step' + (step === 2 ? ' active' : '') }, '2 · Eigenschaften'),
+      ]));
+      if (step === 1) renderStep1(); else renderStep2();
+    }
+
+    function renderStep1() {
+      modal.appendChild(el('h3', {}, entry ? 'Auswahl bearbeiten – Anbieter' : 'Auswahlprozess – Anbieter wählen'));
+      modal.appendChild(el('p', { class: 'help' }, 'Wähle die Angebote, die verglichen werden sollen. Jedes angehakte Angebot wird eine Zeile der Matrix.'));
+      const list = el('div', { class: 'vg-wiz-list' });
+      angebote.forEach(a => {
+        const cb = el('input', { type: 'checkbox', checked: selected.has(a.id), onChange: (ev) => { if (ev.target.checked) selected.add(a.id); else selected.delete(a.id); } });
+        list.appendChild(el('label', { class: 'vg-wiz-check' }, [
+          cb,
+          el('span', { class: 'vg-wiz-check-main' }, [
+            el('strong', {}, a.anbieter || '(ohne Anbieter)'),
+            a.preis != null ? el('span', { class: 'vg-wiz-preis' }, eur(a.preis)) : null,
+            a.beschreibung ? el('span', { class: 'help', style: 'display:block; margin-top:2px;' }, a.beschreibung) : null,
+          ]),
+        ]));
+      });
+      modal.appendChild(list);
+      modal.appendChild(el('div', { class: 'toolbar', style: 'margin-top:16px; margin-bottom:0;' }, [
+        el('button', { class: 'btn-primary', onClick: () => { if (selected.size === 0) return toast('Bitte mindestens einen Anbieter wählen'); step = 2; render(); } }, 'Weiter →'),
+        el('button', { onClick: close }, 'Abbrechen'),
+      ]));
+    }
+
+    function renderStep2() {
+      modal.appendChild(el('h3', {}, 'Vergleichseigenschaften'));
+      modal.appendChild(el('p', { class: 'help' }, 'Lege die Kriterien fest, nach denen bewertet wird. Das Gewicht (Standard 1) erhöht den Einfluss einer Eigenschaft.'));
+      const list = el('div', { class: 'vg-wiz-eigs' });
+      function drawEigs() {
+        list.innerHTML = '';
+        eigs.forEach((eig, i) => {
+          const nameI = el('input', { class: 'input', type: 'text', placeholder: 'Eigenschaft (z. B. Preis-Leistung, Lieferzeit, Referenzen …)', value: eig.name || '', onChange: (ev) => { eig.name = ev.target.value; } });
+          const gI = el('input', { class: 'input vg-eig-gewicht', type: 'number', step: '0.5', min: '0', value: eig.gewicht != null ? eig.gewicht : 1, onChange: (ev) => { eig.gewicht = ev.target.value === '' ? 1 : Number(ev.target.value); } });
+          const rm = el('button', { class: 'btn-sm btn-danger', title: 'Eigenschaft entfernen', onClick: () => { eigs.splice(i, 1); if (eigs.length === 0) eigs.push({ id: uid(), name: '', gewicht: 1 }); drawEigs(); } }, '✕');
+          list.appendChild(el('div', { class: 'vg-eig-row' }, [
+            el('div', { class: 'vg-field vg-field-grow' }, [nameI]),
+            el('div', { class: 'vg-field vg-eig-gewicht-field' }, [el('label', { class: 'vg-label' }, 'Gewicht'), gI]),
+            rm,
+          ]));
+        });
+      }
+      drawEigs();
+      modal.appendChild(list);
+      modal.appendChild(el('button', { class: 'btn-sm', style: 'margin-top:8px;', onClick: () => { eigs.push({ id: uid(), name: '', gewicht: 1 }); drawEigs(); } }, '+ Eigenschaft'));
+      modal.appendChild(el('div', { class: 'toolbar', style: 'margin-top:16px; margin-bottom:0;' }, [
+        el('button', { onClick: () => { step = 1; render(); } }, '← Zurück'),
+        el('button', { class: 'btn-primary', onClick: finish }, entry ? 'Übernehmen' : 'Matrix anlegen'),
+        el('button', { onClick: close }, 'Abbrechen'),
+      ]));
+    }
+
+    function finish() {
+      const cleanEigs = eigs.filter(x => String(x.name || '').trim()).map(x => ({ id: x.id, name: x.name.trim(), gewicht: (x.gewicht != null && !isNaN(Number(x.gewicht))) ? Number(x.gewicht) : 1 }));
+      if (selected.size === 0) return toast('Bitte mindestens einen Anbieter wählen');
+      if (cleanEigs.length === 0) return toast('Bitte mindestens eine Eigenschaft angeben');
+      const teilnehmer = angebote.filter(a => selected.has(a.id)).map(a => ({ angebotId: a.id, name: a.anbieter || '(ohne Anbieter)', preis: a.preis != null ? a.preis : null }));
+
+      const target = entry || Object.assign(M.emptyHistorieEintrag('entscheidung'), { titel: '', teilnehmer: [], eigenschaften: [], bewertung: {}, gewaehltId: null, begruendung: '', paperlessDocs: [] });
+      const oldBew = target.bewertung || {};
+      const newBew = {};
+      for (const t of teilnehmer) {
+        const oldRow = oldBew[t.angebotId] || {};
+        const row = {};
+        for (const eig of cleanEigs) { if (oldRow[eig.id] != null) row[eig.id] = oldRow[eig.id]; }
+        newBew[t.angebotId] = row;
+      }
+      target.teilnehmer = teilnehmer;
+      target.eigenschaften = cleanEigs;
+      target.bewertung = newBew;
+      if (target.gewaehltId && !teilnehmer.some(t => t.angebotId === target.gewaehltId)) target.gewaehltId = null;
+
+      if (!entry) v.historie.push(target);
+      persist();
+      close();
+      if (onDone) onDone();
+    }
+
+    render();
+    document.body.appendChild(overlay);
+  }
+
+  // --- Bewertungs-Overlay: Punkte je Anbieter nacheinander, dann Auswertung ---
+  function openBewertungOverlay(v, e, persist, onDone) {
+    if (!Array.isArray(e.teilnehmer) || e.teilnehmer.length === 0 || !Array.isArray(e.eigenschaften) || e.eigenschaften.length === 0) {
+      toast('Erst Anbieter und Eigenschaften festlegen (Matrix bearbeiten).', 3500); return;
+    }
+    if (!e.bewertung) e.bewertung = {};
+    const N = e.teilnehmer.length;
+    let idx = 0; // 0..N-1 = Anbieter; N = Auswertung
+    const overlay = el('div', { class: 'modal-overlay' });
+    const close = () => overlay.remove();
+    const modal = el('div', { class: 'modal vg-bewert' });
+    overlay.appendChild(modal);
+    overlay.addEventListener('click', ev => { if (ev.target === overlay) close(); });
+
+    function render() { modal.innerHTML = ''; if (idx < N) renderProvider(); else renderSummary(); }
+
+    function renderProvider() {
+      const t = e.teilnehmer[idx];
+      modal.appendChild(el('div', { class: 'vg-wiz-steps' }, [el('span', { class: 'vg-wiz-step active' }, 'Anbieter ' + (idx + 1) + ' / ' + N)]));
+      modal.appendChild(el('h3', {}, (t.name || '(ohne Anbieter)') + (t.preis != null ? ' – ' + eur(t.preis) : '')));
+      modal.appendChild(el('p', { class: 'help' }, 'Bewerte jede Eigenschaft: 0 = trifft nicht zu … 5 = trifft voll zu.'));
+      const listBox = el('div', { class: 'vg-bewert-list' });
+      e.eigenschaften.forEach(eig => {
+        const gw = Number(eig.gewicht);
+        listBox.appendChild(el('div', { class: 'vg-bewert-item' }, [
+          el('div', { class: 'vg-bewert-crit' }, eig.name + (gw !== 1 ? ' (×' + fmtPts(eig.gewicht) + ')' : '')),
+          scoreSelector(e, t.angebotId, eig, persist, render),
+        ]));
+      });
+      modal.appendChild(listBox);
+      modal.appendChild(el('div', { class: 'toolbar', style: 'margin-top:16px; margin-bottom:0;' }, [
+        idx > 0 ? el('button', { onClick: () => { idx--; render(); } }, '← Zurück') : null,
+        el('button', { class: 'btn-primary', onClick: () => { idx++; render(); } }, idx < N - 1 ? 'Weiter →' : 'Zur Auswertung →'),
+        el('button', { onClick: close }, 'Schließen'),
+      ]));
+    }
+
+    function renderSummary() {
+      modal.appendChild(el('div', { class: 'vg-wiz-steps' }, [el('span', { class: 'vg-wiz-step active' }, 'Auswertung')]));
+      modal.appendChild(el('h3', {}, 'Auswertung & Auswahl'));
+      const gewinnerId = M.entscheidungGewinner(e);
+      const max = M.entscheidungMaxScore(e);
+      const ranked = e.teilnehmer.slice().sort((a, b) => M.entscheidungScore(e, b.angebotId) - M.entscheidungScore(e, a.angebotId));
+      const rank = el('div', { class: 'vg-rank' });
+      ranked.forEach((t, i) => {
+        const sc = M.entscheidungScore(e, t.angebotId);
+        rank.appendChild(el('div', { class: 'vg-rank-row' + (t.angebotId === gewinnerId ? ' vg-rank-win' : '') }, [
+          el('span', { class: 'vg-rank-pos' }, (i + 1) + '.'),
+          el('span', { class: 'vg-rank-name' }, t.name || '(ohne Anbieter)'),
+          el('span', { class: 'vg-rank-score' }, fmtPts(sc) + (max ? ' / ' + fmtPts(max) : '') + ' Pkt'),
+        ]));
+      });
+      modal.appendChild(rank);
+
+      const sel = el('select', { class: 'input', onChange: (ev) => { e.gewaehltId = ev.target.value || null; persist(); } }, [
+        el('option', { value: '' }, '– Anbieter wählen –'),
+        ...e.teilnehmer.map(t => el('option', { value: t.angebotId, selected: e.gewaehltId === t.angebotId }, (t.name || '(ohne Anbieter)') + (t.angebotId === gewinnerId ? ' (Empfehlung)' : ''))),
+      ]);
+      const begr = el('textarea', { class: 'input', rows: '3', placeholder: 'Warum wurde dieser Anbieter gewählt?', onChange: (ev) => { e.begruendung = ev.target.value; persist(); } });
+      begr.value = e.begruendung || '';
+      modal.appendChild(el('div', { style: 'margin-top:12px;' }, [el('label', { class: 'vg-label' }, 'Gewählter Anbieter'), sel]));
+      modal.appendChild(el('div', { style: 'margin-top:8px;' }, [el('label', { class: 'vg-label' }, 'Begründung'), begr]));
+
+      modal.appendChild(el('div', { class: 'toolbar', style: 'margin-top:16px; margin-bottom:0;' }, [
+        el('button', { onClick: () => { idx = N - 1; render(); } }, '← Zurück'),
+        el('button', { class: 'btn-primary', onClick: () => { persist(); close(); if (onDone) onDone(); } }, 'Fertig'),
+      ]));
+    }
+
+    render();
+    document.body.appendChild(overlay);
   }
 
   // =================== Haushaltsplanung (geplanter Bedarf) ===================
