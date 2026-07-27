@@ -741,20 +741,63 @@
         .sort((a, b) => String(a.datum).localeCompare(String(b.datum)));
     },
 
+    // Offene Einträge einer Person nach Monat gruppiert – Grundlage der
+    // Auswahlliste. Eine Abrechnung deckt genau einen Monat ab, darum ist der
+    // Monat die Klammer, in der ausgewählt wird.
+    offeneMonate(arbeiterId) {
+      const M = GR.models;
+      const monate = new Map();
+      for (const z of this.offeneArbeitszeiten(arbeiterId)) {
+        const key = M.monatsSchluessel(z.datum);
+        if (!/^\d{4}-\d{2}$/.test(key)) continue;
+        let m = monate.get(key);
+        if (!m) {
+          m = {
+            key, von: M.monatsErster(z.datum), bis: M.monatsLetzter(z.datum),
+            label: M.monatsLabel(z.datum), eintraege: [], stunden: 0,
+          };
+          monate.set(key, m);
+        }
+        m.eintraege.push(z);
+        m.stunden += Number(z.stunden) || 0;
+      }
+      return [...monate.values()]
+        .map(m => ({ ...m, stunden: Math.round(m.stunden * 100) / 100 }))
+        .sort((a, b) => a.key.localeCompare(b.key));
+    },
+
     // Abrechnung erstellen: friert je Position den zum Leistungsdatum gültigen
     // Satz ein (bzw. den manuell gesetzten) und sperrt die Einträge. Spätere
     // Satzänderungen wirken dadurch NICHT mehr auf fertige Abrechnungen.
-    erstelleArbeitsabrechnung({ arbeiterId, von, bis, haushaltsstelleId, haushaltsjahr, notiz }) {
+    // `arbeitszeitIds` (Checkbox-Auswahl) hat Vorrang; ohne sie werden wie
+    // früher alle offenen Einträge des Zeitraums genommen.
+    erstelleArbeitsabrechnung({ arbeiterId, von, bis, haushaltsstelleId, haushaltsjahr, notiz, kostenerstattungen, arbeitszeitIds }) {
       const M = GR.models;
       const historie = (this.getSettings().arbeitszeiten || {}).satzHistorie || [];
-      const eintraege = this.offeneArbeitszeiten(arbeiterId, von, bis);
-      if (!eintraege.length) throw new Error('Keine offenen Einträge im Zeitraum.');
+      let eintraege;
+      if (arbeitszeitIds) {
+        const erlaubt = new Set(arbeitszeitIds);
+        eintraege = this.offeneArbeitszeiten(arbeiterId, von, bis).filter(z => erlaubt.has(z.id));
+      } else {
+        eintraege = this.offeneArbeitszeiten(arbeiterId, von, bis);
+      }
+      // Reine Kostenerstattungen (z. B. Maschineneinsatz ohne Arbeitsstunden)
+      // sind eine gültige Abrechnung – nur beides zusammen leer ist ein Fehler.
+      const kosten = (kostenerstattungen || []).filter(k => k && (Number(k.betrag) || 0) !== 0);
+      if (!eintraege.length && !kosten.length) {
+        throw new Error('Keine offenen Einträge im Zeitraum und keine Kostenerstattung erfasst.');
+      }
 
       const abr = Object.assign(M.emptyArbeitsabrechnung(), {
         arbeiterId, zeitraumVon: von, zeitraumBis: bis,
         haushaltsstelleId: haushaltsstelleId || '',
         haushaltsjahr: haushaltsjahr || new Date(bis || Date.now()).getFullYear(),
         notiz: notiz || '',
+        kostenerstattungen: kosten.map(k => ({
+          id: k.id || M.uuid(),
+          beschreibung: String(k.beschreibung || '').trim(),
+          betrag: Math.round((Number(k.betrag) || 0) * 100) / 100,
+        })),
       });
       for (const z of eintraege) {
         const satz = M.arbeitszeitSatz(z, historie);
@@ -767,6 +810,7 @@
       }
       abr.summeStunden = Math.round(abr.positionen.reduce((s, p) => s + p.stunden, 0) * 100) / 100;
       abr.summeBetrag = Math.round(abr.positionen.reduce((s, p) => s + p.betrag, 0) * 100) / 100;
+      abr.summeKostenerstattung = M.abrechnungKostenSumme(abr);
       this.saveArbeitsabrechnung(abr);
 
       for (const p of abr.positionen) {

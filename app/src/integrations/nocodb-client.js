@@ -283,6 +283,7 @@
     { title: 'Haushaltsjahr', uidt: 'Number' },
     { title: 'SummeStunden', uidt: 'Number' },
     { title: 'SummeBetrag', uidt: 'Number' },
+    { title: 'SummeKostenerstattung', uidt: 'Number' },
     { title: 'AnzahlPositionen', uidt: 'Number' },
     { title: 'Status', uidt: 'SingleLineText' },
     { title: 'AusgezahltAm', uidt: 'SingleLineText' },
@@ -711,6 +712,9 @@
       Haushaltsjahr: abr.haushaltsjahr || '',
       SummeStunden: Number(abr.summeStunden) || 0,
       SummeBetrag: Number(abr.summeBetrag) || 0,
+      SummeKostenerstattung: abr.summeKostenerstattung != null
+        ? Number(abr.summeKostenerstattung) || 0
+        : GR.models.abrechnungKostenSumme(abr),
       AnzahlPositionen: (abr.positionen || []).length,
       Status: abr.status === 'ausgezahlt' ? 'Ausgezahlt' : 'Abgerechnet',
       AusgezahltAm: abr.ausgezahltAm || '',

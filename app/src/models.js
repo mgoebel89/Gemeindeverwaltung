@@ -573,10 +573,19 @@
       haushaltsstelleId: '',
       haushaltsjahr: new Date().getFullYear(),
       positionen: [],         // [{arbeitszeitId, datum, taetigkeit, stunden, satz, betrag}]
+      // Feld 8 des VG-Vordrucks: Beträge ohne Arbeitsstunden (z. B. Maschineneinsatz).
+      // Läuft bewusst NICHT in summeBetrag – der Vordruck weist es unter dem
+      // Arbeitslohn aus –, zählt im Haushalt aber mit (arbeitszeitenVerbrauch).
+      kostenerstattungen: [],  // [{id, beschreibung, betrag}]
+      summeKostenerstattung: 0,
       summeStunden: 0, summeBetrag: 0,
       status: 'abgerechnet',  // 'abgerechnet' | 'ausgezahlt'
       ausgezahltAm: '', notiz: '',
     };
+  }
+
+  function emptyKostenerstattung() {
+    return { id: uuid(), beschreibung: '', betrag: 0 };
   }
 
   function heuteIso() {
@@ -607,14 +616,138 @@
     return Math.round(satz * (Number(z && z.stunden) || 0) * 100) / 100;
   }
 
+  // Summe der Kostenerstattungen einer Abrechnung (Feld 8 des VG-Vordrucks).
+  function abrechnungKostenSumme(abr) {
+    return Math.round(((abr && abr.kostenerstattungen) || [])
+      .reduce((s, k) => s + (Number(k.betrag) || 0), 0) * 100) / 100;
+  }
+
   // Verbrauch der Arbeitsabrechnungen auf einer Haushaltsstelle (fürs Modul
   // Haushalt). Zählt ab Status „abgerechnet" – Erfassungen noch nicht.
+  // Kostenerstattungen stehen im Vordruck neben dem Arbeitslohn, belasten den
+  // Haushalt aber genauso – daher hier addiert.
   function arbeitszeitenVerbrauch(abrechnungen, haushaltsstelleId, jahr) {
     return (abrechnungen || [])
       .filter(a => a.haushaltsstelleId === haushaltsstelleId
         && String(a.haushaltsjahr) === String(jahr)
         && ARBEITSZEIT_GEBUCHT_STATUS.includes(a.status || 'abgerechnet'))
-      .reduce((s, a) => s + (Number(a.summeBetrag) || 0), 0);
+      .reduce((s, a) => s + (Number(a.summeBetrag) || 0)
+        + (a.summeKostenerstattung != null ? Number(a.summeKostenerstattung) || 0 : abrechnungKostenSumme(a)), 0);
+  }
+
+  // --- Kalenderwochen (ISO 8601, Montag = erster Tag) -----------------------
+  // Durchweg über lokale Datumskomponenten: `new Date('YYYY-MM-DD')` liest UTC
+  // und verschiebt die Woche um einen Tag.
+  function isoZuDate(iso) {
+    const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(iso || ''));
+    return m ? new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3])) : null;
+  }
+  // Montag der Woche, in der `datum` liegt.
+  function wochenMontag(datum) {
+    const d = isoZuDate(datum);
+    if (!d) return '';
+    d.setDate(d.getDate() - ((d.getDay() + 6) % 7)); // So=0 → 6, Mo=1 → 0
+    return dateToIso(d);
+  }
+  function wochenSonntag(datum) {
+    const mo = isoZuDate(wochenMontag(datum));
+    if (!mo) return '';
+    mo.setDate(mo.getDate() + 6);
+    return dateToIso(mo);
+  }
+  // ISO-Kalenderwoche: der Donnerstag der Woche bestimmt Woche und Jahr.
+  function isoKw(datum) {
+    const d = isoZuDate(datum);
+    if (!d) return null;
+    d.setDate(d.getDate() - ((d.getDay() + 6) % 7) + 3);
+    const jahr = d.getFullYear();
+    const jan4 = new Date(jahr, 0, 4);
+    const ersterDo = new Date(jahr, 0, 4 - ((jan4.getDay() + 6) % 7) + 3);
+    const kw = Math.round((d - ersterDo) / (7 * 24 * 3600 * 1000)) + 1;
+    return { kw, jahr };
+  }
+  // „KW 28 · 06.07.–12.07.2026“ – Beschriftung der Wochenauswahl.
+  function wochenLabel(datum) {
+    const k = isoKw(datum);
+    const mo = wochenMontag(datum), so = wochenSonntag(datum);
+    if (!k || !mo) return '';
+    const kurz = iso => `${iso.slice(8, 10)}.${iso.slice(5, 7)}.`;
+    return `KW ${k.kw} · ${kurz(mo)}–${kurz(so)}${so.slice(0, 4)}`;
+  }
+  function wochePlus(datum, n) {
+    const mo = isoZuDate(wochenMontag(datum));
+    if (!mo) return '';
+    mo.setDate(mo.getDate() + 7 * (Number(n) || 0));
+    return dateToIso(mo);
+  }
+
+  // --- Monate (Abrechnungszeitraum: ein Formular je Monat) ------------------
+  const MONATSNAMEN = ['Januar', 'Februar', 'März', 'April', 'Mai', 'Juni',
+    'Juli', 'August', 'September', 'Oktober', 'November', 'Dezember'];
+  function monatsSchluessel(datum) { return String(datum || '').slice(0, 7); } // 'YYYY-MM'
+  function monatsErster(datum) { return monatsSchluessel(datum) + '-01'; }
+  function monatsLetzter(datum) {
+    const k = monatsSchluessel(datum);
+    if (!/^\d{4}-\d{2}$/.test(k)) return '';
+    const [j, m] = k.split('-').map(Number);
+    return dateToIso(new Date(j, m, 0)); // Tag 0 des Folgemonats = letzter Tag
+  }
+  function monatsLabel(datum) {
+    const k = monatsSchluessel(datum);
+    if (!/^\d{4}-\d{2}$/.test(k)) return '';
+    const [j, m] = k.split('-').map(Number);
+    return MONATSNAMEN[m - 1] + ' ' + j;
+  }
+  function monatPlus(datum, n) {
+    const k = monatsSchluessel(datum);
+    if (!/^\d{4}-\d{2}$/.test(k)) return '';
+    const [j, m] = k.split('-').map(Number);
+    return dateToIso(new Date(j, m - 1 + (Number(n) || 0), 1));
+  }
+
+  // --- Aufbereitung für den VG-Vordruck ------------------------------------
+  // Feld 5: Positionen nach Tätigkeitsbezeichnung zusammenfassen, Stunden
+  // addiert. Reihenfolge = erstes Auftreten, damit sie zur Erfassung passt.
+  function abrechnungArbeiten(abr) {
+    const map = new Map();
+    for (const p of ((abr && abr.positionen) || [])) {
+      const key = (p.taetigkeit || '').trim() || '(ohne Bezeichnung)';
+      const e = map.get(key) || { taetigkeit: key, stunden: 0 };
+      e.stunden += Number(p.stunden) || 0;
+      map.set(key, e);
+    }
+    return [...map.values()].map(e => ({ ...e, stunden: Math.round(e.stunden * 100) / 100 }));
+  }
+
+  // Feld 6: Positionen auf Kalenderwochen und Wochentage aggregieren.
+  // Stecken in einer Woche verschiedene Stundensätze, wird die Woche auf
+  // mehrere Zeilen gesplittet – der Vordruck hat je Zeile nur EIN „Entgelt pro
+  // Stunde". Rückgabe je Zeile: {von, bis, satz, tage:[Mo..So], stunden, betrag}.
+  function abrechnungWochenzeilen(abr) {
+    const zeilen = new Map(); // 'montag|satz' → Zeile
+    for (const p of ((abr && abr.positionen) || [])) {
+      const mo = wochenMontag(p.datum);
+      if (!mo) continue;
+      const satz = Number(p.satz) || 0;
+      const key = mo + '|' + satz;
+      let z = zeilen.get(key);
+      if (!z) {
+        z = { von: mo, bis: wochenSonntag(p.datum), satz, tage: [0, 0, 0, 0, 0, 0, 0], stunden: 0, betrag: 0 };
+        zeilen.set(key, z);
+      }
+      const d = isoZuDate(p.datum);
+      z.tage[(d.getDay() + 6) % 7] += Number(p.stunden) || 0;
+      z.stunden += Number(p.stunden) || 0;
+      z.betrag += Number(p.betrag) || 0;
+    }
+    return [...zeilen.values()]
+      .sort((a, b) => a.von.localeCompare(b.von) || a.satz - b.satz)
+      .map(z => ({
+        ...z,
+        tage: z.tage.map(t => Math.round(t * 100) / 100),
+        stunden: Math.round(z.stunden * 100) / 100,
+        betrag: Math.round(z.betrag * 100) / 100,
+      }));
   }
 
   GR.models = {
@@ -637,7 +770,10 @@
     vorgangAngebote, entscheidungScore, entscheidungMaxScore, entscheidungGewinner, entscheidungAbgeschlossen,
     ARBEITSZEIT_STATUS, ARBEITSZEIT_STATUS_LABEL, ARBEITSZEIT_GEBUCHT_STATUS,
     emptyArbeiter, arbeiterName, arbeiterZusatz,
-    emptyArbeitszeit, emptyArbeitsabrechnung,
+    emptyArbeitszeit, emptyArbeitsabrechnung, emptyKostenerstattung,
     satzFuer, arbeitszeitSatz, arbeitszeitBetrag, arbeitszeitenVerbrauch,
+    abrechnungKostenSumme, abrechnungArbeiten, abrechnungWochenzeilen,
+    wochenMontag, wochenSonntag, isoKw, wochenLabel, wochePlus,
+    monatsSchluessel, monatsErster, monatsLetzter, monatsLabel, monatPlus,
   };
 })();

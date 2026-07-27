@@ -512,20 +512,46 @@ Erfasst Arbeitsleistungen für die Gemeinde – von **Gemeindearbeitern** ebenso
   eigener Rechnung).
 - **Status je Eintrag:** `erfasst` → `abgerechnet` → `ausgezahlt`. Nur „erfasst" ist
   editier-/löschbar; danach ist der Eintrag gesperrt (🔒), Korrektur nur über **Storno**.
-- **Abrechnung:** Person + Zeitraum wählen → alle offenen Einträge werden automatisch
-  übernommen (Vorschau mit Summe), Haushaltsstelle + Haushaltsjahr wählen → *Erstellen*
-  **friert die Sätze ein** (Snapshot je Position). Spätere Satzänderungen wirken sich auf
-  fertige Abrechnungen **nicht** mehr aus. *Storno* setzt die Einträge auf „erfasst" zurück
-  und löscht die Abrechnung; *Als ausgezahlt markieren* setzt Abrechnung + Einträge auf
+- **Abrechnung = genau ein Monat.** Für jeden Monat wird ein eigener Vordruck ausgefüllt.
+  Unter *Neue Abrechnung* stehen **alle offenen Einträge der Person, nach Monat gruppiert, mit
+  Checkboxen** – standardmäßig alles angehakt. Abwählen lässt Einträge offen; die Kopfzeile
+  jeder Monatsgruppe hakt den ganzen Monat an oder ab. Reicht die Auswahl über mehrere Monate,
+  legt *Erstellen* nach einer Rückfrage **je Monat eine eigene Abrechnung** an. *Erstellen*
+  **friert die Sätze ein** (Snapshot je Position); spätere Satzänderungen wirken sich auf
+  fertige Abrechnungen **nicht** mehr aus. *Storno* setzt die Einträge auf „erfasst" zurück und
+  löscht die Abrechnung; *Als ausgezahlt markieren* setzt Abrechnung + Einträge auf
   `ausgezahlt`.
+- **Kostenerstattungen gehören zu genau einem Monat.** Umfasst die Auswahl mehrere Monate, ist
+  *Erstellen* gesperrt, solange Kostenerstattungen erfasst sind – sonst wäre unklar, auf
+  welchem Vordruck sie stehen.
+- **Sonstige Kostenerstattungen** (z. B. Maschineneinsatz) sind Beträge **ohne** Arbeitsstunden.
+  Sie stehen im Vordruck unter dem Arbeitslohn und laufen deshalb **nicht** in die Summe
+  „Arbeitslohn insgesamt", belasten den **Haushalt aber genauso**. Eine Abrechnung darf auch
+  **nur** aus Kostenerstattungen bestehen (reine Maschinenrechnung, Arbeitslohn 0 €) – dann
+  erscheint ein Feld *Abrechnungsmonat*, weil sich der Zeitraum nicht aus Einträgen ableiten lässt.
 - **Haushalt:** Abrechnungen mindern ab Status **abgerechnet** die Restmittel ihrer
   Haushaltsstelle – im Modul *Haushalt* und in der Budget-Tabelle der *Vorgänge* fließen sie
   in denselben Topf wie Auslagen und Vorgangskosten (Spalte „Verbrauch", Tooltip schlüsselt
   auf). Die Haushaltsstellen sind **dieselbe geteilte Liste** wie bei den Bargeldauslagen.
-- **PDF:** *Vorläufige PDF* erzeugt eine interne Abrechnung (Leistungserbringer + Bankdaten,
-  Positionstabelle, Summen, Haushaltsstelle, Unterschriftslinien inkl. Bürgermeisterbild) –
-  wahlweise als Download oder direkt **in Paperless**. Das **Formular der Verbandsgemeinde**
-  ist noch nicht umgesetzt und kommt später als zweite Ausgabe daneben.
+- **PDF – *VG-Formular*** ist der maßgetreue Nachbau des Papiervordrucks „Lohnabrechnung" der
+  Verbandsgemeinde (A4, Times New Roman 11 pt, kein Wappen; alle Maße aus dem Original
+  übernommen). Befüllt werden: Ortsgemeinde, Abrechnungszeitraum, Anschrift, Bankverbindung
+  (IBAN; Kontoinhaber nur wenn abweichend), die Tabelle *durchgeführte Arbeiten* (Tätigkeiten
+  **nach Bezeichnung zusammengefasst**, Stunden addiert), die Wochentabelle (Stunden je
+  Wochentag aus dem Leistungsdatum), Arbeitslohn, Kostenerstattungen, Ort/Datum und die
+  Unterschrift des Ortsbürgermeisters (Bild, sofern hinterlegt – sonst leere Linie).
+  In die Wochentabelle kommen **nur Wochen, in denen gearbeitet wurde** – arbeitsfreie Wochen
+  werden übersprungen. Weil die Zeilen echte Kalenderwochen sind, kann die erste Zeile in den
+  Vormonat hineinreichen (Juli 2026 beginnt z. B. mit der Woche 29.06.–05.07.).
+  Stecken in einer Woche **verschiedene Stundensätze**, wird die Woche auf zwei Zeilen
+  gesplittet – der Vordruck hat je Zeile nur ein „Entgelt pro Stunde". Passt der Inhalt nicht
+  auf ein Blatt – mehr als **vier** Tätigkeiten oder mehr als **fünf** Wochenzeilen (ein Monat
+  berührt je nach Lage 5 oder 6 Kalenderwochen) – wird ein **zweites Blatt** im selben Layout
+  gedruckt („Blatt 1 von 2"); Summe, Kostenerstattungen und Unterschrift stehen nur auf dem
+  letzten Blatt.
+- **PDF – *Interne PDF*** bleibt daneben bestehen: eine formlose Abrechnung mit
+  Positionstabelle je Datum (Leistungserbringer + Bankdaten, Summen, Haushaltsstelle,
+  Unterschriftslinien). Beide Ausgaben gibt es als Download oder direkt **in Paperless**.
 - **NocoDB:** Alle drei Tabellen (`Arbeiter`, `Arbeitszeiten`, `Arbeitsabrechnungen`) werden
   vom Auto-Sync mitgesichert und beim ersten Sync automatisch angelegt. Sie enthalten
   bewusst **auch IBAN/SV-Nummer/Steuer-ID** – NocoDB ist nur über VPN im privaten Netz
