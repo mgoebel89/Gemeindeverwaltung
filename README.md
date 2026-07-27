@@ -645,8 +645,14 @@ Bindet das **Postfach der Gemeinde** (IMAP zum Lesen, SMTP zum Senden) an. Bewus
 Ersatz für das gewohnte Mailprogramm**, sondern die Brücke zwischen Postfach und Vorgangsakte:
 Post durchsehen, eine Nachricht einem **Vorgang zuordnen**, aus dem Vorgang heraus antworten.
 
-- **Posteingang** (`#/mail`) zeigt die **INBOX**, neueste zuerst, 50 Nachrichten je Schritt
-  („Mehr laden"). Die **Suche** läuft serverseitig über Betreff *und* Absender, findet also
+- **Posteingang** (`#/mail`) zeigt die **INBOX**, 50 Nachrichten je Schritt („Mehr laden"),
+  links die Liste und rechts eine **Vorschau**. Ein **einfacher Klick** zeigt die Nachricht in
+  der Vorschau (mit Zuordnen, Antworten und „Großes Fenster"), ein **Doppelklick** – oder Enter –
+  öffnet sie im großen Fenster. Auf schmalen Geräten rückt die Vorschau unter die Liste.
+- **Sortierung** über die Auswahl neben der Suche: *Neueste zuerst* (Standard), *Älteste
+  zuerst*, *Absender A–Z*, *Betreff A–Z*. Sortiert wird im Browser, ohne neu zu laden; die Wahl
+  wird gemerkt (`localStorage`). Nachrichten ohne verwertbares Datum landen ans Ende statt
+  zufällig dazwischen. Die **Suche** läuft serverseitig über Betreff *und* Absender, findet also
   auch ältere Nachrichten. Ungelesene sind hervorgehoben, Anhänge mit 📎 markiert.
 - **Zuordnen** legt im gewählten Vorgang einen Historieneintrag vom Typ **E-Mail** an, mit
   Absender, Datum, Betreff und Text als **Kopie**. Das ist Absicht: wird die Mail im Postfach
@@ -666,10 +672,17 @@ Post durchsehen, eine Nachricht einem **Vorgang zuordnen**, aus dem Vorgang hera
   NocoDB-Sicherung); das Passwort wird nie an den Browser zurückgegeben. Ein leeres
   Passwortfeld lässt das gespeicherte unangetastet. *Verbindung testen* prüft IMAP und SMTP
   getrennt, damit klar wird, welche Seite klemmt.
-- Bei **Evanzo**-Hosting sind das Standardwerte aus dem Kundenmenü (üblich: IMAP 993 mit SSL,
-  SMTP 587 mit STARTTLS oder 465 mit SSL). Alternativ per Env:
-  `MAIL_HOST`, `MAIL_USER`, `MAIL_PASS`, `MAIL_IMAP_PORT`, `MAIL_SMTP_PORT`, `MAIL_FROM`,
-  `MAIL_SENT`.
+- Übliche Ports: IMAP **993** (SSL), SMTP **587** (STARTTLS) oder **465** (SSL). Alternativ
+  per Env: `MAIL_HOST`, `MAIL_USER`, `MAIL_PASS`, `MAIL_IMAP_PORT`, `MAIL_SMTP_PORT`,
+  `MAIL_FROM`, `MAIL_SENT`.
+
+> **Shared-Hosting-Falle (Evanzo):** Als Server gehört der **Servername des Anbieters** hinein
+> – bei Hörschhausen `s101.evanzo-server.de` –, **nicht** `mail.hoerschhausen.de` oder
+> `imap.hoerschhausen.de`. Beide zeigen auf dieselbe Maschine, aber nur der Anbietername steht
+> im TLS-Zertifikat; sonst bricht die Verbindung mit
+> `Hostname/IP does not match certificate's altnames` ab, noch vor der Anmeldung. Der richtige
+> Name steht in dieser Fehlermeldung selbst, hinter `cert's altnames: DNS:`. Der **Benutzername
+> bleibt die vollständige E-Mail-Adresse**.
 
 > **Achtung:** Die App hat **keine Benutzeranmeldung**. Wer sie im Netz erreicht, liest das
 > Postfach und kann in dessen Namen senden. Das ist eine bewusste Entscheidung für den Betrieb

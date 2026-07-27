@@ -1142,6 +1142,23 @@ tr:hover td { background: #fafbfc; }
 .mail-anhang-wahl { display: flex; align-items: center; gap: 8px; padding: 3px 0; }
 .mail-richtung { color: var(--muted); font-size: 0.85rem; }
 
+/* Zweispaltig: Liste links, Vorschau rechts */
+.mail-split { display: grid; grid-template-columns: minmax(0, 4fr) minmax(0, 5fr); gap: 16px; align-items: start; }
+.mail-spalte { min-width: 0; }
+.mail-liste { max-height: 62vh; overflow: auto; }
+.mail-aktiv { background: #eef4fc; }
+.mail-aktiv:hover { background: #e7effa; }
+.mail-vorschau { min-width: 0; border-left: 1px solid var(--border); padding-left: 16px; min-height: 240px; }
+.mail-vorschau-kopf { margin-bottom: 8px; }
+.mail-vorschau-text { max-height: 46vh; }
+
+@media (max-width: 900px) {
+  /* Kein Platz fuer zwei Spalten - Vorschau rueckt unter die Liste. */
+  .mail-split { grid-template-columns: 1fr; }
+  .mail-liste { max-height: 40vh; }
+  .mail-vorschau { border-left: none; border-top: 1px solid var(--border); padding-left: 0; padding-top: 12px; }
+}
+
 @media (max-width: 760px) {
   .mail-zeile { grid-template-columns: 1fr auto; }
   .mail-von { grid-column: 1 / -1; font-size: 0.85rem; color: var(--muted); }

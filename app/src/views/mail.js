@@ -27,30 +27,124 @@
     return t.length > n ? t.slice(0, n) + ' …' : t;
   }
 
+  // Sortierung explizit statt implizit: das Umschlagsdatum mancher Server ist
+  // unzuverlässig, deshalb soll nachvollziehbar sein, wonach geordnet wird.
+  const SORTEN = {
+    '-datum': { label: 'Neueste zuerst', cmp: (a, b) => zeit(b) - zeit(a) },
+    'datum': { label: 'Älteste zuerst', cmp: (a, b) => zeit(a) - zeit(b) },
+    'von': { label: 'Absender A–Z', cmp: (a, b) => String(a.von || '').localeCompare(String(b.von || ''), 'de') },
+    'betreff': { label: 'Betreff A–Z', cmp: (a, b) => String(a.betreff || '').localeCompare(String(b.betreff || ''), 'de') },
+  };
+  // Ohne Datum ans Ende sortieren statt zufällig dazwischen.
+  function zeit(m) {
+    const t = m && m.datum ? Date.parse(m.datum) : NaN;
+    return isNaN(t) ? 0 : t;
+  }
+
   // ===================== Posteingang =====================
   function renderMail(mount) {
     function refresh() { mount.innerHTML = ''; renderMail(mount); }
 
     const sucheI = el('input', { type: 'search', placeholder: 'Betreff oder Absender suchen …' });
+    let sortKey = '-datum';
+    try { sortKey = localStorage.getItem('gr.mailSort') || '-datum'; } catch (_) {}
+    if (!SORTEN[sortKey]) sortKey = '-datum';
+    const sortSel = el('select', {}, Object.keys(SORTEN).map(k =>
+      el('option', { value: k, selected: k === sortKey }, SORTEN[k].label)));
     const ladenBtn = el('button', { class: 'btn-sm' }, '↻ Aktualisieren');
     mount.appendChild(el('div', { class: 'toolbar' }, [
       el('h2', { style: 'margin:0;' }, 'Posteingang'),
       el('div', { class: 'spacer' }),
-      sucheI, ladenBtn,
+      sucheI, sortSel, ladenBtn,
       el('a', { class: 'btn btn-sm', href: '#/einstellungen' }, 'Zugang'),
     ]));
 
-    const card = el('div', { class: 'card' });
+    // Zweispaltig: Liste links, Vorschau rechts. Auf schmalen Geräten stapeln
+    // sich beide (siehe styles.css) und die Vorschau rückt unter die Liste.
+    const card = el('div', { class: 'card mail-split' });
+    const linkeSpalte = el('div', { class: 'mail-spalte' });
     const liste = el('div', { class: 'mail-liste' });
     const status = el('div', { class: 'empty' }, 'Wird geladen …');
-    card.appendChild(status);
-    card.appendChild(liste);
     const mehrBtn = el('button', { class: 'btn-sm', style: 'margin-top:10px;' }, 'Mehr laden');
     mehrBtn.style.display = 'none';
-    card.appendChild(mehrBtn);
+    linkeSpalte.appendChild(status);
+    linkeSpalte.appendChild(liste);
+    linkeSpalte.appendChild(mehrBtn);
+    const vorschau = el('div', { class: 'mail-vorschau' });
+    card.appendChild(linkeSpalte);
+    card.appendChild(vorschau);
     mount.appendChild(card);
 
     let limit = SEITE;
+    let geladen = [];
+    let aktiveUid = null;
+
+    const zeilenNachUid = new Map();
+
+    // Auswahl nur ummarkieren statt die Liste neu zu bauen – sonst springt bei
+    // jedem Klick die Scroll-Position zurück.
+    function markiere(uid) {
+      aktiveUid = uid;
+      for (const [u, row] of zeilenNachUid) row.classList.toggle('mail-aktiv', u === uid);
+    }
+
+    function zeichneListe() {
+      liste.innerHTML = '';
+      zeilenNachUid.clear();
+      const sortiert = geladen.slice().sort(SORTEN[sortKey].cmp);
+      for (const m of sortiert) {
+        const row = zeile(m);
+        row.classList.toggle('mail-aktiv', m.uid === aktiveUid);
+        // Einfacher Klick zeigt die Vorschau, Doppelklick öffnet das Fenster.
+        row.addEventListener('click', () => { markiere(m.uid); zeigeVorschau(m); });
+        row.addEventListener('dblclick', () => openNachricht(m.uid, refresh));
+        row.addEventListener('keydown', (ev) => {
+          if (ev.key === 'Enter') { ev.preventDefault(); openNachricht(m.uid, refresh); }
+        });
+        zeilenNachUid.set(m.uid, row);
+        liste.appendChild(row);
+      }
+    }
+
+    function leereVorschau(text) {
+      vorschau.innerHTML = '';
+      vorschau.appendChild(el('div', { class: 'empty' }, text));
+    }
+
+    let vorschauLauf = 0;
+    async function zeigeVorschau(m) {
+      const lauf = ++vorschauLauf;
+      vorschau.innerHTML = '';
+      vorschau.appendChild(el('div', { class: 'empty' }, 'Wird geladen …'));
+      try {
+        const voll = await GR.api.getMail(m.uid);
+        if (lauf !== vorschauLauf) return; // schneller Klick weiter – Antwort verwerfen
+        vorschau.innerHTML = '';
+        vorschau.appendChild(el('div', { class: 'mail-vorschau-kopf' }, [
+          el('strong', {}, voll.betreff || '(kein Betreff)'),
+          el('div', { class: 'help' }, voll.von || '—'),
+          el('div', { class: 'help' }, datumZeit(voll.datum)),
+        ]));
+        vorschau.appendChild(el('pre', { class: 'mail-text mail-vorschau-text' }, voll.text || '(kein Textinhalt)'));
+        if ((voll.anhaenge || []).length) {
+          vorschau.appendChild(el('div', { class: 'mail-anhaenge' }, voll.anhaenge.map(a =>
+            el('a', {
+              class: 'mail-anhang', href: GR.api.mailAttachmentUrl(voll.uid, a.index),
+              target: '_blank', rel: 'noopener',
+            }, `📎 ${a.filename}`))));
+        }
+        vorschau.appendChild(el('div', { class: 'toolbar', style: 'margin:12px 0 0;' }, [
+          el('button', { class: 'btn-sm btn-primary', onClick: () => openZuordnen(voll) }, '📁 Zu Vorgang'),
+          el('button', { class: 'btn-sm', onClick: () => openAntwort(voll, null) }, '↩ Antworten'),
+          el('div', { class: 'spacer', style: 'flex:1;' }),
+          el('button', { class: 'btn-sm', onClick: () => openNachricht(voll.uid, refresh) }, '⤢ Großes Fenster'),
+        ]));
+      } catch (err) {
+        if (lauf !== vorschauLauf) return;
+        vorschau.innerHTML = '';
+        vorschau.appendChild(el('div', { class: 'warn' }, 'Nachricht konnte nicht geladen werden: ' + err.message));
+      }
+    }
 
     async function laden() {
       status.style.display = '';
@@ -58,16 +152,18 @@
       status.textContent = 'Wird geladen …';
       liste.innerHTML = '';
       mehrBtn.style.display = 'none';
+      leereVorschau('Nachricht anklicken für die Vorschau, Doppelklick öffnet sie groß.');
       try {
         const res = await GR.api.listMails({ limit, search: sucheI.value.trim() });
-        const msgs = res.messages || [];
-        if (!msgs.length) {
+        geladen = res.messages || [];
+        if (!geladen.length) {
           status.textContent = sucheI.value.trim() ? 'Keine Treffer.' : 'Posteingang ist leer.';
           return;
         }
         status.style.display = 'none';
-        for (const m of msgs) liste.appendChild(zeile(m, refresh));
-        mehrBtn.style.display = msgs.length >= limit ? '' : 'none';
+        aktiveUid = null;
+        zeichneListe();
+        mehrBtn.style.display = geladen.length >= limit ? '' : 'none';
       } catch (err) {
         status.className = 'warn';
         status.textContent = 'Postfach nicht erreichbar: ' + err.message
@@ -75,6 +171,11 @@
       }
     }
 
+    sortSel.onchange = () => {
+      sortKey = SORTEN[sortSel.value] ? sortSel.value : '-datum';
+      try { localStorage.setItem('gr.mailSort', sortKey); } catch (_) {}
+      zeichneListe();
+    };
     ladenBtn.onclick = laden;
     mehrBtn.onclick = () => { limit += SEITE; laden(); };
     let t = null;
@@ -85,14 +186,13 @@
     return mount;
   }
 
-  function zeile(m, onGeaendert) {
+  // Reine Zeilendarstellung – die Klick-Behandlung hängt der Aufrufer an, weil
+  // sie sich zwischen Posteingang (Vorschau) und Auswahlliste unterscheidet.
+  function zeile(m) {
     const row = el('div', {
       class: 'mail-zeile' + (m.gelesen ? '' : ' mail-ungelesen'),
-      role: 'button', tabindex: '0', title: 'Öffnen',
+      role: 'button', tabindex: '0', title: 'Klicken für Vorschau, Doppelklick öffnet die Nachricht',
     });
-    const oeffnen = () => openNachricht(m.uid, onGeaendert);
-    row.addEventListener('click', oeffnen);
-    row.addEventListener('keydown', (ev) => { if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); oeffnen(); } });
     row.appendChild(el('div', { class: 'mail-von' }, kuerzen(m.von, 40)));
     row.appendChild(el('div', { class: 'mail-betreff' }, [
       el('span', {}, kuerzen(m.betreff, 90)),
@@ -383,8 +483,8 @@
         if (!msgs.length) { status.textContent = 'Keine Nachrichten gefunden.'; return; }
         status.style.display = 'none';
         for (const m of msgs) {
-          const row = zeile(m, null);
-          row.onclick = null;
+          const row = zeile(m);
+          row.title = 'Diese Nachricht zuordnen';
           row.addEventListener('click', async () => {
             status.style.display = ''; status.textContent = 'Nachricht wird geladen …';
             try {
