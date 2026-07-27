@@ -15,7 +15,7 @@
   function euro(n) { return (Number(n) || 0).toLocaleString('de-DE', { style: 'currency', currency: 'EUR' }); }
   function fmtPts(n) { const x = Math.round((Number(n) || 0) * 10) / 10; return String(x).replace('.', ','); }
   const PRIO_LABEL = { 1: 'Niedrig', 2: 'Mittel', 3: 'Hoch', 4: 'Dringend', 5: 'Sofort' };
-  const TYP_LABEL = { notiz: 'Notiz', todo: 'ToDo', dokument: 'Dokument', referenz: 'Referenz', kosten: 'Kosten', foto: 'Foto', angebot: 'Angebot', entscheidung: 'Auswahl' };
+  const TYP_LABEL = { notiz: 'Notiz', todo: 'ToDo', dokument: 'Dokument', referenz: 'Referenz', kosten: 'Kosten', foto: 'Foto', angebot: 'Angebot', entscheidung: 'Auswahl', email: 'E-Mail' };
 
   // Die jsPDF-Standardschriften können nur WinAnsi (CP1252). Enthält eine Zeile
   // ein Zeichen darüber hinaus (Emoji, Pfeile, Haken), kodiert jsPDF die GANZE
@@ -275,6 +275,19 @@
       if (e.haushaltsstelleId) parts.push('Kostenstelle: ' + stelleName(e.haushaltsstelleId));
       if (parts.length) line(doc, state, parts.join('  ·  '), { size: 9.5, color: C_MUTED, indent: IND });
       for (const d of (e.paperlessDocs || [])) line(doc, state, 'Beleg: ' + (d.title || ('Dokument ' + d.id)), { size: 9.5, indent: IND + 2 });
+    } else if (e.typ === 'email') {
+      const raus = e.richtung === 'aus';
+      line(doc, state, (raus ? 'Gesendet an: ' : 'Empfangen von: ') + ((raus ? e.an : e.von) || '—'),
+        { size: 10, bold: true, indent: IND });
+      if (e.cc) line(doc, state, 'Kopie: ' + e.cc, { size: 9.5, color: C_MUTED, indent: IND });
+      line(doc, state, 'Betreff: ' + (e.betreff || '(kein Betreff)'), { size: 10, indent: IND });
+      // Mailtext zeilenweise, damit Absätze im PDF erhalten bleiben.
+      for (const z of String(e.text || '').split(/\r?\n/)) {
+        line(doc, state, z, { size: 9.5, indent: IND + 2, gap: z.trim() === '' ? 2.6 : 4.6 });
+      }
+      for (const d of (e.paperlessDocs || [])) {
+        line(doc, state, 'Anhang: ' + (d.title || ('Dokument ' + d.id)), { size: 9.5, indent: IND + 2 });
+      }
     } else if (e.typ === 'dokument') {
       const docs = e.paperlessDocs || [];
       if (docs.length === 0) line(doc, state, '(kein Dokument)', { size: 10, italic: true, color: C_MUTED, indent: IND });

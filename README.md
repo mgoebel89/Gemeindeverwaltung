@@ -639,6 +639,46 @@ scheitern und die Abo-URL ein Geheimnis enthalten kann. Der Zugriff ist **nur le
 > **Migration:** Kein neues Schema nötig (nutzt die bestehende `settings`-Tabelle). Frontend
 > nach dem Update mit **Strg+F5** neu laden.
 
+## Modul „E-Mail"
+
+Bindet das **Postfach der Gemeinde** (IMAP zum Lesen, SMTP zum Senden) an. Bewusst **kein
+Ersatz für das gewohnte Mailprogramm**, sondern die Brücke zwischen Postfach und Vorgangsakte:
+Post durchsehen, eine Nachricht einem **Vorgang zuordnen**, aus dem Vorgang heraus antworten.
+
+- **Posteingang** (`#/mail`) zeigt die **INBOX**, neueste zuerst, 50 Nachrichten je Schritt
+  („Mehr laden"). Die **Suche** läuft serverseitig über Betreff *und* Absender, findet also
+  auch ältere Nachrichten. Ungelesene sind hervorgehoben, Anhänge mit 📎 markiert.
+- **Zuordnen** legt im gewählten Vorgang einen Historieneintrag vom Typ **E-Mail** an, mit
+  Absender, Datum, Betreff und Text als **Kopie**. Das ist Absicht: wird die Mail im Postfach
+  später verschoben oder gelöscht, bleibt die Akte vollständig. Zuordnen geht in **beide
+  Richtungen** – aus dem Posteingang heraus oder im Vorgang über *+ Eintrag → E-Mail*.
+- **Anhänge** werden beim Zuordnen zum Anhaken angeboten und laufen einzeln durch den
+  Paperless-Assistenten (Titel vorbelegt); die abgelegten Dokumente werden am Eintrag
+  verknüpft. Bewusst kein Automatismus – sonst landen Signaturbilder und Logos in der Ablage.
+- **Antworten** aus dem Vorgang heraus: Empfänger, Betreff (`Re: …`) und Zitat sind vorbelegt.
+  Die Antwort geht per SMTP raus, wird per `In-Reply-To` korrekt in den Thread eingehängt,
+  **zusätzlich in den IMAP-Ordner „Gesendet" gelegt** (sonst fehlte sie im Mailprogramm) und
+  als eigener Historieneintrag im Vorgang mitgeführt. Damit steht der ganze Schriftwechsel
+  in der Akte – und im **Ablauf-PDF** des Vorgangs.
+- **Zugang** unter *Einstellungen → E-Mail*: Server, Benutzer, Passwort, IMAP-/SMTP-Port,
+  Absender und Name des Ordners „Gesendet". Alles wird **serverseitig** im Container
+  gespeichert (eigener DB-Schlüssel, **nicht** im Snapshot und **nicht** in der
+  NocoDB-Sicherung); das Passwort wird nie an den Browser zurückgegeben. Ein leeres
+  Passwortfeld lässt das gespeicherte unangetastet. *Verbindung testen* prüft IMAP und SMTP
+  getrennt, damit klar wird, welche Seite klemmt.
+- Bei **Evanzo**-Hosting sind das Standardwerte aus dem Kundenmenü (üblich: IMAP 993 mit SSL,
+  SMTP 587 mit STARTTLS oder 465 mit SSL). Alternativ per Env:
+  `MAIL_HOST`, `MAIL_USER`, `MAIL_PASS`, `MAIL_IMAP_PORT`, `MAIL_SMTP_PORT`, `MAIL_FROM`,
+  `MAIL_SENT`.
+
+> **Achtung:** Die App hat **keine Benutzeranmeldung**. Wer sie im Netz erreicht, liest das
+> Postfach und kann in dessen Namen senden. Das ist eine bewusste Entscheidung für den Betrieb
+> im isolierten privaten Netz – bei einer Öffnung nach außen muss vorher eine Anmeldung her.
+
+> **Migration:** Kein neues Schema nötig (nutzt die bestehende `settings`-Tabelle). Im Container
+> `npm install` im `backend/` laufen lassen – neu sind `imapflow`, `nodemailer` und `mailparser`.
+> Frontend nach dem Update mit **Strg+F5** neu laden.
+
 ## Modul „Aufgaben" (Vikunja)
 
 Aufgaben werden aus einer **Vikunja**-Instanz (Open-Source-Aufgabenverwaltung) über deren

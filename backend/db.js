@@ -264,6 +264,21 @@ function saveVikunjaConfig(c) {
   return c;
 }
 
+// E-Mail-Zugang (IMAP/SMTP des Bürgermeister-Postfachs): eigener Key, damit er
+// NICHT im allgemeinen Settings-Blob (Snapshot/NocoDB-Sync) landet. Enthält das
+// Passwort im Klartext – bleibt serverseitig, wird nie im Snapshot ausgegeben.
+function getMailConfig() {
+  const r = db.prepare("SELECT value FROM settings WHERE key = 'mail'").get();
+  return r ? JSON.parse(r.value) : null;
+}
+function saveMailConfig(c) {
+  db.prepare(`
+    INSERT INTO settings (key, value) VALUES ('mail', ?)
+    ON CONFLICT(key) DO UPDATE SET value = excluded.value
+  `).run(JSON.stringify(c));
+  return c;
+}
+
 // --- Generischer Payload-Store (für Vermietung-Entitäten) ---
 function makePayloadStore(table) {
   return {
@@ -536,6 +551,7 @@ module.exports = {
   getPaperlessConfig, savePaperlessConfig,
   getKalenderConfig, saveKalenderConfig,
   getVikunjaConfig, saveVikunjaConfig,
+  getMailConfig, saveMailConfig,
   listAttachments, getAttachment, attachmentPath, ensureAttachmentDir,
   insertAttachment, deleteAttachment,
   listMieter, getMieter, saveMieter, deleteMieter,

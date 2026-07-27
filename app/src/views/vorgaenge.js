@@ -33,6 +33,7 @@
     foto: { label: 'Foto', icon: '📷' },
     angebot: { label: 'Angebot', icon: '🧾' },
     entscheidung: { label: 'Auswahl', icon: '⚖' },
+    email: { label: 'E-Mail', icon: '✉' },
   };
 
   // Kleiner ID-Helfer für Matrix-Eigenschaften (models.uuid ist nicht exportiert).
@@ -593,6 +594,17 @@
       if (docs) teile.push(el('span', { class: 'help' }, '📄 ' + docs));
       box.appendChild(el('div', { class: 'vg-hist-sum-row' }, teile));
 
+    } else if (e.typ === 'email') {
+      const raus = e.richtung === 'aus';
+      const teile = [
+        el('span', { class: 'mail-richtung' }, raus ? '↗ gesendet' : '↙ empfangen'),
+        el('strong', {}, e.betreff || '(kein Betreff)'),
+        el('span', { class: 'help' }, raus ? ('an ' + (e.an || '—')) : ('von ' + (e.von || '—'))),
+      ];
+      const docs = (e.paperlessDocs || []).length;
+      if (docs) teile.push(el('span', { class: 'help' }, '📄 ' + docs));
+      box.appendChild(el('div', { class: 'vg-hist-sum-row' }, teile));
+
     } else if (e.typ === 'entscheidung') {
       const anz = (e.teilnehmer || []).length;
       const teile = [el('span', {}, (e.titel || 'Entscheidungsmatrix') + ' · ' + anz + ' Anbieter')];
@@ -625,6 +637,7 @@
         && !store.listVorgangFotos(v.id).some(f => f.kind === 'hist_' + e.id);
       case 'angebot': return t(e.anbieter) && e.preis == null && t(e.beschreibung) && !(e.paperlessDocs || []).length;
       case 'entscheidung': return !(e.teilnehmer || []).length;
+      case 'email': return t(e.betreff) && t(e.text) && t(e.von) && t(e.an);
       default: return false;
     }
   }
@@ -659,6 +672,15 @@
         document.removeEventListener('keydown', onKey);
         overlay.remove();
         openAuswahlAssistent(v, null, persist, onClose);
+        return;
+      }
+      // E-Mail wird nicht getippt, sondern aus dem Posteingang gewählt; das
+      // Zuordnen-Overlay legt den Eintrag samt Anhängen an.
+      if (typ === 'email') {
+        document.removeEventListener('keydown', onKey);
+        overlay.remove();
+        if (!GR.mailUi) { toast('E-Mail-Modul nicht geladen.', 3000); if (onClose) onClose(); return; }
+        GR.mailUi.openNachrichtenWahl((voll) => GR.mailUi.openZuordnen(voll, v.id));
         return;
       }
       const vorlagen = {
@@ -752,6 +774,7 @@
     if (e.typ === 'foto') return fotoBody(v, e, persist, refresh);
     if (e.typ === 'angebot') return angebotBody(v, e, persist, refresh);
     if (e.typ === 'entscheidung') return entscheidungBody(v, e, persist, refresh);
+    if (e.typ === 'email') return emailBody(v, e, persist, refresh);
     return el('div', { class: 'help' }, '(unbekannter Typ)');
   }
 
@@ -1007,6 +1030,49 @@
       onChange: (ev) => { e.notiz = ev.target.value; persist(); },
     });
     box.appendChild(el('div', { style: 'margin-top:6px;' }, [notiz]));
+    return box;
+  }
+
+  // --- E-Mail (aus dem Postfach zugeordnet) ---
+  // Der Text ist eine Kopie und bleibt deshalb unveränderlich – die Akte soll
+  // wiedergeben, was tatsächlich geschrieben wurde. Bearbeitbar sind nur Datum,
+  // Vertraulich und die verknüpften Dokumente.
+  function emailBody(v, e, persist, refresh) {
+    const box = el('div', { class: 'vg-hist-body' });
+    if (!Array.isArray(e.paperlessDocs)) e.paperlessDocs = [];
+    const raus = e.richtung === 'aus';
+
+    box.appendChild(el('div', { class: 'mail-kopf' }, [
+      el('div', {}, [el('span', { class: 'mail-label' }, 'Richtung'),
+        el('span', {}, raus ? '↗ aus der App gesendet' : '↙ empfangen')]),
+      el('div', {}, [el('span', { class: 'mail-label' }, raus ? 'An' : 'Von'),
+        el('span', {}, (raus ? e.an : e.von) || '—')]),
+      e.cc ? el('div', {}, [el('span', { class: 'mail-label' }, 'Kopie'), el('span', {}, e.cc)]) : null,
+      el('div', {}, [el('span', { class: 'mail-label' }, 'Betreff'), el('span', {}, e.betreff || '—')]),
+    ].filter(Boolean)));
+
+    box.appendChild(el('pre', { class: 'mail-text' }, e.text || '(kein Textinhalt)'));
+
+    // Antworten geht nur auf empfangene Nachrichten und nur, wenn das
+    // E-Mail-Modul geladen ist.
+    if (!raus && GR.mailUi) {
+      box.appendChild(el('div', { class: 'toolbar', style: 'margin:8px 0 0;' }, [
+        el('button', {
+          class: 'btn-sm', onClick: () => {
+            GR.mailUi.openAntwort({
+              betreff: e.betreff, von: e.von, vonListe: [], datum: e.datum,
+              text: e.text, messageId: e.messageId, references: e.references || [],
+            }, v, refresh);
+          },
+        }, '↩ Antworten'),
+      ]));
+    }
+
+    box.appendChild(el('div', { class: 'vg-label', style: 'margin-top:10px;' }, 'Anhänge / Dokumente (Paperless)'));
+    box.appendChild(GR.ui.renderPaperlessDocsSection(e, () => persist(), {
+      prefillTitle: (v.titel ? v.titel + ' – ' : '') + (e.betreff || 'E-Mail'),
+      emptyText: 'Kein Dokument verknüpft.',
+    }));
     return box;
   }
 

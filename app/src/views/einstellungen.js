@@ -89,6 +89,7 @@
     // Einstellungen nach Kategorien gegliedert – je Bereich ein eigener Container.
     const C = {
       allgemein: el('div'), darstellung: el('div'), dokumente: el('div'), kalender: el('div'), aufgaben: el('div'),
+      mail: el('div'),
       vorgaenge: el('div'), vermietung: el('div'), vertraege: el('div'), auslagen: el('div'),
       arbeitszeiten: el('div'), daten: el('div'),
     };
@@ -432,6 +433,76 @@
       settings.vikunjaProjektId = syncProjSel.value ? (isNaN(Number(syncProjSel.value)) ? syncProjSel.value : Number(syncProjSel.value)) : null;
       store.saveSettings(settings);
     };
+    // --- E-Mail (IMAP/SMTP des Gemeinde-Postfachs) ---
+    const mlHost = el('input', { type: 'text', placeholder: 'mail.meine-domain.de' });
+    const mlUser = el('input', { type: 'text', placeholder: 'buergermeister@meine-domain.de' });
+    const mlPass = el('input', { type: 'password', placeholder: 'Passwort' });
+    const mlImap = el('input', { type: 'number', step: '1', value: '993', style: 'max-width:120px;' });
+    const mlSmtp = el('input', { type: 'number', step: '1', value: '587', style: 'max-width:120px;' });
+    const mlFrom = el('input', { type: 'text', placeholder: 'Ortsgemeinde <buergermeister@meine-domain.de>' });
+    const mlSent = el('input', { type: 'text', placeholder: 'Sent', style: 'max-width:200px;' });
+    const mlStatus = el('div', { class: 'help', style: 'margin-top:8px;' }, '');
+    function setMlStatus(t, c) { mlStatus.textContent = t; mlStatus.style.color = c || ''; }
+
+    function loadMlConfig() {
+      GR.api.getMailConfig().then(c => {
+        mlHost.value = c.host || '';
+        mlUser.value = c.user || '';
+        mlImap.value = c.imapPort || 993;
+        mlSmtp.value = c.smtpPort || 587;
+        mlFrom.value = c.from || '';
+        mlSent.value = c.sentBox || 'Sent';
+        mlPass.placeholder = c.hasPass ? '(gesetzt – leer lassen zum Behalten)' : 'Passwort';
+        setMlStatus(c.hasPass ? 'Zugang hinterlegt (Quelle: ' + c.source + ')' : 'Noch kein Passwort hinterlegt.');
+      }).catch(e => setMlStatus('Konfiguration nicht ladbar: ' + e.message, '#c53030'));
+    }
+    const onMlSave = async () => {
+      try {
+        await GR.api.putMailConfig({
+          host: mlHost.value.trim(), user: mlUser.value.trim(), pass: mlPass.value,
+          imapPort: Number(mlImap.value) || 993, smtpPort: Number(mlSmtp.value) || 587,
+          from: mlFrom.value.trim(), sentBox: mlSent.value.trim() || 'Sent',
+        });
+        mlPass.value = '';
+        setMlStatus('Gespeichert.', '#2f855a');
+        loadMlConfig();
+      } catch (e) { setMlStatus('Fehler: ' + e.message, '#c53030'); }
+    };
+    const onMlTest = async () => {
+      setMlStatus('Wird geprüft …');
+      try {
+        const r = await GR.api.testMail();
+        const teile = [
+          'IMAP: ' + (r.imap && r.imap.ok ? ('ok' + (r.imap.nachrichten != null ? ' (' + r.imap.nachrichten + ' Nachrichten)' : '')) : ('Fehler – ' + ((r.imap && r.imap.error) || '?'))),
+          'SMTP: ' + (r.smtp && r.smtp.ok ? 'ok' : ('Fehler – ' + ((r.smtp && r.smtp.error) || '?'))),
+        ];
+        setMlStatus(teile.join('  ·  '), r.ok ? '#2f855a' : '#c53030');
+      } catch (e) { setMlStatus('Fehler: ' + e.message, '#c53030'); }
+    };
+
+    C.mail.appendChild(el('div', { class: 'card' }, [
+      el('h3', {}, 'E-Mail-Postfach'),
+      el('p', { class: 'help' }, 'Zugang zum Postfach der Gemeinde (IMAP zum Lesen, SMTP zum Senden). Host, Benutzer und Passwort werden serverseitig im Container gespeichert – nicht im Browser – und laufen nicht in die NocoDB-Sicherung.'),
+      el('div', { class: 'help', style: 'margin-bottom:8px;' }, 'Bei Evanzo-Hosting stehen Servername und Ports im Kundenmenü bzw. im vorhandenen Mailprogramm. Übliche Werte: IMAP 993 (SSL), SMTP 587 (STARTTLS) oder 465 (SSL).'),
+      el('div', { class: 'grid-2' }, [
+        el('div', {}, [el('label', {}, 'Server (IMAP und SMTP)'), mlHost]),
+        el('div', {}, [el('label', {}, 'Benutzer / E-Mail-Adresse'), mlUser]),
+        el('div', {}, [el('label', {}, 'Passwort'), mlPass]),
+        el('div', {}, [el('label', {}, 'Absender (optional, sonst Benutzer)'), mlFrom]),
+      ]),
+      el('div', { class: 'grid-2', style: 'margin-top:8px;' }, [
+        el('div', {}, [el('label', {}, 'IMAP-Port'), mlImap]),
+        el('div', {}, [el('label', {}, 'SMTP-Port'), mlSmtp]),
+        el('div', {}, [el('label', {}, 'Ordner „Gesendet"'), mlSent]),
+      ]),
+      el('div', { class: 'toolbar', style: 'margin-top:10px;' }, [
+        el('button', { class: 'btn-primary', onClick: onMlSave }, 'Speichern'),
+        el('button', { onClick: onMlTest }, 'Verbindung testen'),
+      ]),
+      mlStatus,
+    ]));
+    loadMlConfig();
+
     C.aufgaben.appendChild(el('div', { class: 'card' }, [
       el('h3', {}, 'Synchronisiertes Projekt'),
       el('p', { class: 'help' }, 'Nur die Aufgaben dieses Projekts werden in der Gemeindeverwaltung angezeigt; das Aufgaben-Modul und ToDos aus Vorgängen legen neue Aufgaben hier an. Gilt app-weit.'),
@@ -797,6 +868,7 @@
       ['dokumente', 'Dokumente'],
       ['kalender', 'Kalender'],
       ['aufgaben', 'Aufgaben'],
+      ['mail', 'E-Mail'],
       ['vorgaenge', 'Vorgänge & Projekte'],
       ['vermietung', 'Vermietung'],
       ['vertraege', 'Verträge & Pacht'],

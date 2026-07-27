@@ -198,6 +198,21 @@
   }
 
   // --- Aufgaben (Vikunja, Backend-Proxy) ---
+  // --- E-Mail (Postfach der Gemeinde, Backend-Proxy) ---
+  async function getMailConfig() { return jsonFetch('/api/mail/config'); }
+  async function putMailConfig(cfg) { return jsonFetch('/api/mail/config', { method: 'PUT', body: cfg }); }
+  async function testMail() { return jsonFetch('/api/mail/test', { method: 'POST', body: {} }); }
+  async function listMails({ limit, search } = {}) {
+    const p = new URLSearchParams();
+    if (limit) p.set('limit', String(limit));
+    if (search) p.set('search', search);
+    const q = p.toString();
+    return jsonFetch('/api/mail/messages' + (q ? '?' + q : ''));
+  }
+  async function getMail(uid) { return jsonFetch(`/api/mail/messages/${encodeURIComponent(uid)}`); }
+  function mailAttachmentUrl(uid, idx) { return `/api/mail/messages/${encodeURIComponent(uid)}/attachments/${encodeURIComponent(idx)}`; }
+  async function sendMail(body) { return jsonFetch('/api/mail/send', { method: 'POST', body }); }
+
   async function getTaskConfig() { return jsonFetch('/api/aufgaben/config'); }
   async function putTaskConfig(cfg) { return jsonFetch('/api/aufgaben/config', { method: 'PUT', body: cfg }); }
   async function taskHealth() { return jsonFetch('/api/aufgaben/health'); }
@@ -262,6 +277,7 @@
     uploadDocument, scanDocument, scanPageUrl, discardScan, commitScan, getDocTask, createCorrespondent, createDocumentType, createTag,
     getDocConfig, putDocConfig,
     getCalConfig, putCalConfig, testCalUrl, listCalEvents,
+    getMailConfig, putMailConfig, testMail, listMails, getMail, mailAttachmentUrl, sendMail,
     getTaskConfig, putTaskConfig, taskHealth, listOpenTasks, listTaskProjects, completeTask, createTask,
     getTask, updateTask, listTaskLabels, addTaskLabel, removeTaskLabel,
     listDocNotes, addDocNote, deleteDocNote,

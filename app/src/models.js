@@ -401,10 +401,11 @@
     pausiert: 'Pausiert', beendet: 'Beendet',
   };
   // Typen der getippten Vorgangshistorie (Zeitleiste).
-  const HISTORIE_TYPEN = ['notiz', 'todo', 'foto', 'dokument', 'referenz', 'kosten', 'angebot', 'entscheidung'];
+  const HISTORIE_TYPEN = ['notiz', 'todo', 'foto', 'dokument', 'referenz', 'kosten', 'angebot', 'entscheidung', 'email'];
   const HISTORIE_TYP_LABEL = {
     notiz: 'Notiz', todo: 'ToDo', foto: 'Foto', dokument: 'Dokument',
     referenz: 'Referenz', kosten: 'Kosten', angebot: 'Angebot', entscheidung: 'Auswahl',
+    email: 'E-Mail',
   };
   // Klartext-Skala der Bewertungspunkte in der Entscheidungsmatrix (0–5).
   const SCORE_MIN = 0, SCORE_MAX = 5;
