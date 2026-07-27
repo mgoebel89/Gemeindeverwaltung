@@ -328,14 +328,13 @@
     const zeile = (n) => { st.y += (n || 1) * VG.LH; };
 
     // Beschriftetes Feld mit Ausfülllinie über die restliche Zeilenbreite.
-    function feld(label, wert, bisX) {
+    // Beschriftetes Feld. Der Vordruck hat hier Ausfülllinien; die bleiben
+    // beim ausgefüllten Formular bewusst WEG (Wunsch Matthias 2026-07-27) –
+    // der Wert steht schlicht hinter der Beschriftung.
+    function feld(label, wert) {
       vgFont(doc, 11, false);
       text(doc, label, VG.L, st.y);
-      const x = VG.L + doc.getTextWidth(winAnsi(label)) + 2;
-      const ende = bisX || VG.R;
-      doc.setDrawColor(0); doc.setLineWidth(0.2);
-      doc.line(x, st.y + 1.2, ende, st.y + 1.2);
-      if (wert) text(doc, String(wert), x + 1.5, st.y);
+      if (wert) text(doc, String(wert), VG.L + doc.getTextWidth(winAnsi(label)) + 3, st.y);
       zeile();
     }
 
