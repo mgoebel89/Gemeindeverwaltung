@@ -14,8 +14,6 @@
 
   // Merkt Filter-/Sortier-Zustand über Re-Renders hinweg (nur diese Session).
   const uiState = { q: '', kategorie: '', sort: '-erstelltAm', showBeendet: false };
-  // Notiz-Einträge im Bearbeiten-Modus (transient, überlebt Re-Renders).
-  const histEditing = new Set();
 
   // Markdown → HTML für die Notiz-Vorschau (reiner Anzeige-Zweck, ein Nutzer,
   // internes Netz – wie in der Aufgaben-Detailkarte).
@@ -457,24 +455,13 @@
     const card = el('div', { class: 'card' });
     card.appendChild(el('h3', {}, 'Vorgangshistorie'));
 
-    // Add-Leiste (Phase 2: Notiz/Referenz/Dokument; ToDo/Kosten folgen in Phase 3)
-    function addEntry(typ, extra) {
-      const e = Object.assign(M.emptyHistorieEintrag(typ), extra || {});
-      v.historie.push(e);
-      if (typ === 'notiz') histEditing.add(e.id);
-      persist();
-      refresh();
-    }
+    // Anlegen läuft über EINEN Knopf; die Typwahl passiert im Overlay. Die
+    // Zeitleiste bleibt damit Chronik statt Formularleiste.
     card.appendChild(el('div', { class: 'vg-addbar' }, [
-      el('span', { class: 'vg-addbar-label' }, 'Eintrag hinzufügen:'),
-      el('button', { class: 'btn-sm', onClick: () => addEntry('notiz', { textMd: '' }) }, '📝 Notiz'),
-      el('button', { class: 'btn-sm', onClick: () => addEntry('todo', { titel: '', faellig: '', prioritaet: '', vikunjaTaskId: null, erledigt: false }) }, '☑ ToDo'),
-      el('button', { class: 'btn-sm', onClick: () => addEntry('foto', { bildunterschrift: '' }) }, '📷 Foto'),
-      el('button', { class: 'btn-sm', onClick: () => addEntry('kosten', { betrag: 0, beschreibung: '', haendler: '', belegdatum: '', haushaltsstelleId: (v.haushaltsstellen && v.haushaltsstellen.length === 1 ? v.haushaltsstellen[0] : ''), paperlessDocs: [] }) }, '€ Kosten'),
-      el('button', { class: 'btn-sm', onClick: () => addEntry('referenz', { refVorgangId: '', notiz: '' }) }, '↪ Referenz'),
-      el('button', { class: 'btn-sm', onClick: () => addEntry('dokument', { titel: '', paperlessDocs: [] }) }, '📄 Dokument'),
-      el('button', { class: 'btn-sm', onClick: () => addEntry('angebot', { anbieter: '', preis: null, beschreibung: '', paperlessDocs: [] }) }, '🧾 Angebot'),
-      el('button', { class: 'btn-sm', onClick: () => openAuswahlAssistent(v, null, persist, refresh) }, '⚖ Auswahl'),
+      el('button', {
+        class: 'btn-sm btn-primary',
+        onClick: () => openEintragOverlay(v, null, persist, refresh),
+      }, '+ Eintrag'),
     ]));
 
     // Zeitleiste (nur sichtbare Einträge; neueste zuerst nach Datum)
@@ -482,7 +469,7 @@
       .sort((a, b) => String(b.datum || '').localeCompare(String(a.datum || '')));
 
     if (sichtbar.length === 0) {
-      card.appendChild(el('div', { class: 'help vg-hist-empty' }, 'Noch keine Einträge. Beginne oben mit Notiz, Referenz oder Dokument.'));
+      card.appendChild(el('div', { class: 'help vg-hist-empty' }, 'Noch keine Einträge. Lege oben den ersten an.'));
       return card;
     }
 
@@ -492,42 +479,272 @@
     return card;
   }
 
+  // Zeitleisten-Karte: rein lesend. Klick öffnet das Bearbeiten-Overlay.
+  // Ausnahmen sind zwei Schnellaktionen, die täglich gebraucht werden und
+  // deshalb direkt in der Liste bleiben (Klasse `vg-hist-quick`): ToDo abhaken
+  // und ein Foto groß ansehen.
   function histEntry(v, e, persist, refresh) {
     const meta = HIST_TYP_META[e.typ] || { label: e.typ, icon: '•' };
-    const wrap = el('div', { class: 'vg-hist-entry' + (e.vertraulich ? ' vg-hist-vertraulich' : '') });
-
-    // Kopfzeile: Typ · Datum · Vertraulich · Löschen
-    const dateInput = el('input', {
-      type: 'date', class: 'input vg-hist-date', value: e.datum || '',
-      onChange: (ev) => { e.datum = ev.target.value; persist(); refresh(); },
+    const wrap = el('div', {
+      class: 'vg-hist-entry vg-hist-card' + (e.vertraulich ? ' vg-hist-vertraulich' : ''),
+      role: 'button', tabindex: '0',
+      title: 'Zum Bearbeiten anklicken',
     });
-    const vToggle = el('label', { class: 'vg-hist-vtoggle', title: 'Vertraulich – nur für die Leitung' }, [
-      el('input', { type: 'checkbox', checked: !!e.vertraulich, onChange: (ev) => { e.vertraulich = ev.target.checked; persist(); refresh(); } }),
-      el('span', {}, '🔒'),
-    ]);
-    const delBtn = el('button', {
-      class: 'btn-sm btn-danger', title: 'Eintrag löschen', onClick: () => {
-        if (!confirmDialog('Diesen Historieneintrag löschen?')) return;
-        v.historie = v.historie.filter(x => x.id !== e.id);
-        histEditing.delete(e.id);
-        persist(); refresh();
-      },
-    }, '✕');
+    const oeffnen = () => openEintragOverlay(v, e, persist, refresh);
+    wrap.addEventListener('click', (ev) => {
+      if (ev.target.closest && ev.target.closest('.vg-hist-quick')) return;
+      oeffnen();
+    });
+    wrap.addEventListener('keydown', (ev) => {
+      if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); oeffnen(); }
+    });
+
     wrap.appendChild(el('div', { class: 'vg-hist-head' }, [
       el('span', { class: 'vg-hist-type' }, meta.icon + ' ' + meta.label),
-      dateInput,
+      el('span', { class: 'vg-hist-datum' }, e.datum ? formatDatum(e.datum) : '(ohne Datum)'),
       el('div', { class: 'spacer', style: 'flex:1;' }),
-      vToggle,
-      delBtn,
-    ]));
+      e.vertraulich ? el('span', { class: 'vg-hist-lock', title: 'Vertraulich – nur für die Leitung' }, '🔒') : null,
+      el('span', { class: 'vg-hist-open help' }, 'Bearbeiten ›'),
+    ].filter(Boolean)));
 
-    // Körper je Typ
-    wrap.appendChild(histBody(v, e, persist, refresh));
+    wrap.appendChild(histSummary(v, e, persist, refresh));
     return wrap;
   }
 
+  // --- Kurzfassung je Typ für die Zeitleiste (lesend) ---
+  function histSummary(v, e, persist, refresh) {
+    const box = el('div', { class: 'vg-hist-sum' });
+    const leer = (t) => el('span', { class: 'help' }, t);
+
+    if (e.typ === 'notiz') {
+      const txt = String(e.textMd || '').replace(/[#*_>`-]/g, ' ').replace(/\s+/g, ' ').trim();
+      box.appendChild(txt ? el('span', {}, txt.length > 220 ? txt.slice(0, 220) + ' …' : txt) : leer('(leere Notiz)'));
+
+    } else if (e.typ === 'todo') {
+      if (!e.vikunjaTaskId) {
+        box.appendChild(leer(e.titel ? e.titel + ' – noch nicht in Vikunja angelegt' : '(ToDo noch nicht angelegt)'));
+      } else {
+        // Schnellaktion: abhaken ohne Umweg über das Overlay.
+        const cb = el('input', { type: 'checkbox', class: 'vg-hist-quick', checked: !!e.erledigt });
+        const titel = el('span', { class: 'vg-todo-title' + (e.erledigt ? ' vg-todo-done' : '') }, e.titel || '(ohne Titel)');
+        const hinweis = el('span', { class: 'help' }, '');
+        cb.addEventListener('change', async () => {
+          const want = cb.checked;
+          cb.disabled = true;
+          try {
+            await GR.api.completeTask(e.vikunjaTaskId, want);
+            e.erledigt = want; persist();
+            titel.className = 'vg-todo-title' + (want ? ' vg-todo-done' : '');
+          } catch (err) { cb.checked = !want; hinweis.textContent = 'Vikunja-Fehler: ' + err.message; }
+          finally { cb.disabled = false; }
+        });
+        box.appendChild(el('label', { class: 'vg-todo-check vg-hist-quick' }, [cb, titel]));
+        const meta = todoMetaText(e);
+        if (meta) box.appendChild(el('span', { class: 'vg-todo-meta' }, meta));
+        box.appendChild(hinweis);
+      }
+
+    } else if (e.typ === 'kosten') {
+      const teile = [el('strong', {}, eur(e.betrag || 0))];
+      if (e.beschreibung) teile.push(el('span', {}, e.beschreibung));
+      if (e.haendler) teile.push(el('span', { class: 'help' }, e.haendler));
+      const h = e.haushaltsstelleId && store.getHaushaltsstelle(e.haushaltsstelleId);
+      if (h) teile.push(el('span', { class: 'help' }, (h.nummer ? h.nummer + ' · ' : '') + (h.bezeichnung || '')));
+      const docs = (e.paperlessDocs || []).length;
+      if (docs) teile.push(el('span', { class: 'help' }, '📄 ' + docs));
+      box.appendChild(el('div', { class: 'vg-hist-sum-row' }, teile));
+
+    } else if (e.typ === 'referenz') {
+      if (!e.refVorgangId) box.appendChild(leer('(kein Vorgang gewählt)'));
+      else {
+        const ziel = store.getVorgang(e.refVorgangId);
+        if (ziel && roles.canSeeVorgang(ziel)) {
+          box.appendChild(el('div', { class: 'vg-hist-sum-row' }, [
+            statusBadge(ziel.status),
+            el('span', {}, '→ ' + (ziel.titel || '(ohne Titel)')),
+          ]));
+        } else box.appendChild(leer(ziel ? '(vertraulicher Vorgang)' : '(Vorgang nicht gefunden)'));
+      }
+      if (e.notiz) box.appendChild(el('div', { class: 'help' }, e.notiz));
+
+    } else if (e.typ === 'dokument') {
+      const docs = (e.paperlessDocs || []);
+      const zeile = [];
+      if (e.titel) zeile.push(el('span', {}, e.titel));
+      zeile.push(el('span', { class: 'help' }, docs.length ? '📄 ' + docs.length + ' Dokument(e)' : 'noch kein Dokument'));
+      box.appendChild(el('div', { class: 'vg-hist-sum-row' }, zeile));
+
+    } else if (e.typ === 'foto') {
+      if (e.bildunterschrift) box.appendChild(el('div', {}, e.bildunterschrift));
+      const fotos = store.listVorgangFotos(v.id).filter(f => f.kind === 'hist_' + e.id);
+      if (!fotos.length) box.appendChild(leer('(noch kein Foto)'));
+      else {
+        // Schnellaktion: Foto groß ansehen, ohne das Overlay zu öffnen.
+        box.appendChild(el('div', { class: 'vg-foto-grid vg-hist-quick' }, fotos.map(f =>
+          el('a', { class: 'vg-foto', href: store.vorgangFotoUrl(f.id), target: '_blank', rel: 'noopener' },
+            [el('img', { src: store.vorgangFotoUrl(f.id), alt: f.filename || 'Foto', loading: 'lazy' })]))));
+      }
+
+    } else if (e.typ === 'angebot') {
+      const teile = [el('strong', {}, e.anbieter || '(ohne Anbieter)')];
+      if (e.preis != null) teile.push(el('span', {}, eur(e.preis)));
+      if (e.beschreibung) teile.push(el('span', { class: 'help' }, e.beschreibung));
+      const docs = (e.paperlessDocs || []).length;
+      if (docs) teile.push(el('span', { class: 'help' }, '📄 ' + docs));
+      box.appendChild(el('div', { class: 'vg-hist-sum-row' }, teile));
+
+    } else if (e.typ === 'entscheidung') {
+      const anz = (e.teilnehmer || []).length;
+      const teile = [el('span', {}, (e.titel || 'Entscheidungsmatrix') + ' · ' + anz + ' Anbieter')];
+      if (M.entscheidungAbgeschlossen(e)) {
+        const gew = (e.teilnehmer || []).find(t => t.angebotId === e.gewaehltId);
+        teile.push(el('strong', {}, '✓ ' + (gew ? gew.name : 'gewählt')));
+      } else if (anz) {
+        const emp = (e.teilnehmer || []).find(t => t.angebotId === M.entscheidungGewinner(e));
+        if (emp) teile.push(el('span', { class: 'help' }, 'Empfehlung: ' + emp.name));
+      }
+      box.appendChild(el('div', { class: 'vg-hist-sum-row' }, teile));
+
+    } else {
+      box.appendChild(leer('(unbekannter Typ)'));
+    }
+    return box;
+  }
+
+  // Frisch angelegte, aber nie befüllte Einträge sollen keine Karteileichen
+  // hinterlassen, wenn das Overlay ohne Eingabe geschlossen wird.
+  function istLeer(v, e) {
+    const t = (s) => !String(s || '').trim();
+    switch (e.typ) {
+      case 'notiz': return t(e.textMd);
+      case 'todo': return t(e.titel) && !e.vikunjaTaskId;
+      case 'kosten': return !Number(e.betrag) && t(e.beschreibung) && t(e.haendler) && !(e.paperlessDocs || []).length;
+      case 'referenz': return t(e.refVorgangId) && t(e.notiz);
+      case 'dokument': return t(e.titel) && !(e.paperlessDocs || []).length;
+      case 'foto': return t(e.bildunterschrift)
+        && !store.listVorgangFotos(v.id).some(f => f.kind === 'hist_' + e.id);
+      case 'angebot': return t(e.anbieter) && e.preis == null && t(e.beschreibung) && !(e.paperlessDocs || []).length;
+      case 'entscheidung': return !(e.teilnehmer || []).length;
+      default: return false;
+    }
+  }
+
+  // --- Overlay zum Anlegen und Bearbeiten eines Historieneintrags ---
+  // `entry === null` startet mit der Typwahl.
+  function openEintragOverlay(v, entry, persist, onClose) {
+    const overlay = el('div', { class: 'modal-overlay' });
+    const modal = el('div', { class: 'modal vg-eintrag-modal' });
+    overlay.appendChild(modal);
+
+    let e = entry;
+    let neu = false;
+
+    function schliessen() {
+      // Ohne jede Eingabe angelegte Einträge wieder entfernen.
+      if (neu && e && istLeer(v, e)) {
+        v.historie = v.historie.filter(x => x.id !== e.id);
+        persist();
+      }
+      overlay.remove();
+      if (onClose) onClose();
+    }
+    overlay.addEventListener('click', (ev) => { if (ev.target === overlay) schliessen(); });
+    const onKey = (ev) => { if (ev.key === 'Escape') { document.removeEventListener('keydown', onKey); schliessen(); } };
+    document.addEventListener('keydown', onKey);
+
+    function waehleTyp(typ) {
+      // Die Entscheidungsmatrix hat ihren eigenen Assistenten und legt den
+      // Eintrag selbst an – hier nur weiterreichen.
+      if (typ === 'entscheidung') {
+        document.removeEventListener('keydown', onKey);
+        overlay.remove();
+        openAuswahlAssistent(v, null, persist, onClose);
+        return;
+      }
+      const vorlagen = {
+        notiz: { textMd: '' },
+        todo: { titel: '', faellig: '', prioritaet: '', vikunjaTaskId: null, erledigt: false },
+        foto: { bildunterschrift: '' },
+        kosten: {
+          betrag: 0, beschreibung: '', haendler: '', belegdatum: '', paperlessDocs: [],
+          haushaltsstelleId: (v.haushaltsstellen && v.haushaltsstellen.length === 1 ? v.haushaltsstellen[0] : ''),
+        },
+        referenz: { refVorgangId: '', notiz: '' },
+        dokument: { titel: '', paperlessDocs: [] },
+        angebot: { anbieter: '', preis: null, beschreibung: '', paperlessDocs: [] },
+      };
+      e = Object.assign(M.emptyHistorieEintrag(typ), vorlagen[typ] || {});
+      neu = true;
+      v.historie.push(e);
+      persist();
+      render();
+    }
+
+    function renderTypwahl() {
+      modal.appendChild(el('h3', {}, 'Neuer Eintrag'));
+      modal.appendChild(el('p', { class: 'help' }, 'Was soll festgehalten werden?'));
+      modal.appendChild(el('div', { class: 'vg-typwahl' }, Object.keys(HIST_TYP_META).map(typ => {
+        const m = HIST_TYP_META[typ];
+        return el('button', { class: 'vg-typ-btn', onClick: () => waehleTyp(typ) }, [
+          el('span', { class: 'vg-typ-icon' }, m.icon),
+          el('span', {}, m.label),
+        ]);
+      })));
+      modal.appendChild(el('div', { class: 'toolbar', style: 'margin-top:16px; margin-bottom:0;' }, [
+        el('button', { onClick: schliessen }, 'Abbrechen'),
+      ]));
+    }
+
+    function renderFormular() {
+      const meta = HIST_TYP_META[e.typ] || { label: e.typ, icon: '•' };
+      modal.appendChild(el('h3', {}, meta.icon + ' ' + meta.label));
+
+      const dateInput = el('input', {
+        type: 'date', class: 'input vg-hist-date', value: e.datum || '',
+        onChange: (ev) => { e.datum = ev.target.value; persist(); },
+      });
+      const vToggle = el('label', { class: 'vg-hist-vtoggle', title: 'Vertraulich – nur für die Leitung' }, [
+        el('input', {
+          type: 'checkbox', checked: !!e.vertraulich,
+          onChange: (ev) => { e.vertraulich = ev.target.checked; persist(); },
+        }),
+        el('span', {}, '🔒 Vertraulich'),
+      ]);
+      modal.appendChild(el('div', { class: 'vg-eintrag-kopf' }, [
+        el('div', { class: 'vg-field' }, [el('label', { class: 'vg-label' }, 'Datum'), dateInput]),
+        vToggle,
+      ]));
+
+      modal.appendChild(histBody(v, e, persist, render));
+
+      modal.appendChild(el('div', { class: 'toolbar', style: 'margin-top:16px; margin-bottom:0;' }, [
+        el('button', { class: 'btn-primary', onClick: schliessen }, 'Fertig'),
+        el('div', { class: 'spacer', style: 'flex:1;' }),
+        el('button', {
+          class: 'btn-danger', onClick: () => {
+            if (!confirmDialog('Diesen Historieneintrag löschen?')) return;
+            v.historie = v.historie.filter(x => x.id !== e.id);
+            persist();
+            neu = false;
+            document.removeEventListener('keydown', onKey);
+            overlay.remove();
+            if (onClose) onClose();
+          },
+        }, 'Löschen'),
+      ]));
+    }
+
+    function render() {
+      modal.innerHTML = '';
+      if (!e) renderTypwahl(); else renderFormular();
+    }
+
+    render();
+    document.body.appendChild(overlay);
+  }
+
   function histBody(v, e, persist, refresh) {
-    if (e.typ === 'notiz') return notizBody(e, persist, refresh);
+    if (e.typ === 'notiz') return notizBody(e, persist);
     if (e.typ === 'todo') return todoBody(v, e, persist, refresh);
     if (e.typ === 'kosten') return kostenBody(v, e, persist, refresh);
     if (e.typ === 'referenz') return referenzBody(v, e, persist);
@@ -739,30 +956,23 @@
     return box;
   }
 
-  // --- Notiz (Markdown mit Vorschau/Bearbeiten) ---
-  function notizBody(e, persist, refresh) {
+  // --- Notiz (Markdown mit Live-Vorschau) ---
+  // Läuft nur noch im Overlay, deshalb immer direkt bearbeitbar – der frühere
+  // Umschalter „Bearbeiten/Fertig" entfällt, „Fertig" schließt das Overlay.
+  function notizBody(e, persist) {
     const box = el('div', { class: 'vg-hist-body' });
-    if (histEditing.has(e.id)) {
-      const ta = el('textarea', {
-        class: 'input vg-md-input', rows: '4', placeholder: 'Notiz (Markdown: **fett**, - Liste, # Überschrift …)',
-        onChange: (ev) => { e.textMd = ev.target.value; persist(); },
-      });
-      ta.value = e.textMd || '';
-      const preview = el('div', { class: 'vg-md' });
-      preview.innerHTML = mdRender(e.textMd || '');
-      ta.addEventListener('input', () => { e.textMd = ta.value; preview.innerHTML = mdRender(ta.value); });
-      const doneBtn = el('button', { class: 'btn-sm btn-primary', onClick: () => { e.textMd = ta.value; persist(); histEditing.delete(e.id); refresh(); } }, 'Fertig');
-      box.appendChild(ta);
-      box.appendChild(el('div', { class: 'vg-md-preview-label' }, 'Vorschau'));
-      box.appendChild(preview);
-      box.appendChild(el('div', { style: 'margin-top:6px;' }, [doneBtn]));
-    } else {
-      const rendered = el('div', { class: 'vg-md' });
-      rendered.innerHTML = e.textMd ? mdRender(e.textMd) : '<span class="help">(leere Notiz)</span>';
-      const editBtn = el('button', { class: 'btn-sm', onClick: () => { histEditing.add(e.id); refresh(); } }, 'Bearbeiten');
-      box.appendChild(rendered);
-      box.appendChild(el('div', { style: 'margin-top:6px;' }, [editBtn]));
-    }
+    const ta = el('textarea', {
+      class: 'input vg-md-input', rows: '6',
+      placeholder: 'Notiz (Markdown: **fett**, - Liste, # Überschrift …)',
+      onChange: (ev) => { e.textMd = ev.target.value; persist(); },
+    });
+    ta.value = e.textMd || '';
+    const preview = el('div', { class: 'vg-md' });
+    preview.innerHTML = mdRender(e.textMd || '');
+    ta.addEventListener('input', () => { e.textMd = ta.value; preview.innerHTML = mdRender(ta.value); });
+    box.appendChild(ta);
+    box.appendChild(el('div', { class: 'vg-md-preview-label' }, 'Vorschau'));
+    box.appendChild(preview);
     return box;
   }
 

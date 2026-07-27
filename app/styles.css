@@ -909,6 +909,41 @@ tr:hover td { background: #fafbfc; }
 .vg-hist-vtoggle input { width: 15px; height: 15px; }
 .vg-hist-body { }
 
+/* Zeitleisten-Karte: lesend, klickbar. Bearbeitet wird im Overlay. */
+.vg-hist-card { cursor: pointer; transition: border-color .12s, box-shadow .12s; }
+.vg-hist-card:hover, .vg-hist-card:focus-visible {
+  border-color: var(--primary); box-shadow: 0 1px 6px rgba(0, 0, 0, .07); outline: none;
+}
+.vg-hist-card .vg-hist-head { margin-bottom: 6px; }
+.vg-hist-datum { font-size: 0.85rem; color: var(--muted); }
+.vg-hist-open { font-size: 0.8rem; opacity: 0; transition: opacity .12s; }
+.vg-hist-card:hover .vg-hist-open, .vg-hist-card:focus-visible .vg-hist-open { opacity: 1; }
+.vg-hist-sum { font-size: 0.92rem; line-height: 1.45; }
+.vg-hist-sum-row { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+/* Schnellaktionen in der Karte dürfen den Karten-Klick nicht auslösen. */
+.vg-hist-quick { cursor: default; }
+.vg-hist-card .vg-foto-grid { margin: 6px 0 0; }
+.vg-hist-card .vg-foto { width: 96px; }
+.vg-hist-card .vg-foto img { width: 96px; height: 72px; }
+
+/* Typwahl im Eintrags-Overlay */
+.vg-eintrag-modal { max-width: 720px; }
+.vg-typwahl {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  gap: 8px; margin-top: 12px;
+}
+.vg-typ-btn {
+  display: flex; flex-direction: column; align-items: center; gap: 6px;
+  padding: 14px 8px; border: 1px solid var(--border); border-radius: var(--radius);
+  background: white; cursor: pointer; font-size: 0.9rem;
+}
+.vg-typ-btn:hover { border-color: var(--primary); background: #f7f9fc; }
+.vg-typ-icon { font-size: 1.5rem; line-height: 1; }
+.vg-eintrag-kopf {
+  display: flex; align-items: flex-end; gap: 16px; flex-wrap: wrap;
+  padding-bottom: 12px; margin-bottom: 12px; border-bottom: 1px solid var(--border);
+}
+
 /* Verlaufsfotos (Typ „Foto") */
 .vg-foto-grid { display: flex; flex-wrap: wrap; gap: 8px; margin: 8px 0; }
 .vg-foto { position: relative; margin: 0; width: 140px; }

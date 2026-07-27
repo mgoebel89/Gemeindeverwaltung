@@ -405,6 +405,12 @@ Zeitleiste. Kategorien sind unter *Einstellungen → Vorgänge & Projekte* pfleg
   **Notiz** (Markdown mit Live-Vorschau), **ToDo**, **Foto**, **Dokument**, **Referenz** auf
   einen anderen Vorgang, **Kosten**, **Angebot** und **Auswahl** (Entscheidungsmatrix). Beim
   Ändern des Datums sortiert sich der Eintrag automatisch ein.
+- **Die Zeitleiste ist eine Leseansicht.** Jeder Eintrag erscheint als kompakte Karte mit
+  Kurzfassung; **ein Klick auf die Karte öffnet das Bearbeiten-Overlay** (Datum, Vertraulich,
+  Inhalt, Löschen). Zwei Dinge bleiben bewusst direkt in der Liste, weil sie täglich gebraucht
+  werden: **ToDo abhaken** und **ein Foto groß ansehen**. Neue Einträge entstehen über den einen
+  Knopf **+ Eintrag**; der Typ wird im Overlay gewählt. Wird ein neu angelegter Eintrag ohne
+  jede Eingabe geschlossen, verwirft ihn die App wieder – so bleiben keine leeren Karten übrig.
 - **Angebote & Entscheidungsmatrix:** Ein **Angebot** hat Anbieter, Angebotspreis, Beschreibung
   und einen verknüpften **Paperless**-Beleg. Über **⚖ Auswahl** startet ein geführter Assistent:
   Schritt 1 die zu vergleichenden Angebote anhaken, Schritt 2 die Vergleichs­eigenschaften mit
