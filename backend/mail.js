@@ -141,18 +141,24 @@ async function listInbox({ limit, search } = {}) {
   return withImap(async (client) => {
     const lock = await client.getMailboxLock('INBOX');
     try {
+      // WICHTIG: `search()` liefert ohne `{ uid: true }` SEQUENZNUMMERN (1..N),
+      // keine UIDs. Beides zu verwechseln liefert stillschweigend die falschen
+      // Nachrichten – `fetch(..., { uid: true })` liest die Sequenznummern dann
+      // als UIDs und trifft je nach Alter des Postfachs Jahre daneben.
       let uids;
       const q = String(search || '').trim();
       if (q) {
         const [betreff, von] = await Promise.all([
-          client.search({ subject: q }),
-          client.search({ from: q }),
+          client.search({ subject: q }, { uid: true }),
+          client.search({ from: q }, { uid: true }),
         ]);
         uids = [...new Set([...(betreff || []), ...(von || [])])];
       } else {
-        uids = await client.search({ all: true });
+        uids = await client.search({ all: true }, { uid: true });
       }
-      uids = (uids || []).sort((a, b) => a - b).slice(-max).reverse();
+      // Höchste UIDs = zuletzt eingegangen.
+      uids = (uids || []).map(Number).filter(n => Number.isFinite(n))
+        .sort((a, b) => a - b).slice(-max).reverse();
       if (!uids.length) return { messages: [], gesamt: 0 };
 
       const out = [];

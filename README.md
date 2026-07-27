@@ -646,9 +646,10 @@ Ersatz für das gewohnte Mailprogramm**, sondern die Brücke zwischen Postfach u
 Post durchsehen, eine Nachricht einem **Vorgang zuordnen**, aus dem Vorgang heraus antworten.
 
 - **Posteingang** (`#/mail`) zeigt die **INBOX**, 50 Nachrichten je Schritt („Mehr laden"),
-  links die Liste und rechts eine **Vorschau**. Ein **einfacher Klick** zeigt die Nachricht in
-  der Vorschau (mit Zuordnen, Antworten und „Großes Fenster"), ein **Doppelklick** – oder Enter –
-  öffnet sie im großen Fenster. Auf schmalen Geräten rückt die Vorschau unter die Liste.
+  links die Liste und rechts eine **Vorschau**. Jede Listenzeile ist **zweizeilig**: oben der
+  Absender, darunter der Betreff, rechts das Datum. Ein **einfacher Klick** zeigt die Nachricht
+  in der Vorschau (mit Zuordnen, Antworten und „Großes Fenster"), ein **Doppelklick** – oder
+  Enter – öffnet sie im großen Fenster. Auf schmalen Geräten rückt die Vorschau unter die Liste.
 - **Sortierung** über die Auswahl neben der Suche: *Neueste zuerst* (Standard), *Älteste
   zuerst*, *Absender A–Z*, *Betreff A–Z*. Sortiert wird im Browser, ohne neu zu laden; die Wahl
   wird gemerkt (`localStorage`). Nachrichten ohne verwertbares Datum landen ans Ende statt

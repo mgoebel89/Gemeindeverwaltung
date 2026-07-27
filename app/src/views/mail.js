@@ -193,11 +193,15 @@
       class: 'mail-zeile' + (m.gelesen ? '' : ' mail-ungelesen'),
       role: 'button', tabindex: '0', title: 'Klicken für Vorschau, Doppelklick öffnet die Nachricht',
     });
-    row.appendChild(el('div', { class: 'mail-von' }, kuerzen(m.von, 40)));
-    row.appendChild(el('div', { class: 'mail-betreff' }, [
-      el('span', {}, kuerzen(m.betreff, 90)),
-      m.hatAnhang ? el('span', { class: 'mail-clip', title: 'Anhang' }, '📎') : null,
-    ].filter(Boolean)));
+    // Zweizeilig: oben der Absender, darunter der Betreff. Abgeschnitten wird
+    // per CSS-Ellipse, damit die volle Spaltenbreite genutzt wird.
+    row.appendChild(el('div', { class: 'mail-haupt' }, [
+      el('div', { class: 'mail-von', title: m.von || '' }, m.von || '(kein Absender)'),
+      el('div', { class: 'mail-betreff', title: m.betreff || '' }, [
+        m.hatAnhang ? el('span', { class: 'mail-clip', title: 'Anhang' }, '📎 ') : null,
+        el('span', {}, m.betreff || '(kein Betreff)'),
+      ].filter(Boolean)),
+    ]));
     row.appendChild(el('div', { class: 'mail-datum' }, datumZeit(m.datum)));
     return row;
   }
