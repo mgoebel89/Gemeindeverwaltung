@@ -487,7 +487,7 @@
       el('h3', {}, 'E-Mail-Postfach'),
       el('p', { class: 'help' }, 'Zugang zum Postfach der Gemeinde (IMAP zum Lesen, SMTP zum Senden). Host, Benutzer und Passwort werden serverseitig im Container gespeichert – nicht im Browser – und laufen nicht in die NocoDB-Sicherung.'),
       el('div', { class: 'help', style: 'margin-bottom:8px;' }, 'Übliche Ports: IMAP 993 (SSL), SMTP 587 (STARTTLS) oder 465 (SSL).'),
-      el('div', { class: 'help', style: 'margin-bottom:8px;' }, 'Wichtig bei Evanzo und anderem Shared-Hosting: Hier gehört der Servername des Anbieters hinein (z. B. s101.evanzo-server.de), NICHT mail.eigene-domain.de. Beide zeigen zwar auf dieselbe Maschine, aber nur der Anbietername steht im TLS-Zertifikat. Meldet der Test „does not match certificate's altnames", steht der richtige Name in der Fehlermeldung hinter „cert's altnames: DNS:" – den hier eintragen. Der Benutzername bleibt die vollständige E-Mail-Adresse.'),
+      el('div', { class: 'help', style: 'margin-bottom:8px;' }, 'Wichtig bei Evanzo und anderem Shared-Hosting: Hier gehört der Servername des Anbieters hinein (z. B. s101.evanzo-server.de), NICHT mail.eigene-domain.de. Beide zeigen zwar auf dieselbe Maschine, aber nur der Anbietername steht im TLS-Zertifikat. Meldet der Test „does not match certificate\'s altnames", steht der richtige Name in der Fehlermeldung hinter „cert\'s altnames: DNS:" – den hier eintragen. Der Benutzername bleibt die vollständige E-Mail-Adresse.'),
       el('div', { class: 'grid-2' }, [
         el('div', {}, [el('label', {}, 'Server (IMAP und SMTP)'), mlHost]),
         el('div', {}, [el('label', {}, 'Benutzer / E-Mail-Adresse'), mlUser]),
