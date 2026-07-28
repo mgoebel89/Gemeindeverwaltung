@@ -170,7 +170,7 @@ Browser-Speicher leert.
 
 | Bereich                    | Ort                                          |
 |----------------------------|----------------------------------------------|
-| Sitzungen, Mitglieder, Settings | SQLite `/var/lib/gemeindeverwaltung/data.db` |
+| Sitzungen, Personen-Stammdaten, Settings | SQLite `/var/lib/gemeindeverwaltung/data.db` |
 | Anhänge                    | `/var/lib/gemeindeverwaltung/attachments/<sitzungId>/<attachmentId>` |
 | Backups                    | `/var/backups/gemeindeverwaltung/<DATUM>/`   |
 | App-Code                   | `/opt/gemeindeverwaltung/`                   |
@@ -197,6 +197,70 @@ nicht funktionieren, ist aber für UI-Tests irrelevant.
 - **Mehrere Geräte gleichzeitig:** WebSocket-Broadcast verteilt Änderungen in
   Echtzeit; letzte Schreibung gewinnt bei gleichzeitigem Tippen auf dasselbe
   Feld.
+
+## Stammdaten (Personen aller Module)
+
+Unter **Stammdaten** (`#/stammdaten`) stehen alle Personen und Firmen an einer
+Stelle. Früher gab es dafür fünf getrennte Listen — Ratsmitglieder, Mieter,
+Empfänger von Bargeldauslagen, Arbeiter/Firmen und Vertragspartner. Sie sind zu
+**einer** Liste zusammengeführt; **Rollen** sagen, wo jemand auftaucht:
+
+| Rolle | Modul | Zusätzliche Felder |
+|---|---|---|
+| Ratsmitglied | Sitzungen | Funktion (Ortsbürgermeister/Beigeordneter/Ratsmitglied) |
+| Mieter | Vermietung | Ortsfremd (höhere Grundmiete) |
+| Auslagen-Empfänger | Bargeldauslagen | — (nutzt die Bankverbindung) |
+| Arbeiter/Firma | Arbeitszeiten | — (nutzt Bank-, Steuer- und SV-Daten) |
+| Vertragspartner | Verträge und Pacht | — (mehrzeilige Anschrift möglich) |
+
+Eine Person kann mehrere Rollen haben: der Bürgermeister ist Ratsmitglied und
+gleichzeitig Empfänger einer Bargeldauslage — ein Datensatz, eine Bankverbindung.
+Firmen laufen im selben Datensatztyp: Feld **Firma** gefüllt ⇒ die Firma ist der
+Anzeigename, die Person darunter der Ansprechpartner.
+
+**Migration ohne Datenverlust.** Beim ersten Start nach dem Update übernimmt das
+Backend die fünf alten Tabellen einmalig in `personen`:
+
+- Jede Person **behält die Kennung ihres alten Datensatzes**. Deshalb zeigen alle
+  Vermietungen, Auslagen, Arbeitszeiten, Abrechnungen, Verträge und
+  Anwesenheitslisten unverändert auf die richtigen Personen — kein Verweis wurde
+  umgeschrieben.
+- Das Feldschema ist die **Vereinigung** aller fünf Quellen, nicht die
+  Schnittmenge. Zwei Namensfallen sind dabei explizit aufgelöst:
+  `empfaenger.name` war der **Nachname**, `vertragspartner.name` dagegen die
+  **Firma**; die mehrzeilige Vertragspartner-Anschrift bleibt als eigenes Feld
+  neben Straße/PLZ/Ort erhalten, statt beim Migrieren zerlegt zu werden.
+- **Die alten Tabellen bleiben stehen** (`mitglieder`, `mieter`, `empfaenger`,
+  `arbeiter`, `vertragspartner`) und werden nicht mehr beschrieben — sie sind der
+  Rückweg. Die Migration ist idempotent (Marker `personenMigration` in den
+  Settings, zusätzlich wird jede bereits vorhandene Kennung übersprungen).
+- **Doppelt geführte Personen werden NICHT automatisch verschmolzen.** Die
+  Stammdaten zeigen nur die Verdachtsfälle (gleicher Name bzw. gleiche IBAN);
+  zusammengeführt wird erst mit dem geplanten Dubletten-Assistenten.
+
+**Kompatibilität:** `store.listMieter()`, `listEmpfaenger()`, `listArbeiter()`,
+`listVertragspartner()` und `listMitglieder()` gibt es weiter — sie sind Sichten
+auf die Personenliste und liefern die alte Datensatzform. Dieselben Sichten gibt
+es im Backend (`db.js`), so dass Routen, PDFs und der NocoDB-Sync unverändert
+laufen. Zwei Regeln dabei: `list*()` filtert nach Rolle (das speist die
+Auswahllisten), `get*()` bewusst **nicht** — sonst zeigte eine alte Vermietung
+ihren Mieter nicht mehr an, nur weil dessen Rolle inzwischen entfernt wurde. Und
+`delete*()` entfernt **nur die Rolle**; gelöscht wird eine Person erst, wenn sie
+in keinem Modul mehr vorkommt. Die alten Adressen `#/mieter`, `#/arbeiter`,
+`#/vertragspartner` und `#/auslagen-stammdaten` leiten auf den passenden
+Rollenfilter der Stammdaten um.
+
+**Sensible Daten:** Bankverbindung, Steuer-ID, Sozialversicherungsnummer und
+Geburtsdatum sind nur in der **Leitungs-Ansicht** sichtbar und änderbar (Rolle
+wie bei den Vorgängen, optional per PIN). Bearbeitet ein Ratsmitglied eine
+Person, bleiben diese Felder unangetastet — sie werden gar nicht erst
+angezeigt. Die PDFs (Auslagen-Formular, Lohnabrechnung) drucken die IBAN
+unverändert, sonst wären Abrechnungen in der Rats-Ansicht nicht erstellbar.
+Ohne gesetzten Leitungs-PIN ist das **Blickschutz, kein Zugangsschutz**.
+
+**Löschen** ist nur möglich, wenn die Person in keinem Modul mehr verwendet wird;
+andernfalls nennt die App die Fundstellen und verweist auf „Aktiv"-Haken
+entfernen oder die einzelne Rolle abwählen.
 
 ## Modul „Dokumente" (Paperless-ngx)
 
@@ -317,7 +381,7 @@ den Navigationspunkt **Vermietung**.
 
 **Ablauf (drei Status):**
 1. **geplant** – Termin, Objekt, Anlass und Mieter erfassen. Mieter werden dauerhaft
-   gespeichert (Menü **Mieter**) und stehen bei jeder weiteren Vermietung per
+   gespeichert (unter **Stammdaten**, Rolle *Mieter*) und stehen bei jeder weiteren Vermietung per
    Suche zur Auswahl. Anwohner/Ortsfremd wird pro Mieter hinterlegt und je
    Vermietung überschrieben.
 2. **Vertrag** – Zähler-Anfangsstände (Strom kWh, Gas cbm) erfassen. Beim Erstellen
@@ -392,8 +456,8 @@ Vorgänge und Arbeitszeiten buchen alle auf dieselben Stellen – keine Doppelpf
   + abgerechnete und ausgezahlte **Arbeitszeiten**. Offene Auslagen-Entwürfe und reine
   Zeiterfassungen zählen bewusst noch nicht. Der Tooltip der Spalte schlüsselt auf, welcher
   Anteil woher kommt.
-- **Anlegen/Bearbeiten/Löschen** direkt hier (derselbe Dialog wie früher unter den
-  Auslagen-Stammdaten; dort stehen jetzt nur noch die Empfänger).
+- **Anlegen/Bearbeiten/Löschen** direkt hier (die Empfänger sind in die
+  **Stammdaten** umgezogen, Rolle *Auslagen-Empfänger*).
 
 ## Modul „Vorgänge & Projekte"
 
@@ -460,7 +524,8 @@ Navigationspunkt **Bargeldauslagen**.
    Hörschhausen) plus die Bild-Scans als Folgeseiten, als ein PDF zum
    Herunterladen und manuellen E-Mail-Versand.
 
-**Stammdaten** (Empfänger, Haushaltsstellen) werden dauerhaft gespeichert und –
+Die **Empfänger** stehen unter **Stammdaten** (Rolle *Auslagen-Empfänger*), die
+**Haushaltsstellen** im Modul *Haushalt*. Beides wird dauerhaft gespeichert und –
 wie alle Module – zusätzlich nach NocoDB gesichert (Tabellen `Empfaenger`,
 `Haushaltsstellen`, `Auslagen`, jeweils mit vollständigem `Payload`). Neue
 Zieltabellen legt „Schema initialisieren" in den Einstellungen an.
@@ -504,7 +569,7 @@ die übrigen Unterschriftsfelder bleiben leer.
 
 Erfasst Arbeitsleistungen für die Gemeinde – von **Gemeindearbeitern** ebenso wie von
 **beauftragten Firmen** – und rechnet sie je Person/Firma und Zeitraum ab. Drei Ansichten:
-`#/arbeitszeiten` (Erfassung), `#/arbeiter` (Stammdaten), `#/arbeitsabrechnungen`.
+`#/arbeitszeiten` (Erfassung), `#/stammdaten?rolle=arbeiter` (Personen), `#/arbeitsabrechnungen`.
 
 - **Leistungserbringer** sind **ein** Stammdatentyp (kein Person/Firma-Umschalter): immer
   Vor-/Nachname, dazu ein **optionales Feld „Firma"**. Ist es gesetzt, erscheint die Firma als
@@ -587,8 +652,9 @@ nächster Verlängerungsstichtag, **Kündigungsfrist** (Monate) → daraus wird 
 **spätester Kündigungstermin** live berechnet, **Erinnerungsvorlauf** (Tage, pro
 Vertrag frei), Status (aktiv/gekündigt/ausgelaufen) und Notiz.
 
-**Vertragspartner** (`#/vertragspartner`): wiederverwendbare Stammdaten (Name,
-Ansprechpartner, Kontakt, Anschrift), die bei jedem Vertrag zur Auswahl stehen.
+**Vertragspartner** (`#/stammdaten?rolle=partner`): wiederverwendbare Stammdaten
+(Name/Firma, Ansprechpartner, Kontakt, Anschrift), die bei jedem Vertrag zur
+Auswahl stehen — seit der Zusammenführung Teil der zentralen Personenliste.
 
 **Paperless-Verknüpfung:** Zu jedem Vertrag können **mehrere** Dokumente aus
 **Paperless-ngx** verknüpft werden – entweder ein **bestehendes** Dokument über den

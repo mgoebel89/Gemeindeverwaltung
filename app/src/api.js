@@ -44,7 +44,13 @@
   async function putSitzung(s) { return jsonFetch(`/api/sitzungen/${encodeURIComponent(s.id)}`, { method: 'PUT', body: s }); }
   async function deleteSitzungRemote(id) { return jsonFetch(`/api/sitzungen/${encodeURIComponent(id)}`, { method: 'DELETE' }); }
 
-  // --- Mitglieder ---
+  // --- Personen-Stammdaten (Rat, Mieter, Empfänger, Arbeiter, Vertragspartner) ---
+  async function listPersonen() { return jsonFetch('/api/personen'); }
+  async function putPerson(p) { return jsonFetch(`/api/personen/${encodeURIComponent(p.id)}`, { method: 'PUT', body: p }); }
+  async function deletePersonRemote(id) { return jsonFetch(`/api/personen/${encodeURIComponent(id)}`, { method: 'DELETE' }); }
+  async function personenMigration() { return jsonFetch('/api/personen-migration'); }
+
+  // --- Mitglieder (Sicht auf die Personen mit Rolle „rat") ---
   async function putMitglied(m) { return jsonFetch(`/api/mitglieder/${encodeURIComponent(m.id)}`, { method: 'PUT', body: m }); }
   async function deleteMitgliedRemote(id) { return jsonFetch(`/api/mitglieder/${encodeURIComponent(id)}`, { method: 'DELETE' }); }
 
@@ -272,6 +278,7 @@
   GR.api = {
     health, snapshot,
     putSitzung, deleteSitzungRemote,
+    listPersonen, putPerson, deletePersonRemote, personenMigration,
     putMitglied, deleteMitgliedRemote,
     putSettings,
     listAttachments, uploadAttachment, deleteAttachment, attachmentUrl,

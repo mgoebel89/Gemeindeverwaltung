@@ -812,6 +812,37 @@ tr:hover td { background: #fafbfc; }
 .chip-x:hover { color: #c53030; }
 .aufg-label-add { max-width: 260px; }
 
+/* ===== Stammdaten: Personen (alle Rollen in einer Liste) ===== */
+.pers-filterbar {
+  display: flex; gap: 10px; flex-wrap: wrap; align-items: center;
+  margin: 12px 0 14px;
+}
+.pers-filterbar input[type="search"] { max-width: 280px; }
+
+.pers-chips { display: flex; gap: 6px; flex-wrap: wrap; }
+.pers-chip {
+  border: 1px solid var(--border); background: var(--surface); color: var(--text);
+  border-radius: 999px; padding: 5px 12px; font-size: 0.86rem; font-family: inherit; cursor: pointer;
+}
+.pers-chip:hover { background: #eef2f7; }
+.pers-chip.is-active { background: var(--primary); border-color: var(--primary); color: #fff; font-weight: 600; }
+
+.pers-rollen-tags { display: flex; gap: 4px; flex-wrap: wrap; }
+
+.pers-check { display: flex; gap: 8px; align-items: center; }
+.pers-rollen-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 6px 14px; }
+.pers-rollen-extra { display: grid; gap: 8px; margin-top: 10px; }
+
+.pers-stat {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
+  gap: 10px; margin-top: 10px; text-align: center;
+}
+.pers-stat strong { font-size: 1.3rem; }
+
+@media (max-width: 760px) {
+  .pers-filterbar input[type="search"] { max-width: none; width: 100%; }
+}
+
 /* ===== Einstellungen: Kategorie-Unternavigation ===== */
 .settings-layout { display: grid; grid-template-columns: 220px 1fr; gap: 20px; align-items: start; }
 .settings-nav { display: flex; flex-direction: column; gap: 2px; position: sticky; top: 16px; }

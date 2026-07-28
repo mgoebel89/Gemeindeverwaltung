@@ -2,22 +2,23 @@
   'use strict';
   window.GR = window.GR || {};
   const { SCHEMA_VERSION, MITGLIED_FUNKTIONEN, uuid } = GR.models;
+  const M = GR.models;
 
   // Cache (Single Source of Truth im Frontend; Backend ist autoritativ)
   const cache = {
     sitzungen: [],        // [{...}]
-    mitglieder: [],       // [{...}]
+    // Zentrale Personen-Stammdaten: Ratsmitglieder, Mieter, Empfänger,
+    // Arbeiter/Firmen und Vertragspartner in EINER Liste (Rollen-Flags).
+    // Die alten list*/get*/save*-Funktionen sind Sichten darauf.
+    personen: [],         // [{...}]
     settings: null,       // {...} oder null
     attachments: {},      // sitzungId -> [{id, filename, ...}]
-    mieter: [],           // [{...}]
     raeume: [],           // [{...}]
     vermietungen: [],     // [{...}]
     vermietungFiles: {},  // vermietungId -> [{id, kind, filename, ...}]
-    empfaenger: [],       // [{...}]
     haushaltsstellen: [], // [{...}]
     auslagen: [],         // [{...}]
     belege: {},           // auslageId -> [{id, filename, ...}]
-    vertragspartner: [],  // [{...}]
     vertraege: [],        // [{...}]
     vorgaenge: [],        // [{...}] Modul Vorgänge & Projekte
     vorgangFiles: {},     // vorgangId -> [{id, kind, filename, ...}] Verlaufsfotos
@@ -39,6 +40,52 @@
     if (!obj || !obj.id) return;
     const idx = arr.findIndex(x => x.id === obj.id);
     if (idx >= 0) arr[idx] = obj; else arr.push(obj);
+  }
+
+  // --- Personen: gemeinsame Helfer für Cache und Server-Ereignisse ---
+  function findPerson(id) { return cache.personen.find(p => p.id === id) || null; }
+
+  // Einen Datensatz in der alten Modul-Form in die Personenliste einrechnen.
+  function applyRemote(apply, datensatz) {
+    if (!datensatz || !datensatz.id) return;
+    upsertInto(cache.personen, apply(findPerson(datensatz.id), datensatz));
+    notifyChange(); notifyRemote();
+  }
+
+  // Rolle entfernen; ohne verbleibende Rolle verschwindet die Person ganz.
+  // Nie direkt löschen – sonst risse das Entfernen eines Mieters denselben
+  // Menschen aus den Arbeitszeiten.
+  function entferneRolleLokal(id, rolle) {
+    const p = findPerson(id);
+    if (!p) return;
+    M.setPersonRolle(p, rolle, false);
+    if (!M.hatIrgendeineRolle(p)) cache.personen = cache.personen.filter(x => x.id !== id);
+    notifyChange(); notifyRemote();
+  }
+
+  function personenMitRolle(rolle) { return cache.personen.filter(p => M.hatRolle(p, rolle)); }
+
+  // Speichern aus einem Modul heraus: die bestehende Person wird ERGÄNZT, nie
+  // ersetzt – die Felder der anderen Rollen bleiben unangetastet.
+  function speichereAlsRolle(apply, datensatz) {
+    if (!datensatz || !datensatz.id) return null;
+    const person = apply(findPerson(datensatz.id), datensatz);
+    person.lastModifiedAt = nowIso();
+    upsertInto(cache.personen, person);
+    bgPutPerson(person);
+    notifyChange();
+    return person;
+  }
+
+  // Löschen aus einem Modul heraus entfernt nur die Rolle (siehe oben).
+  function entferneRolle(id, rolle) {
+    const p = findPerson(id);
+    if (!p) return;
+    M.setPersonRolle(p, rolle, false);
+    p.lastModifiedAt = nowIso();
+    if (M.hatIrgendeineRolle(p)) { upsertInto(cache.personen, p); bgPutPerson(p); }
+    else { cache.personen = cache.personen.filter(x => x.id !== id); bgDeletePerson(id); }
+    notifyChange();
   }
 
   function notifyChange() {
@@ -205,27 +252,46 @@
     };
   }
 
+  // Personen aus dem Snapshot. Fehlt `personen` (Backend noch nicht aktualisiert),
+  // werden sie aus den fünf alten Listen zusammengesetzt – dieselbe Abbildung wie
+  // die Server-Migration, nur in-memory. So läuft die Oberfläche auch dann, wenn
+  // Frontend und Backend beim Deploy kurz auseinanderliegen.
+  function personenAusSnapshot(snap) {
+    if (Array.isArray(snap.personen) && snap.personen.length) {
+      return snap.personen.map(M.normalizePerson);
+    }
+    const nachId = new Map();
+    const uebernehmen = (liste, apply) => {
+      for (const eintrag of liste || []) {
+        if (!eintrag || !eintrag.id) continue;
+        nachId.set(eintrag.id, apply(nachId.get(eintrag.id) || null, eintrag));
+      }
+    };
+    uebernehmen((snap.mitglieder || []).map(migrateMitglied), M.applyMitglied);
+    uebernehmen(snap.mieter, M.applyMieter);
+    uebernehmen(snap.empfaenger, M.applyEmpfaenger);
+    uebernehmen(snap.arbeiter, M.applyArbeiter);
+    uebernehmen(snap.vertragspartner, M.applyVertragspartner);
+    return Array.from(nachId.values());
+  }
+
   // ----- Bootstrap (Snapshot vom Backend) -----
   async function bootstrap() {
     try {
       const snap = await GR.api.snapshot();
       cache.sitzungen = (snap.sitzungen || []).map(migrateSitzung);
-      cache.mitglieder = (snap.mitglieder || []).map(migrateMitglied);
+      cache.personen = personenAusSnapshot(snap);
       cache.settings = snap.settings || defaultSettings();
       cache.attachments = snap.attachments || {};
-      cache.mieter = snap.mieter || [];
       cache.raeume = (snap.raeume || []).map(migrateRaum);
       cache.vermietungen = snap.vermietungen || [];
       cache.vermietungFiles = snap.vermietungFiles || {};
-      cache.empfaenger = snap.empfaenger || [];
       cache.haushaltsstellen = snap.haushaltsstellen || [];
       cache.auslagen = snap.auslagen || [];
       cache.belege = snap.belege || {};
-      cache.vertragspartner = snap.vertragspartner || [];
       cache.vertraege = snap.vertraege || [];
       cache.vorgaenge = (snap.vorgaenge || []).map(migrateVorgang);
       cache.vorgangFiles = snap.vorgangFiles || {};
-      cache.arbeiter = snap.arbeiter || [];
       cache.arbeitszeiten = snap.arbeitszeiten || [];
       cache.arbeitsabrechnungen = snap.arbeitsabrechnungen || [];
       cache.backendAvailable = true;
@@ -314,18 +380,21 @@
         notifyChange(); notifyRemote();
         break;
       }
-      case 'mitglied:save': {
-        const m = migrateMitglied(msg.mitglied);
-        const idx = cache.mitglieder.findIndex(x => x.id === m.id);
-        if (idx >= 0) cache.mitglieder[idx] = m; else cache.mitglieder.push(m);
-        notifyChange(); notifyRemote();
-        break;
-      }
-      case 'mitglied:delete': {
-        cache.mitglieder = cache.mitglieder.filter(m => m.id !== msg.id);
-        notifyChange(); notifyRemote();
-        break;
-      }
+      // --- Personen-Stammdaten ---
+      case 'person:save': { upsertInto(cache.personen, M.normalizePerson(msg.person)); notifyChange(); notifyRemote(); break; }
+      case 'person:delete': { cache.personen = cache.personen.filter(p => p.id !== msg.id); notifyChange(); notifyRemote(); break; }
+      // Die alten Modul-Ereignisse kommen weiter an (Browser mit altem
+      // Skriptstand, alte Routen) und werden in die Personenliste eingerechnet.
+      case 'mitglied:save': { applyRemote(M.applyMitglied, migrateMitglied(msg.mitglied)); break; }
+      case 'mieter:save': { applyRemote(M.applyMieter, msg.mieter); break; }
+      case 'empfaenger:save': { applyRemote(M.applyEmpfaenger, msg.empfaenger); break; }
+      case 'arbeiter:save': { applyRemote(M.applyArbeiter, msg.arbeiter); break; }
+      case 'vertragspartner:save': { applyRemote(M.applyVertragspartner, msg.vertragspartner); break; }
+      case 'mitglied:delete': { entferneRolleLokal(msg.id, 'rat'); break; }
+      case 'mieter:delete': { entferneRolleLokal(msg.id, 'mieter'); break; }
+      case 'empfaenger:delete': { entferneRolleLokal(msg.id, 'empfaenger'); break; }
+      case 'arbeiter:delete': { entferneRolleLokal(msg.id, 'arbeiter'); break; }
+      case 'vertragspartner:delete': { entferneRolleLokal(msg.id, 'partner'); break; }
       case 'settings:save': {
         cache.settings = msg.settings || cache.settings;
         mergeSettingsDefaults();
@@ -348,8 +417,6 @@
         notifyChange(); notifyRemote();
         break;
       }
-      case 'mieter:save': { upsertInto(cache.mieter, msg.mieter); notifyChange(); notifyRemote(); break; }
-      case 'mieter:delete': { cache.mieter = cache.mieter.filter(x => x.id !== msg.id); notifyChange(); notifyRemote(); break; }
       case 'raum:save': { upsertInto(cache.raeume, msg.raum); notifyChange(); notifyRemote(); break; }
       case 'raum:delete': { cache.raeume = cache.raeume.filter(x => x.id !== msg.id); notifyChange(); notifyRemote(); break; }
       case 'vermietung:save': { upsertInto(cache.vermietungen, msg.vermietung); notifyChange(); notifyRemote(); break; }
@@ -366,8 +433,6 @@
         notifyChange(); notifyRemote();
         break;
       }
-      case 'empfaenger:save': { upsertInto(cache.empfaenger, msg.empfaenger); notifyChange(); notifyRemote(); break; }
-      case 'empfaenger:delete': { cache.empfaenger = cache.empfaenger.filter(x => x.id !== msg.id); notifyChange(); notifyRemote(); break; }
       case 'haushaltsstelle:save': { upsertInto(cache.haushaltsstellen, msg.haushaltsstelle); notifyChange(); notifyRemote(); break; }
       case 'haushaltsstelle:delete': { cache.haushaltsstellen = cache.haushaltsstellen.filter(x => x.id !== msg.id); notifyChange(); notifyRemote(); break; }
       case 'auslage:save': { upsertInto(cache.auslagen, msg.auslage); notifyChange(); notifyRemote(); break; }
@@ -384,8 +449,6 @@
         notifyChange(); notifyRemote();
         break;
       }
-      case 'vertragspartner:save': { upsertInto(cache.vertragspartner, msg.vertragspartner); notifyChange(); notifyRemote(); break; }
-      case 'vertragspartner:delete': { cache.vertragspartner = cache.vertragspartner.filter(x => x.id !== msg.id); notifyChange(); notifyRemote(); break; }
       case 'vertrag:save': { upsertInto(cache.vertraege, msg.vertrag); notifyChange(); notifyRemote(); break; }
       case 'vertrag:delete': { cache.vertraege = cache.vertraege.filter(x => x.id !== msg.id); notifyChange(); notifyRemote(); break; }
       case 'vorgang:save': { upsertInto(cache.vorgaenge, migrateVorgang(msg.vorgang)); notifyChange(); notifyRemote(); break; }
@@ -402,8 +465,6 @@
         notifyChange(); notifyRemote();
         break;
       }
-      case 'arbeiter:save': { upsertInto(cache.arbeiter, msg.arbeiter); notifyChange(); notifyRemote(); break; }
-      case 'arbeiter:delete': { cache.arbeiter = cache.arbeiter.filter(x => x.id !== msg.id); notifyChange(); notifyRemote(); break; }
       case 'arbeitszeit:save': { upsertInto(cache.arbeitszeiten, msg.arbeitszeit); notifyChange(); notifyRemote(); break; }
       case 'arbeitszeit:delete': { cache.arbeitszeiten = cache.arbeitszeiten.filter(x => x.id !== msg.id); notifyChange(); notifyRemote(); break; }
       case 'arbeitsabrechnung:save': { upsertInto(cache.arbeitsabrechnungen, msg.arbeitsabrechnung); notifyChange(); notifyRemote(); break; }
@@ -425,6 +486,15 @@
   }
   function bgDeleteSitzung(id) {
     GR.api.deleteSitzungRemote(id).catch(e => console.warn('deleteSitzung Backend-Fehler', e));
+  }
+  function bgPutPerson(p) {
+    GR.api.putPerson(p).catch(e => {
+      console.warn('savePerson Backend-Fehler', e);
+      if (GR.ui && GR.ui.toast) GR.ui.toast('Backend-Fehler: ' + e.message, 4000);
+    });
+  }
+  function bgDeletePerson(id) {
+    GR.api.deletePersonRemote(id).catch(e => console.warn('deletePerson Backend-Fehler', e));
   }
   function bgPutMitglied(m) {
     GR.api.putMitglied(m).catch(e => {
@@ -463,22 +533,33 @@
       notifyChange();
     },
 
-    // --- Mitglieder ---
-    listMitglieder() { return cache.mitglieder.slice(); },
-    getMitglied(id) { return cache.mitglieder.find(m => m.id === id) || null; },
-    saveMitglied(m) {
-      m.lastModifiedAt = nowIso();
-      migrateMitglied(m);
-      const idx = cache.mitglieder.findIndex(x => x.id === m.id);
-      if (idx >= 0) cache.mitglieder[idx] = m; else cache.mitglieder.push(m);
-      bgPutMitglied(m);
+    // --- Personen-Stammdaten (zentral) ---
+    // list*() der einzelnen Module filtert nach Rolle, get*() bewusst NICHT:
+    // sonst zeigte eine alte Vermietung ihren Mieter nicht mehr an, nur weil
+    // dessen Mieter-Rolle inzwischen entfernt wurde.
+    listPersonen() { return cache.personen.slice(); },
+    getPerson(id) { return findPerson(id); },
+    personenMitRolle(rolle) { return personenMitRolle(rolle); },
+    savePerson(p) {
+      const person = M.normalizePerson(p);
+      person.lastModifiedAt = nowIso();
+      upsertInto(cache.personen, person);
+      bgPutPerson(person);
+      notifyChange();
+      return person;
+    },
+    deletePerson(id) {
+      cache.personen = cache.personen.filter(p => p.id !== id);
+      bgDeletePerson(id);
       notifyChange();
     },
-    deleteMitglied(id) {
-      cache.mitglieder = cache.mitglieder.filter(m => m.id !== id);
-      bgDeleteMitglied(id);
-      notifyChange();
-    },
+    entfernePersonRolle(id, rolle) { entferneRolle(id, rolle); },
+
+    // --- Mitglieder (Sicht: Rolle „rat") ---
+    listMitglieder() { return personenMitRolle('rat').map(M.toMitglied); },
+    getMitglied(id) { const p = findPerson(id); return p ? M.toMitglied(p) : null; },
+    saveMitglied(m) { speichereAlsRolle(M.applyMitglied, migrateMitglied(m)); },
+    deleteMitglied(id) { entferneRolle(id, 'rat'); },
 
     // --- Settings ---
     getSettings() { mergeSettingsDefaults(); return cache.settings; },
@@ -507,20 +588,11 @@
     },
     attachmentUrl(id) { return GR.api.attachmentUrl(id); },
 
-    // --- Mieter ---
-    listMieter() { return cache.mieter.slice(); },
-    getMieter(id) { return cache.mieter.find(m => m.id === id) || null; },
-    saveMieter(m) {
-      m.lastModifiedAt = nowIso();
-      upsertInto(cache.mieter, m);
-      GR.api.putMieter(m).catch(e => { console.warn('saveMieter Backend-Fehler', e); if (GR.ui && GR.ui.toast) GR.ui.toast('Backend-Fehler: ' + e.message, 4000); });
-      notifyChange();
-    },
-    deleteMieter(id) {
-      cache.mieter = cache.mieter.filter(m => m.id !== id);
-      GR.api.deleteMieterRemote(id).catch(e => console.warn('deleteMieter Backend-Fehler', e));
-      notifyChange();
-    },
+    // --- Mieter (Sicht: Rolle „mieter") ---
+    listMieter() { return personenMitRolle('mieter').map(M.toMieter); },
+    getMieter(id) { const p = findPerson(id); return p ? M.toMieter(p) : null; },
+    saveMieter(m) { speichereAlsRolle(M.applyMieter, m); },
+    deleteMieter(id) { entferneRolle(id, 'mieter'); },
 
     // --- Räume ---
     listRaeume() { return cache.raeume.slice(); },
@@ -570,20 +642,11 @@
     },
     vermietungFotoUrl(fileId) { return GR.api.vermietungFotoUrl(fileId); },
 
-    // --- Empfänger (Bargeldauslagen) ---
-    listEmpfaenger() { return cache.empfaenger.slice(); },
-    getEmpfaenger(id) { return cache.empfaenger.find(e => e.id === id) || null; },
-    saveEmpfaenger(e) {
-      e.lastModifiedAt = nowIso();
-      upsertInto(cache.empfaenger, e);
-      GR.api.putEmpfaenger(e).catch(err => { console.warn('saveEmpfaenger Backend-Fehler', err); if (GR.ui && GR.ui.toast) GR.ui.toast('Backend-Fehler: ' + err.message, 4000); });
-      notifyChange();
-    },
-    deleteEmpfaenger(id) {
-      cache.empfaenger = cache.empfaenger.filter(e => e.id !== id);
-      GR.api.deleteEmpfaengerRemote(id).catch(e => console.warn('deleteEmpfaenger Backend-Fehler', e));
-      notifyChange();
-    },
+    // --- Empfänger, Bargeldauslagen (Sicht: Rolle „empfaenger") ---
+    listEmpfaenger() { return personenMitRolle('empfaenger').map(M.toEmpfaenger); },
+    getEmpfaenger(id) { const p = findPerson(id); return p ? M.toEmpfaenger(p) : null; },
+    saveEmpfaenger(e) { speichereAlsRolle(M.applyEmpfaenger, e); },
+    deleteEmpfaenger(id) { entferneRolle(id, 'empfaenger'); },
 
     // --- Haushaltsstellen ---
     listHaushaltsstellen() { return cache.haushaltsstellen.slice(); },
@@ -642,20 +705,11 @@
     },
     belegUrl(fileId) { return GR.api.belegUrl(fileId); },
 
-    // --- Vertragspartner (Modul Verträge) ---
-    listVertragspartner() { return cache.vertragspartner.slice(); },
-    getVertragspartner(id) { return cache.vertragspartner.find(p => p.id === id) || null; },
-    saveVertragspartner(p) {
-      p.lastModifiedAt = nowIso();
-      upsertInto(cache.vertragspartner, p);
-      GR.api.putVertragspartner(p).catch(e => { console.warn('saveVertragspartner Backend-Fehler', e); if (GR.ui && GR.ui.toast) GR.ui.toast('Backend-Fehler: ' + e.message, 4000); });
-      notifyChange();
-    },
-    deleteVertragspartner(id) {
-      cache.vertragspartner = cache.vertragspartner.filter(p => p.id !== id);
-      GR.api.deleteVertragspartnerRemote(id).catch(e => console.warn('deleteVertragspartner Backend-Fehler', e));
-      notifyChange();
-    },
+    // --- Vertragspartner, Modul Verträge (Sicht: Rolle „partner") ---
+    listVertragspartner() { return personenMitRolle('partner').map(M.toVertragspartner); },
+    getVertragspartner(id) { const p = findPerson(id); return p ? M.toVertragspartner(p) : null; },
+    saveVertragspartner(p) { speichereAlsRolle(M.applyVertragspartner, p); },
+    deleteVertragspartner(id) { entferneRolle(id, 'partner'); },
 
     // --- Verträge ---
     listVertraege() { return cache.vertraege.slice(); },
@@ -690,19 +744,11 @@
     },
 
     // --- Modul Arbeitszeiten & Vergütung ---
-    listArbeiter() { return cache.arbeiter.slice(); },
-    getArbeiter(id) { return cache.arbeiter.find(a => a.id === id) || null; },
-    saveArbeiter(a) {
-      a.lastModifiedAt = nowIso();
-      upsertInto(cache.arbeiter, a);
-      GR.api.putArbeiter(a).catch(e => { console.warn('saveArbeiter Backend-Fehler', e); if (GR.ui && GR.ui.toast) GR.ui.toast('Backend-Fehler: ' + e.message, 4000); });
-      notifyChange();
-    },
-    deleteArbeiter(id) {
-      cache.arbeiter = cache.arbeiter.filter(a => a.id !== id);
-      GR.api.deleteArbeiterRemote(id).catch(e => console.warn('deleteArbeiter Backend-Fehler', e));
-      notifyChange();
-    },
+    // Arbeiter/Firmen (Sicht: Rolle „arbeiter")
+    listArbeiter() { return personenMitRolle('arbeiter').map(M.toArbeiter); },
+    getArbeiter(id) { const p = findPerson(id); return p ? M.toArbeiter(p) : null; },
+    saveArbeiter(a) { speichereAlsRolle(M.applyArbeiter, a); },
+    deleteArbeiter(id) { entferneRolle(id, 'arbeiter'); },
 
     listArbeitszeiten() { return cache.arbeitszeiten.slice(); },
     getArbeitszeit(id) { return cache.arbeitszeiten.find(z => z.id === id) || null; },
@@ -898,7 +944,7 @@
       catch (_) { s = {}; }
       // Jede sync-fähige Entität braucht hier ihren Eimer — fehlt er, laufen
       // markSynced/isDirty in „Cannot set properties of undefined".
-      for (const k of ['sitzungen', 'mitglieder', 'mieter', 'raeume', 'vermietungen', 'empfaenger',
+      for (const k of ['sitzungen', 'personen', 'mitglieder', 'mieter', 'raeume', 'vermietungen', 'empfaenger',
         'haushaltsstellen', 'auslagen', 'vertragspartner', 'vertraege', 'vorgaenge',
         'arbeiter', 'arbeitszeiten', 'arbeitsabrechnungen']) {
         if (!s[k] || typeof s[k] !== 'object') s[k] = {};

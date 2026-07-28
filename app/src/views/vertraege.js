@@ -31,7 +31,7 @@
     const vertraege = store.listVertraege();
 
     mount.appendChild(el('div', { class: 'toolbar' }, [
-      el('a', { class: 'btn', href: '#/vertragspartner' }, 'Vertragspartner'),
+      el('a', { class: 'btn', href: '#/stammdaten?rolle=partner' }, 'Vertragspartner'),
       el('div', { class: 'spacer' }),
       el('button', { class: 'btn', onClick: () => onPdf(vertraege) }, 'Übersicht als PDF'),
       el('button', { class: 'btn-primary', onClick: () => onNew() }, '+ Neuer Vertrag'),

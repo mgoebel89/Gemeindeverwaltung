@@ -87,6 +87,220 @@
     return { id: uuid(), vorname: '', nachname: '', funktion: 'Ratsmitglied', aktiv: true };
   }
 
+  // ===== Personen-Stammdaten (zentral für alle Module) =====
+  // Ratsmitglieder, Mieter, Empfänger, Arbeiter/Firmen und Vertragspartner sind
+  // EINE Liste; die Rollen-Flags sagen, wo eine Person auftaucht. Jede Person
+  // behält die id ihres alten Datensatzes, darum lösen mieterId, empfaengerId,
+  // arbeiterId, partnerId und die Anwesenheitslisten unverändert auf.
+  //
+  // ACHTUNG: Dieselbe Abbildung gibt es ein zweites Mal im Backend
+  // (backend/personen.js). Browser-Skript und Node-Modul können sich keine
+  // Datei teilen – Änderungen hier müssen dort nachgezogen werden.
+  const PERSON_ROLLEN = ['rat', 'mieter', 'empfaenger', 'arbeiter', 'partner'];
+  const PERSON_ROLLEN_LABEL = {
+    rat: 'Ratsmitglied',
+    mieter: 'Mieter',
+    empfaenger: 'Auslagen-Empfänger',
+    arbeiter: 'Arbeiter/Firma',
+    partner: 'Vertragspartner',
+  };
+  // Welches Modul führt die Rolle? (für Hinweise und Verlinkung)
+  const PERSON_ROLLEN_MODUL = {
+    rat: { label: 'Sitzungen', href: '#/sitzungen' },
+    mieter: { label: 'Vermietung', href: '#/vermietung' },
+    empfaenger: { label: 'Bargeldauslagen', href: '#/auslagen' },
+    arbeiter: { label: 'Arbeitszeiten', href: '#/arbeitszeiten' },
+    partner: { label: 'Verträge', href: '#/vertraege' },
+  };
+
+  function emptyPersonRollen() {
+    return { rat: false, mieter: false, empfaenger: false, arbeiter: false, partner: false };
+  }
+
+  function emptyPerson(id) {
+    return {
+      id: id || uuid(),
+      anrede: '', vorname: '', nachname: '',
+      firma: '',              // gesetzt ⇒ Anzeigename; die Person ist Ansprechpartner
+      ansprechpartner: '',    // Freitext aus den alten Vertragspartnern
+      strasse: '', plz: '', ort: '',
+      anschriftFreitext: '',  // mehrzeilig, aus den alten Vertragspartnern
+      telefon: '', email: '',
+      iban: '', kontoinhaber: '',
+      svNummer: '', steuerId: '', geburtsdatum: '',
+      rollen: emptyPersonRollen(),
+      funktion: '',           // nur Rolle rat
+      ortsfremd: false,       // nur Rolle mieter
+      notiz: '', aktiv: true,
+      aliasIds: [], herkunft: [],
+      schemaVersion: 1,
+    };
+  }
+
+  function normalizePerson(p) {
+    const out = Object.assign(emptyPerson((p && p.id) || ''), p || {});
+    out.rollen = Object.assign(emptyPersonRollen(), (p && p.rollen) || {});
+    out.aliasIds = Array.isArray(out.aliasIds) ? out.aliasIds : [];
+    out.herkunft = Array.isArray(out.herkunft) ? out.herkunft : [];
+    return out;
+  }
+
+  function setPersonRolle(p, rolle, an) {
+    p.rollen = Object.assign(emptyPersonRollen(), p.rollen || {});
+    p.rollen[rolle] = !!an;
+    return p;
+  }
+  function hatRolle(p, rolle) { return !!(p && p.rollen && p.rollen[rolle]); }
+  function hatIrgendeineRolle(p) { return PERSON_ROLLEN.some(r => hatRolle(p, r)); }
+  function personRollen(p) { return PERSON_ROLLEN.filter(r => hatRolle(p, r)); }
+
+  const trim = (v) => String(v == null ? '' : v).trim();
+
+  // Anzeigename: Firma falls gesetzt, sonst „Vorname Nachname".
+  function personName(p) {
+    if (!p) return '';
+    const firma = trim(p.firma);
+    if (firma) return firma;
+    return [trim(p.vorname), trim(p.nachname)].filter(Boolean).join(' ');
+  }
+  function personLangname(p) {
+    if (!p) return '';
+    return [trim(p.vorname), trim(p.nachname)].filter(Boolean).join(' ');
+  }
+  // Zusatzzeile: bei Firmen der Ansprechpartner.
+  function personZusatz(p) {
+    if (!p || !trim(p.firma)) return '';
+    const name = trim(p.ansprechpartner) || personLangname(p);
+    return name ? 'Ansprechpartner: ' + name : '';
+  }
+  function personAnschrift(p) {
+    if (!p) return '';
+    const strukturiert = [trim(p.strasse), [trim(p.plz), trim(p.ort)].filter(Boolean).join(' ')]
+      .filter(Boolean).join(', ');
+    if (strukturiert) return strukturiert;
+    return trim(p.anschriftFreitext).split('\n').map(x => x.trim()).filter(Boolean).join(', ');
+  }
+  function personKontakt(p) {
+    return [trim(p && p.telefon), trim(p && p.email)].filter(Boolean).join(' · ');
+  }
+
+  // --- Sichten auf die alten Datensatzformen (und zurück) ---
+  function toMitglied(p) {
+    return {
+      id: p.id, vorname: trim(p.vorname), nachname: trim(p.nachname),
+      funktion: trim(p.funktion) || 'Ratsmitglied', aktiv: p.aktiv !== false,
+      lastModifiedAt: p.lastModifiedAt,
+    };
+  }
+  function applyMitglied(person, m) {
+    const p = normalizePerson(person || emptyPerson(m.id));
+    p.id = m.id;
+    p.vorname = trim(m.vorname);
+    p.nachname = trim(m.nachname);
+    p.funktion = trim(m.funktion) || 'Ratsmitglied';
+    if (m.aktiv !== undefined) p.aktiv = !!m.aktiv;
+    return setPersonRolle(p, 'rat', true);
+  }
+
+  function toMieter(p) {
+    return {
+      id: p.id, anrede: trim(p.anrede), vorname: trim(p.vorname), nachname: trim(p.nachname),
+      strasse: trim(p.strasse), plz: trim(p.plz), ort: trim(p.ort),
+      telefon: trim(p.telefon), email: trim(p.email),
+      ortsfremd: !!p.ortsfremd, notiz: p.notiz || '',
+      lastModifiedAt: p.lastModifiedAt,
+    };
+  }
+  function applyMieter(person, m) {
+    const p = normalizePerson(person || emptyPerson(m.id));
+    p.id = m.id;
+    p.anrede = trim(m.anrede);
+    p.vorname = trim(m.vorname);
+    p.nachname = trim(m.nachname);
+    p.strasse = trim(m.strasse);
+    p.plz = trim(m.plz);
+    p.ort = trim(m.ort);
+    p.telefon = trim(m.telefon);
+    p.email = trim(m.email);
+    p.ortsfremd = !!m.ortsfremd;
+    if (m.notiz !== undefined) p.notiz = m.notiz;
+    return setPersonRolle(p, 'mieter', true);
+  }
+
+  // Falle: `name` ist beim Empfänger der NACHNAME.
+  function toEmpfaenger(p) {
+    return {
+      id: p.id, name: trim(p.nachname) || trim(p.firma), vorname: trim(p.vorname), iban: trim(p.iban),
+      lastModifiedAt: p.lastModifiedAt,
+    };
+  }
+  function applyEmpfaenger(person, e) {
+    const p = normalizePerson(person || emptyPerson(e.id));
+    p.id = e.id;
+    if (trim(p.firma) && trim(e.name) === trim(p.firma)) { /* Firmenname nicht doppeln */ }
+    else p.nachname = trim(e.name);
+    p.vorname = trim(e.vorname);
+    p.iban = trim(e.iban);
+    return setPersonRolle(p, 'empfaenger', true);
+  }
+
+  function toArbeiter(p) {
+    return {
+      id: p.id, vorname: trim(p.vorname), nachname: trim(p.nachname), firma: trim(p.firma),
+      strasse: trim(p.strasse), plz: trim(p.plz), ort: trim(p.ort),
+      iban: trim(p.iban), kontoinhaber: trim(p.kontoinhaber),
+      svNummer: trim(p.svNummer), steuerId: trim(p.steuerId), geburtsdatum: trim(p.geburtsdatum),
+      telefon: trim(p.telefon), email: trim(p.email),
+      notiz: p.notiz || '', aktiv: p.aktiv !== false,
+      lastModifiedAt: p.lastModifiedAt,
+    };
+  }
+  function applyArbeiter(person, a) {
+    const p = normalizePerson(person || emptyPerson(a.id));
+    p.id = a.id;
+    p.vorname = trim(a.vorname);
+    p.nachname = trim(a.nachname);
+    p.firma = trim(a.firma);
+    p.strasse = trim(a.strasse);
+    p.plz = trim(a.plz);
+    p.ort = trim(a.ort);
+    p.iban = trim(a.iban);
+    p.kontoinhaber = trim(a.kontoinhaber);
+    p.svNummer = trim(a.svNummer);
+    p.steuerId = trim(a.steuerId);
+    p.geburtsdatum = trim(a.geburtsdatum);
+    p.telefon = trim(a.telefon);
+    p.email = trim(a.email);
+    if (a.notiz !== undefined) p.notiz = a.notiz;
+    if (a.aktiv !== undefined) p.aktiv = !!a.aktiv;
+    return setPersonRolle(p, 'arbeiter', true);
+  }
+
+  // Falle: `name` ist beim Vertragspartner die FIRMA, `anschrift` Freitext.
+  function toVertragspartner(p) {
+    const anschrift = trim(p.anschriftFreitext)
+      || [trim(p.strasse), [trim(p.plz), trim(p.ort)].filter(Boolean).join(' ')].filter(Boolean).join('\n');
+    return {
+      id: p.id, name: personName(p), anschrift,
+      ansprechpartner: trim(p.ansprechpartner) || (trim(p.firma) ? personLangname(p) : ''),
+      telefon: trim(p.telefon), email: trim(p.email), notiz: p.notiz || '',
+      lastModifiedAt: p.lastModifiedAt,
+    };
+  }
+  function applyVertragspartner(person, v) {
+    const p = normalizePerson(person || emptyPerson(v.id));
+    p.id = v.id;
+    const name = trim(v.name);
+    if (name && name === personLangname(p)) { /* Personenname unverändert */ }
+    else p.firma = name;
+    p.ansprechpartner = trim(v.ansprechpartner);
+    p.anschriftFreitext = v.anschrift || '';
+    p.telefon = trim(v.telefon);
+    p.email = trim(v.email);
+    if (v.notiz !== undefined) p.notiz = v.notiz;
+    return setPersonRolle(p, 'partner', true);
+  }
+
   // ===== Modul Vermietung =====
   const KOSTENBOGEN_TYPEN = ['gemeindehaus', 'grillhuette', 'sonstiges'];
 
@@ -756,6 +970,12 @@
     emptyAbstimmung, emptyTop, emptySitzung,
     ergebnisAbstimmung, isEinstimmig, einstimmigRichtung,
     MITGLIED_FUNKTIONEN, fullName, emptyMitglied,
+    PERSON_ROLLEN, PERSON_ROLLEN_LABEL, PERSON_ROLLEN_MODUL,
+    emptyPerson, emptyPersonRollen, normalizePerson, setPersonRolle,
+    hatRolle, hatIrgendeineRolle, personRollen,
+    personName, personLangname, personZusatz, personAnschrift, personKontakt,
+    toMitglied, applyMitglied, toMieter, applyMieter, toEmpfaenger, applyEmpfaenger,
+    toArbeiter, applyArbeiter, toVertragspartner, applyVertragspartner,
     KOSTENBOGEN_TYPEN, RAUM_ABRECHNUNGSARTEN, istPauschal,
     emptyMieter, emptyRaum, emptyRaumPreise, emptyVermietung, defaultUebergabeCheckliste,
     fullNameMieter, anzahlTage, berechneGrundmiete, berechneVerbrauch, berechneGesamt,

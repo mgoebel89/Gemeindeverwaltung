@@ -120,7 +120,7 @@
 
     mount.appendChild(el('div', { class: 'toolbar' }, [
       el('button', { class: 'btn-primary', onClick: onNew }, '+ Neue Bargeldauslage'),
-      el('a', { class: 'btn', href: '#/auslagen-stammdaten' }, 'Empfänger & Haushaltsstellen'),
+      el('a', { class: 'btn', href: '#/stammdaten?rolle=empfaenger' }, 'Empfänger verwalten'),
     ]));
     mount.appendChild(el('h2', {}, 'Bargeldauslagen'));
 

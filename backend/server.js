@@ -73,6 +73,9 @@ app.use('/api', createArbeitszeitenRouter(broadcast));
 app.get('/api/snapshot', (_req, res) => {
   res.json({
     sitzungen: db.listSitzungen(),
+    personen: db.listPersonen(),
+    // Die fünf Personenlisten bleiben als Sichten im Snapshot, damit ein noch
+    // nicht neu geladener Browser (statischer Cache!) weiterarbeiten kann.
     mitglieder: db.listMitglieder(),
     settings: db.getSettings(),
     attachments: groupAttachments(),
@@ -150,6 +153,51 @@ app.delete('/api/sitzungen/:id', (req, res) => {
   broadcast({ type: 'sitzung:delete', id: req.params.id, origin: req.header('x-client-id') || '' });
   res.status(204).end();
 });
+
+// --- Personen-Stammdaten ---
+// Eine Liste für alle Module; die Rollen-Flags entscheiden, wo eine Person
+// erscheint. Zusätzlich zum `person:*`-Ereignis werden die alten Modul-
+// Ereignisse gesendet, damit ein Browser mit altem Skriptstand live bleibt.
+const LEGACY_EVENTS = [
+  ['rat', 'mitglied', (p) => db.getMitglied(p.id)],
+  ['mieter', 'mieter', (p) => db.getMieter(p.id)],
+  ['empfaenger', 'empfaenger', (p) => db.getEmpfaenger(p.id)],
+  ['arbeiter', 'arbeiter', (p) => db.getArbeiter(p.id)],
+  ['partner', 'vertragspartner', (p) => db.getVertragspartner(p.id)],
+];
+function broadcastPerson(person, origin) {
+  broadcast({ type: 'person:save', person, origin });
+  for (const [rolle, ev, view] of LEGACY_EVENTS) {
+    if (person.rollen && person.rollen[rolle]) {
+      broadcast({ type: `${ev}:save`, [ev]: view(person), origin });
+    }
+  }
+}
+function broadcastPersonDelete(id, origin) {
+  broadcast({ type: 'person:delete', id, origin });
+  for (const [, ev] of LEGACY_EVENTS) broadcast({ type: `${ev}:delete`, id, origin });
+}
+
+app.get('/api/personen', (_req, res) => res.json(db.listPersonen()));
+app.get('/api/personen/:id', (req, res) => {
+  const p = db.getPerson(req.params.id);
+  if (!p) return res.status(404).json({ error: 'not found' });
+  res.json(p);
+});
+app.put('/api/personen/:id', (req, res) => {
+  const body = req.body || {};
+  if (body.id !== req.params.id) return res.status(400).json({ error: 'id mismatch' });
+  const saved = db.savePerson(Object.assign({}, body, { lastModifiedAt: new Date().toISOString() }));
+  broadcastPerson(saved, req.header('x-client-id') || '');
+  res.json(saved);
+});
+app.delete('/api/personen/:id', (req, res) => {
+  db.deletePerson(req.params.id);
+  broadcastPersonDelete(req.params.id, req.header('x-client-id') || '');
+  res.status(204).end();
+});
+// Stand der einmaligen Migration (für die Stammdaten-Ansicht).
+app.get('/api/personen-migration', (_req, res) => res.json(db.personenMigrationStatus() || { version: 0 }));
 
 // --- Mitglieder ---
 app.get('/api/mitglieder', (_req, res) => res.json(db.listMitglieder()));

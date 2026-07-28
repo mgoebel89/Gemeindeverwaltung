@@ -3,6 +3,7 @@
 const path = require('path');
 const fs = require('fs');
 const Database = require('better-sqlite3');
+const P = require('./personen');
 
 const DATA_DIR = process.env.DATA_DIR || '/var/lib/gemeindeverwaltung';
 const DB_PATH = path.join(DATA_DIR, 'data.db');
@@ -39,6 +40,15 @@ db.exec(`
     uploaded_at TEXT NOT NULL
   );
   CREATE INDEX IF NOT EXISTS idx_att_sitzung ON attachments(sitzung_id);
+
+  -- Zentrale Personen-Stammdaten. Führt die früher getrennten Listen
+  -- Ratsmitglieder, Mieter, Empfänger, Arbeiter/Firmen und Vertragspartner
+  -- zusammen; die alten Tabellen bleiben als Sicherheitsnetz bestehen.
+  CREATE TABLE IF NOT EXISTS personen (
+    id           TEXT PRIMARY KEY,
+    payload      TEXT NOT NULL,
+    last_modified TEXT NOT NULL
+  );
 
   -- Modul Vermietung (Gemeindehaus & Jugendraum)
   CREATE TABLE IF NOT EXISTS mieter (
@@ -186,25 +196,8 @@ function deleteSitzung(id) {
 }
 
 // --- Mitglieder ---
-function listMitglieder() {
-  return db.prepare('SELECT payload FROM mitglieder').all().map(r => JSON.parse(r.payload));
-}
-function getMitglied(id) {
-  const r = db.prepare('SELECT payload FROM mitglieder WHERE id = ?').get(id);
-  return r ? JSON.parse(r.payload) : null;
-}
-function saveMitglied(m) {
-  if (!m || !m.id) throw new Error('mitglied.id fehlt');
-  if (!m.lastModifiedAt) m.lastModifiedAt = nowIso();
-  db.prepare(`
-    INSERT INTO mitglieder (id, payload, last_modified) VALUES (?, ?, ?)
-    ON CONFLICT(id) DO UPDATE SET payload = excluded.payload, last_modified = excluded.last_modified
-  `).run(m.id, JSON.stringify(m), m.lastModifiedAt);
-  return m;
-}
-function deleteMitglied(id) {
-  db.prepare('DELETE FROM mitglieder WHERE id = ?').run(id);
-}
+// Ratsmitglieder sind Personen mit der Rolle „rat". Die Funktionen dazu stehen
+// weiter unten im Abschnitt „Personen-Stammdaten".
 
 // --- Settings ---
 function getSettings() {
@@ -300,14 +293,86 @@ function makePayloadStore(table) {
   };
 }
 
-const mieterStore = makePayloadStore('mieter');
+// --- Personen-Stammdaten (zentral für alle Module) --------------------------
+// Fünf früher getrennte Listen liegen jetzt in EINER Tabelle; die Rollen-Flags
+// sagen, in welchem Modul eine Person auftaucht. Die alten Funktionsnamen
+// bleiben als Sichten darauf bestehen, damit Routen, Ansichten und PDFs
+// unverändert weiterlaufen.
+//
+// Zwei Regeln, die den Umbau verlustfrei halten:
+//  * list*() filtert nach Rolle (das speist die Auswahllisten), get*() dagegen
+//    NICHT – sonst würde eine alte Vermietung ihren Mieter nicht mehr anzeigen,
+//    nur weil dessen Mieter-Rolle inzwischen entfernt wurde.
+//  * delete*() entfernt nur die Rolle. Gelöscht wird eine Person erst, wenn sie
+//    in keinem Modul mehr vorkommt – sonst risse das Löschen eines Mieters
+//    denselben Menschen aus den Arbeitszeiten.
+const personenStore = makePayloadStore('personen');
+
+function listPersonen() { return personenStore.list().map(P.normalizePerson); }
+function getPerson(id) {
+  const p = personenStore.get(id);
+  return p ? P.normalizePerson(p) : null;
+}
+function savePerson(p) {
+  const person = P.normalizePerson(p);
+  if (!person.id) throw new Error('person.id fehlt');
+  person.lastModifiedAt = person.lastModifiedAt || nowIso();
+  personenStore.save(person);
+  return person;
+}
+function deletePerson(id) { personenStore.delete(id); }
+
+function personenMitRolle(rolle) { return listPersonen().filter(p => P.hatRolle(p, rolle)); }
+
+// Speichern aus einem Modul heraus: eine bestehende Person wird ERGÄNZT, nie
+// ersetzt – die Felder der anderen Rollen bleiben unangetastet.
+function speichereAlsRolle(apply, datensatz) {
+  if (!datensatz || !datensatz.id) throw new Error('id fehlt');
+  const person = apply(getPerson(datensatz.id), datensatz);
+  person.lastModifiedAt = nowIso();
+  return savePerson(person);
+}
+
+function entferneRolle(id, rolle) {
+  const p = getPerson(id);
+  if (!p) return;
+  P.setRolle(p, rolle, false);
+  if (P.hatIrgendeineRolle(p)) { p.lastModifiedAt = nowIso(); savePerson(p); }
+  else deletePerson(id);
+}
+
+// Sichten: Ratsmitglieder
+const listMitglieder = () => personenMitRolle('rat').map(P.toMitglied);
+const getMitglied = (id) => { const p = getPerson(id); return p ? P.toMitglied(p) : null; };
+const saveMitglied = (m) => P.toMitglied(speichereAlsRolle(P.applyMitglied, m));
+const deleteMitglied = (id) => entferneRolle(id, 'rat');
+
+// Sichten: Mieter
+const listMieter = () => personenMitRolle('mieter').map(P.toMieter);
+const getMieter = (id) => { const p = getPerson(id); return p ? P.toMieter(p) : null; };
+const saveMieter = (m) => P.toMieter(speichereAlsRolle(P.applyMieter, m));
+const deleteMieter = (id) => entferneRolle(id, 'mieter');
+
+// Sichten: Empfänger (Bargeldauslagen)
+const listEmpfaenger = () => personenMitRolle('empfaenger').map(P.toEmpfaenger);
+const getEmpfaenger = (id) => { const p = getPerson(id); return p ? P.toEmpfaenger(p) : null; };
+const saveEmpfaenger = (e) => P.toEmpfaenger(speichereAlsRolle(P.applyEmpfaenger, e));
+const deleteEmpfaenger = (id) => entferneRolle(id, 'empfaenger');
+
+// Sichten: Arbeiter/Firmen (Arbeitszeiten)
+const listArbeiter = () => personenMitRolle('arbeiter').map(P.toArbeiter);
+const getArbeiter = (id) => { const p = getPerson(id); return p ? P.toArbeiter(p) : null; };
+const saveArbeiter = (a) => P.toArbeiter(speichereAlsRolle(P.applyArbeiter, a));
+const deleteArbeiter = (id) => entferneRolle(id, 'arbeiter');
+
+// Sichten: Vertragspartner
+const listVertragspartner = () => personenMitRolle('partner').map(P.toVertragspartner);
+const getVertragspartner = (id) => { const p = getPerson(id); return p ? P.toVertragspartner(p) : null; };
+const saveVertragspartner = (p) => P.toVertragspartner(speichereAlsRolle(P.applyVertragspartner, p));
+const deleteVertragspartner = (id) => entferneRolle(id, 'partner');
+
 const raeumeStore = makePayloadStore('raeume');
 const vermietungenStore = makePayloadStore('vermietungen');
-
-const listMieter = () => mieterStore.list();
-const getMieter = (id) => mieterStore.get(id);
-const saveMieter = (m) => mieterStore.save(m);
-const deleteMieter = (id) => mieterStore.delete(id);
 
 const listRaeume = () => raeumeStore.list();
 const getRaum = (id) => raeumeStore.get(id);
@@ -355,14 +420,8 @@ function deleteVermietungFile(id) {
 }
 
 // --- Modul Bargeldauslagen ---
-const empfaengerStore = makePayloadStore('empfaenger');
 const haushaltsstellenStore = makePayloadStore('haushaltsstellen');
 const auslagenStore = makePayloadStore('auslagen');
-
-const listEmpfaenger = () => empfaengerStore.list();
-const getEmpfaenger = (id) => empfaengerStore.get(id);
-const saveEmpfaenger = (e) => empfaengerStore.save(e);
-const deleteEmpfaenger = (id) => empfaengerStore.delete(id);
 
 const listHaushaltsstellen = () => haushaltsstellenStore.list();
 const getHaushaltsstelle = (id) => haushaltsstellenStore.get(id);
@@ -410,13 +469,7 @@ function deleteBelegFile(id) {
 }
 
 // --- Modul Verträge und Pacht ---
-const vertragspartnerStore = makePayloadStore('vertragspartner');
 const vertraegeStore = makePayloadStore('vertraege');
-
-const listVertragspartner = () => vertragspartnerStore.list();
-const getVertragspartner = (id) => vertragspartnerStore.get(id);
-const saveVertragspartner = (p) => vertragspartnerStore.save(p);
-const deleteVertragspartner = (id) => vertragspartnerStore.delete(id);
 
 const listVertraege = () => vertraegeStore.list();
 const getVertrag = (id) => vertraegeStore.get(id);
@@ -437,12 +490,6 @@ function deleteVorgang(id) {
 }
 
 // --- Modul Arbeitszeiten & Vergütung ---
-const arbeiterStore = makePayloadStore('arbeiter');
-const listArbeiter = () => arbeiterStore.list();
-const getArbeiter = (id) => arbeiterStore.get(id);
-const saveArbeiter = (a) => arbeiterStore.save(a);
-const deleteArbeiter = (id) => arbeiterStore.delete(id);
-
 const arbeitszeitenStore = makePayloadStore('arbeitszeiten');
 const listArbeitszeiten = () => arbeitszeitenStore.list();
 const getArbeitszeit = (id) => arbeitszeitenStore.get(id);
@@ -543,8 +590,70 @@ function deleteAttachment(id) {
   return a;
 }
 
+// --- Einmalige Migration der fünf alten Personenlisten ----------------------
+// Läuft beim Start, ist idempotent (ein Marker in den Settings, zusätzlich wird
+// jede id übersprungen, die es als Person schon gibt) und lässt die alten
+// Tabellen unangetastet stehen – sie sind der Rückweg, falls etwas fehlt.
+function personenMigrationStatus() {
+  const r = db.prepare("SELECT value FROM settings WHERE key = 'personenMigration'").get();
+  return r ? JSON.parse(r.value) : null;
+}
+
+function migrierePersonen({ force = false } = {}) {
+  const vorher = personenMigrationStatus();
+  if (vorher && vorher.version >= 1 && !force) return vorher;
+
+  const bestand = new Map(listPersonen().map(p => [p.id, p]));
+  const quellen = {};
+
+  const lauf = db.transaction(() => {
+    for (const { quelle, apply } of P.QUELLEN) {
+      const alt = makePayloadStore(quelle).list();
+      let uebernommen = 0;
+      let uebersprungen = 0;
+      for (const eintrag of alt) {
+        if (!eintrag || !eintrag.id) { uebersprungen++; continue; }
+        if (bestand.has(eintrag.id)) { uebersprungen++; continue; }
+        const person = apply(null, eintrag);
+        person.lastModifiedAt = eintrag.lastModifiedAt || nowIso();
+        savePerson(person);
+        bestand.set(person.id, person);
+        uebernommen++;
+      }
+      quellen[quelle] = { gefunden: alt.length, uebernommen, uebersprungen };
+    }
+  });
+  lauf();
+
+  const status = {
+    version: 1,
+    at: nowIso(),
+    quellen,
+    personen: bestand.size,
+  };
+  db.prepare(`
+    INSERT INTO settings (key, value) VALUES ('personenMigration', ?)
+    ON CONFLICT(key) DO UPDATE SET value = excluded.value
+  `).run(JSON.stringify(status));
+  return status;
+}
+
+try {
+  const status = migrierePersonen();
+  if (status && status.quellen) {
+    const zusammenfassung = Object.entries(status.quellen)
+      .map(([k, v]) => `${k}: ${v.uebernommen}/${v.gefunden}`).join(', ');
+    console.log(`[personen] ${status.personen} Personen (Migration ${status.at}) – ${zusammenfassung}`);
+  }
+} catch (e) {
+  console.error('[personen] Migration fehlgeschlagen:', e.message);
+}
+
 module.exports = {
   DATA_DIR, ATTACH_DIR, BELEG_DIR, VERM_FILE_DIR,
+  listPersonen, getPerson, savePerson, deletePerson,
+  personenMitRolle, entferneRolle,
+  migrierePersonen, personenMigrationStatus,
   listSitzungen, getSitzung, saveSitzung, deleteSitzung,
   listMitglieder, getMitglied, saveMitglied, deleteMitglied,
   getSettings, saveSettings,

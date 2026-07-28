@@ -1,6 +1,9 @@
 (function () {
   'use strict';
-  const { renderDashboard, renderSitzungen, renderDokumente, renderTermine, renderAufgaben, renderStammdaten, renderEinstellungen, renderVorbereitung, renderLive, renderVermietung, renderMieter, renderProtokolle, renderAuslagen, renderAuslagenStammdaten, renderVertraege, renderVertragspartner, renderVorgaenge, renderHaushalt, renderMail, renderArbeitszeiten, renderArbeiter, renderArbeitsabrechnungen } = GR.views;
+  // Die früheren Einzellisten (Mieter, Empfänger, Arbeiter, Vertragspartner)
+  // sind in den Stammdaten aufgegangen; ihre Anlege-Dialoge leben in den
+  // jeweiligen View-Dateien weiter und werden aus den Modulen heraus benutzt.
+  const { renderDashboard, renderSitzungen, renderDokumente, renderTermine, renderAufgaben, renderStammdaten, renderEinstellungen, renderVorbereitung, renderLive, renderVermietung, renderProtokolle, renderAuslagen, renderVertraege, renderVorgaenge, renderHaushalt, renderMail, renderArbeitszeiten, renderArbeitsabrechnungen } = GR.views;
 
   const mount = document.getElementById('app');
   const shell = document.getElementById('appShell');
@@ -123,20 +126,22 @@
     if (path === '/termine') return renderTermine(mount, params);
     if (path === '/aufgaben') return renderAufgaben(mount, params);
     if (path === '/mail') return renderMail(mount, params);
-    if (path === '/stammdaten') return renderStammdaten(mount);
+    if (path === '/stammdaten') return renderStammdaten(mount, params);
+    // Die früheren Einzellisten sind in den Stammdaten aufgegangen. Die alten
+    // Adressen bleiben gültig und landen beim passenden Rollenfilter.
+    if (path === '/mieter') return location.replace('#/stammdaten?rolle=mieter');
+    if (path === '/arbeiter') return location.replace('#/stammdaten?rolle=arbeiter');
+    if (path === '/vertragspartner') return location.replace('#/stammdaten?rolle=partner');
+    if (path === '/auslagen-stammdaten') return location.replace('#/stammdaten?rolle=empfaenger');
     if (path === '/einstellungen') return renderEinstellungen(mount);
     if (path === '/sitzung/vorbereitung') return renderVorbereitung(mount, params.id);
     if (path === '/sitzung/live') return renderLive(mount, params.id);
     if (path === '/vermietung') return renderVermietung(mount, params);
-    if (path === '/mieter') return renderMieter(mount);
     if (path === '/protokolle') return renderProtokolle(mount);
     if (path === '/vertraege') return renderVertraege(mount, params);
-    if (path === '/vertragspartner') return renderVertragspartner(mount);
     if (path === '/haushalt') return renderHaushalt(mount);
     if (path === '/auslagen') return renderAuslagen(mount, params);
-    if (path === '/auslagen-stammdaten') return renderAuslagenStammdaten(mount);
     if (path === '/arbeitszeiten') return renderArbeitszeiten(mount, params);
-    if (path === '/arbeiter') return renderArbeiter(mount);
     if (path === '/arbeitsabrechnungen') return renderArbeitsabrechnungen(mount, params);
     mount.innerHTML = '<div class="card"><h2>Seite nicht gefunden</h2><a href="#/">Zurück zur Übersicht</a></div>';
   }

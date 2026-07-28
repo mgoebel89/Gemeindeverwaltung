@@ -48,7 +48,7 @@
 
     mount.appendChild(el('div', { class: 'toolbar' }, [
       el('button', { class: 'btn-primary', onClick: onNew }, '+ Neue Vermietung'),
-      el('a', { class: 'btn', href: '#/mieter' }, 'Mieter verwalten'),
+      el('a', { class: 'btn', href: '#/stammdaten?rolle=mieter' }, 'Mieter verwalten'),
       el('a', { class: 'btn', href: '#/protokolle' }, 'Protokolle (Checklisten)'),
       el('div', { class: 'spacer', style: 'flex:1;' }),
       jahrSel,

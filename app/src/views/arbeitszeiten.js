@@ -38,7 +38,7 @@
     mount.appendChild(el('div', { class: 'toolbar' }, [
       el('h2', { style: 'margin:0;' }, 'Arbeitszeiten'),
       el('div', { class: 'spacer' }),
-      el('a', { class: 'btn btn-sm', href: '#/arbeiter' }, 'Arbeiter & Firmen'),
+      el('a', { class: 'btn btn-sm', href: '#/stammdaten?rolle=arbeiter' }, 'Arbeiter & Firmen'),
       el('a', { class: 'btn btn-sm', href: '#/arbeitsabrechnungen' }, 'Abrechnungen'),
       el('a', { class: 'btn btn-sm', href: '#/einstellungen' }, 'Stundensatz'),
       arbeiter.length
@@ -48,7 +48,7 @@
     if (!arbeiter.length) {
       mount.appendChild(el('div', { class: 'card' }, [
         el('p', { class: 'help', style: 'margin:0 0 8px;' }, 'Es ist noch kein Arbeiter und keine Firma angelegt. Ohne Leistungserbringer lässt sich keine Zeit erfassen.'),
-        el('a', { class: 'btn btn-primary', href: '#/arbeiter' }, 'Arbeiter & Firmen anlegen'),
+        el('a', { class: 'btn btn-primary', href: '#/stammdaten?rolle=arbeiter' }, 'Arbeiter & Firmen anlegen'),
       ]));
       return;
     }
