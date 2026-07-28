@@ -45,6 +45,16 @@
   // --- Personen: gemeinsame Helfer für Cache und Server-Ereignisse ---
   function findPerson(id) { return cache.personen.find(p => p.id === id) || null; }
 
+  // Wie findPerson, löst aber zusätzlich die ids zusammengeführter Dubletten
+  // über `aliasIds` auf. NUR für lesende Sichten: beim Speichern muss die id
+  // exakt bleiben, sonst bekäme die Zielperson die id des Altdatensatzes.
+  function findPersonAufgeloest(id) {
+    if (!id) return null;
+    return findPerson(id)
+      || cache.personen.find(p => Array.isArray(p.aliasIds) && p.aliasIds.includes(id))
+      || null;
+  }
+
   // Einen Datensatz in der alten Modul-Form in die Personenliste einrechnen.
   function applyRemote(apply, datensatz) {
     if (!datensatz || !datensatz.id) return;
@@ -59,7 +69,7 @@
     const p = findPerson(id);
     if (!p) return;
     M.setPersonRolle(p, rolle, false);
-    if (!M.hatIrgendeineRolle(p)) cache.personen = cache.personen.filter(x => x.id !== id);
+    if (!M.hatIrgendeineRolle(p)) cache.personen = cache.personen.filter(x => x.id !== p.id);
     notifyChange(); notifyRemote();
   }
 
@@ -84,7 +94,7 @@
     M.setPersonRolle(p, rolle, false);
     p.lastModifiedAt = nowIso();
     if (M.hatIrgendeineRolle(p)) { upsertInto(cache.personen, p); bgPutPerson(p); }
-    else { cache.personen = cache.personen.filter(x => x.id !== id); bgDeletePerson(id); }
+    else { cache.personen = cache.personen.filter(x => x.id !== p.id); bgDeletePerson(p.id); }
     notifyChange();
   }
 
@@ -179,7 +189,14 @@
       vertraege: defaultVertraegeSettings(),
       vorgaenge: defaultVorgaengeSettings(),
       arbeitszeiten: defaultArbeitszeitenSettings(),
+      personen: defaultPersonenSettings(),
     };
+  }
+  // Stammdaten: Paare, die der Dubletten-Assistent vorgeschlagen hat und die
+  // als „kein Duplikat" abgehakt wurden. Sonst stünde derselbe Vorschlag bei
+  // jedem Aufruf wieder da. Schlüssel = beide ids sortiert, mit | verbunden.
+  function defaultPersonenSettings() {
+    return { ignorierteDubletten: [] };
   }
   // Modul-Einstellungen „Vorgänge & Projekte": Kategorienliste, festes Vikunja-
   // Projekt für ToDos und der Hash des Leitungs-PIN (schaltet vertrauliche
@@ -353,6 +370,10 @@
       const daz = defaultArbeitszeitenSettings();
       for (const k of Object.keys(daz)) if (cache.settings.arbeitszeiten[k] === undefined) cache.settings.arbeitszeiten[k] = daz[k];
     }
+    if (!cache.settings.personen) cache.settings.personen = defaultPersonenSettings();
+    else if (!Array.isArray(cache.settings.personen.ignorierteDubletten)) {
+      cache.settings.personen.ignorierteDubletten = [];
+    }
     // Globales Vikunja-Projekt: einmalig aus dem früheren Vorgänge-spezifischen
     // Wert übernehmen (nur wenn das Feld noch gar nicht existiert).
     if (cache.settings.vikunjaProjektId === undefined) {
@@ -509,6 +530,23 @@
     GR.api.putSettings(s).catch(e => console.warn('saveSettings Backend-Fehler', e));
   }
 
+  // Einen Modul-Datensatz über die reguläre Speicherfunktion sichern. Wird beim
+  // Zusammenführen von Personen gebraucht: so laufen Backend-PUT, WebSocket-
+  // Broadcast und Sync-Markierung genauso wie bei einer Bearbeitung von Hand.
+  const SPEICHERN_JE_ART = {
+    sitzungen: (s, rec) => s.saveSitzung(rec),
+    vermietungen: (s, rec) => s.saveVermietung(rec),
+    auslagen: (s, rec) => s.saveAuslage(rec),
+    arbeitszeiten: (s, rec) => s.saveArbeitszeit(rec),
+    arbeitsabrechnungen: (s, rec) => s.saveArbeitsabrechnung(rec),
+    vertraege: (s, rec) => s.saveVertrag(rec),
+  };
+  function speichereDatensatz(store, art, rec) {
+    const fn = SPEICHERN_JE_ART[art];
+    if (!fn) throw new Error('Unbekannte Datensatzart: ' + art);
+    fn(store, rec);
+  }
+
   // ----- Öffentliches Store-API (synchron lesend, Schreiben triggert Backend im Hintergrund) -----
   const store = {
     onReady(fn) { if (cache.ready) try { fn(); } catch (_) {} else readyListeners.push(fn); },
@@ -538,7 +576,7 @@
     // sonst zeigte eine alte Vermietung ihren Mieter nicht mehr an, nur weil
     // dessen Mieter-Rolle inzwischen entfernt wurde.
     listPersonen() { return cache.personen.slice(); },
-    getPerson(id) { return findPerson(id); },
+    getPerson(id) { return findPersonAufgeloest(id); },
     personenMitRolle(rolle) { return personenMitRolle(rolle); },
     savePerson(p) {
       const person = M.normalizePerson(p);
@@ -555,9 +593,88 @@
     },
     entfernePersonRolle(id, rolle) { entferneRolle(id, rolle); },
 
+    // --- Dubletten zusammenführen ---
+    // Alle Datensätze der Module, die auf diese Person zeigen – nach Art
+    // gruppiert. Grundlage für die Anzeige im Assistenten und fürs Umschreiben.
+    personVerweise(id) {
+      const out = {};
+      for (const def of M.PERSON_VERWEISE) {
+        out[def.art] = (cache[def.art] || []).filter(rec => M.istPersonImDatensatz(rec, def.art, id));
+      }
+      return out;
+    },
+    personVerweiseAnzahl(id) {
+      const v = this.personVerweise(id);
+      return M.PERSON_VERWEISE.reduce((n, def) => n + (v[def.art] || []).length, 0);
+    },
+
+    // Führt `quelleId` in `zielId` zusammen: Verweise umschreiben, Felder nach
+    // `wahl` verschmelzen, Quelle löschen. Die Quelle bleibt vollständig im
+    // Archiv der Zielperson erhalten, deshalb ist der Schritt umkehrbar.
+    fuehrePersonenZusammen(zielId, quelleId, wahl) {
+      if (!zielId || !quelleId || zielId === quelleId) throw new Error('Zwei verschiedene Personen wählen');
+      const ziel = findPerson(zielId);
+      const quelle = findPerson(quelleId);
+      if (!ziel || !quelle) throw new Error('Person nicht gefunden');
+
+      // Erst die Verweise – schlägt hier etwas fehl, ist noch nichts gelöscht.
+      const betroffen = this.personVerweise(quelleId);
+      const protokoll = {};
+      for (const def of M.PERSON_VERWEISE) {
+        const eintraege = [];
+        for (const rec of (betroffen[def.art] || [])) {
+          const { geaendert, vorher } = M.ersetzePersonVerweise(rec, def.art, quelleId, zielId);
+          if (!geaendert) continue;
+          eintraege.push({ id: rec.id, vorher });
+          speichereDatensatz(this, def.art, rec);
+        }
+        if (eintraege.length) protokoll[def.art] = eintraege;
+      }
+
+      const neu = M.mergePersonen(ziel, quelle, wahl, protokoll);
+      this.deletePerson(quelleId);
+      this.savePerson(neu);
+      return {
+        person: neu,
+        verweise: protokoll,
+        mergeId: neu.zusammengefuehrt[neu.zusammengefuehrt.length - 1].id,
+      };
+    },
+
+    // Macht eine Zusammenführung rückgängig: Verweise zurückschreiben, den
+    // aufgegebenen Datensatz aus dem Archiv wiederherstellen, die Zielperson auf
+    // ihren Stand davor zurücksetzen. Nur die zuletzt durchgeführte
+    // Zusammenführung einer Person ist umkehrbar – bei älteren wüsste niemand,
+    // welche der späteren Änderungen daraufhin gelten sollen.
+    macheZusammenfuehrungRueckgaengig(personId, mergeId) {
+      const person = findPerson(personId);
+      if (!person) throw new Error('Person nicht gefunden');
+      const liste = person.zusammengefuehrt || [];
+      const idx = liste.findIndex(e => e.id === mergeId);
+      if (idx < 0) throw new Error('Zusammenführung nicht gefunden');
+      if (idx !== liste.length - 1) throw new Error('Nur die zuletzt durchgeführte Zusammenführung ist rückgängig zu machen');
+      const eintrag = liste[idx];
+
+      for (const [art, eintraege] of Object.entries(eintrag.verweise || {})) {
+        for (const e of eintraege) {
+          const rec = (cache[art] || []).find(x => x.id === e.id);
+          if (!rec) continue;
+          M.stellePersonVerweiseHer(rec, art, e.vorher);
+          speichereDatensatz(this, art, rec);
+        }
+      }
+
+      const zurueck = M.normalizePerson(eintrag.zielVorher);
+      zurueck.zusammengefuehrt = liste.slice(0, idx);
+      const quelle = M.normalizePerson(eintrag.quelle);
+      this.savePerson(quelle);
+      this.savePerson(zurueck);
+      return { ziel: zurueck, quelle };
+    },
+
     // --- Mitglieder (Sicht: Rolle „rat") ---
     listMitglieder() { return personenMitRolle('rat').map(M.toMitglied); },
-    getMitglied(id) { const p = findPerson(id); return p ? M.toMitglied(p) : null; },
+    getMitglied(id) { const p = findPersonAufgeloest(id); return p ? M.toMitglied(p) : null; },
     saveMitglied(m) { speichereAlsRolle(M.applyMitglied, migrateMitglied(m)); },
     deleteMitglied(id) { entferneRolle(id, 'rat'); },
 
@@ -590,7 +707,7 @@
 
     // --- Mieter (Sicht: Rolle „mieter") ---
     listMieter() { return personenMitRolle('mieter').map(M.toMieter); },
-    getMieter(id) { const p = findPerson(id); return p ? M.toMieter(p) : null; },
+    getMieter(id) { const p = findPersonAufgeloest(id); return p ? M.toMieter(p) : null; },
     saveMieter(m) { speichereAlsRolle(M.applyMieter, m); },
     deleteMieter(id) { entferneRolle(id, 'mieter'); },
 
@@ -644,7 +761,7 @@
 
     // --- Empfänger, Bargeldauslagen (Sicht: Rolle „empfaenger") ---
     listEmpfaenger() { return personenMitRolle('empfaenger').map(M.toEmpfaenger); },
-    getEmpfaenger(id) { const p = findPerson(id); return p ? M.toEmpfaenger(p) : null; },
+    getEmpfaenger(id) { const p = findPersonAufgeloest(id); return p ? M.toEmpfaenger(p) : null; },
     saveEmpfaenger(e) { speichereAlsRolle(M.applyEmpfaenger, e); },
     deleteEmpfaenger(id) { entferneRolle(id, 'empfaenger'); },
 
@@ -707,7 +824,7 @@
 
     // --- Vertragspartner, Modul Verträge (Sicht: Rolle „partner") ---
     listVertragspartner() { return personenMitRolle('partner').map(M.toVertragspartner); },
-    getVertragspartner(id) { const p = findPerson(id); return p ? M.toVertragspartner(p) : null; },
+    getVertragspartner(id) { const p = findPersonAufgeloest(id); return p ? M.toVertragspartner(p) : null; },
     saveVertragspartner(p) { speichereAlsRolle(M.applyVertragspartner, p); },
     deleteVertragspartner(id) { entferneRolle(id, 'partner'); },
 
@@ -746,7 +863,7 @@
     // --- Modul Arbeitszeiten & Vergütung ---
     // Arbeiter/Firmen (Sicht: Rolle „arbeiter")
     listArbeiter() { return personenMitRolle('arbeiter').map(M.toArbeiter); },
-    getArbeiter(id) { const p = findPerson(id); return p ? M.toArbeiter(p) : null; },
+    getArbeiter(id) { const p = findPersonAufgeloest(id); return p ? M.toArbeiter(p) : null; },
     saveArbeiter(a) { speichereAlsRolle(M.applyArbeiter, a); },
     deleteArbeiter(id) { entferneRolle(id, 'arbeiter'); },
 

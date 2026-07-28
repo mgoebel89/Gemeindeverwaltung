@@ -48,23 +48,254 @@
     return out;
   }
 
-  // Verdachtsfälle für doppelt geführte Personen (gleicher Name bzw. gleiche
-  // IBAN). Wird hier nur GEZÄHLT – zusammengeführt wird erst mit dem
-  // Dubletten-Assistenten, damit nichts unbemerkt verschmilzt.
+  // ------------------------------------------------------ Dubletten-Assistent
+  // Sucht Verdachtspaare (Bewertung in models.js) ohne die bereits als „kein
+  // Duplikat" abgehakten. Zusammengeführt wird nur, was bestätigt wurde.
+  function ignorierteDubletten() {
+    const s = store.getSettings();
+    return ((s.personen || {}).ignorierteDubletten || []).slice();
+  }
+  function merkeIgnoriert(schluessel) {
+    const s = store.getSettings();
+    if (!s.personen) s.personen = { ignorierteDubletten: [] };
+    if (!Array.isArray(s.personen.ignorierteDubletten)) s.personen.ignorierteDubletten = [];
+    if (!s.personen.ignorierteDubletten.includes(schluessel)) s.personen.ignorierteDubletten.push(schluessel);
+    store.saveSettings(s);
+  }
   function dublettenVerdacht(personen) {
-    const gruppen = (schluessel) => {
-      const map = new Map();
-      for (const p of personen) {
-        const k = schluessel(p);
-        if (!k) continue;
-        if (!map.has(k)) map.set(k, []);
-        map.get(k).push(p);
+    return M.findePersonenDubletten(personen || store.listPersonen(), ignorierteDubletten());
+  }
+
+  // Kurzsteckbrief einer Person für die Gegenüberstellung.
+  function personKarte(p, extra) {
+    const anzahl = store.personVerweiseAnzahl(p.id);
+    return el('div', { class: 'dub-person' }, [
+      el('div', { class: 'dub-person-name' }, M.personName(p) || '—'),
+      M.personZusatz(p) ? el('div', { class: 'help' }, M.personZusatz(p)) : null,
+      el('div', { class: 'pers-rollen-tags' }, M.personRollen(p).length
+        ? M.personRollen(p).map(r => el('span', { class: 'tag' }, ROLLEN_LABEL[r]))
+        : [el('span', { class: 'help' }, 'keine Rolle')]),
+      el('div', { class: 'help' }, M.personAnschrift(p) || 'keine Anschrift'),
+      el('div', { class: 'help' }, M.personKontakt(p) || 'kein Kontakt'),
+      p.iban ? el('div', { class: 'help' }, '🔒 ' + M.formatIban(p.iban)) : null,
+      el('div', { class: 'help' }, anzahl
+        ? `${anzahl} ${anzahl === 1 ? 'Eintrag' : 'Einträge'} in den Modulen`
+        : 'keine Einträge in den Modulen'),
+      extra || null,
+    ].filter(Boolean));
+  }
+
+  // Welche Datensätze das Zusammenführen anfassen wird – im Klartext, damit
+  // vorher klar ist, was passiert.
+  function verweisZusammenfassung(id) {
+    const v = store.personVerweise(id);
+    const teile = [];
+    for (const def of M.PERSON_VERWEISE) {
+      const n = (v[def.art] || []).length;
+      if (n) teile.push(`${n} ${n === 1 ? def.label : def.labelMehrzahl}`);
+    }
+    return teile;
+  }
+
+  function feldWertText(zeile, seite) {
+    const w = seite === 'ziel' ? zeile.zielWert : zeile.quelleWert;
+    if (zeile.feld.bool) return w ? 'ja' : 'nein';
+    return String(w || '') || '—';
+  }
+
+  // Schritt 2: zwei konkrete Personen zusammenführen.
+  function openZusammenfuehren(a, b, onFertig) {
+    // Vorschlag: es bleibt der Eintrag mit mehr Modul-Einträgen bestehen.
+    let ziel = M.besseresZiel(a, b, store.personVerweiseAnzahl(a.id), store.personVerweiseAnzahl(b.id));
+    let quelle = ziel.id === a.id ? b : a;
+    const wahl = {};
+
+    const overlay = el('div', { class: 'modal-overlay' });
+    const close = () => overlay.remove();
+    const box = el('div', { class: 'modal modal-breit' });
+    overlay.appendChild(box);
+
+    function zeichne() {
+      const vorschlag = M.mergeVorschlag(ziel, quelle);
+      // Auswahl merken, solange die Seiten nicht getauscht wurden
+      for (const z of vorschlag.felder) if (wahl[z.key]) z.auswahl = wahl[z.key];
+
+      const umzuschreiben = verweisZusammenfassung(quelle.id);
+
+      box.innerHTML = '';
+      box.appendChild(el('h3', {}, 'Personen zusammenführen'));
+
+      // --- Welcher Eintrag bleibt bestehen?
+      box.appendChild(el('h4', { style: 'margin:14px 0 4px;' }, '1 · Welcher Eintrag bleibt bestehen?'));
+      box.appendChild(el('p', { class: 'help', style: 'margin:0 0 8px;' }, 'Der bestehende Eintrag behält seine Kennung; alle Einträge des anderen werden auf ihn umgeschrieben. Vorgeschlagen ist der Eintrag mit den meisten Verknüpfungen – so ist am wenigsten umzuschreiben.'));
+      box.appendChild(el('div', { class: 'dub-gegenueber' }, [
+        personKarte(ziel, el('span', { class: 'tag ok' }, 'bleibt bestehen')),
+        el('div', { class: 'dub-pfeil' }, [
+          el('div', {}, '←'),
+          el('button', { class: 'btn-sm', onClick: () => { const t = ziel; ziel = quelle; quelle = t; zeichne(); } }, '⇄ Tauschen'),
+        ]),
+        personKarte(quelle, el('span', { class: 'tag' }, 'wird eingerechnet')),
+      ]));
+
+      // --- Verweise
+      box.appendChild(el('h4', { style: 'margin:16px 0 4px;' }, '2 · Was umgeschrieben wird'));
+      box.appendChild(umzuschreiben.length
+        ? el('ul', { class: 'dub-liste' }, umzuschreiben.map(t => el('li', {}, t)))
+        : el('p', { class: 'help' }, `„${M.personName(quelle)}" ist in keinem Modul eingetragen – es sind nur die Stammdaten zusammenzuführen.`));
+
+      // --- Felder
+      box.appendChild(el('h4', { style: 'margin:16px 0 4px;' }, '3 · Angaben'));
+      const konflikte = vorschlag.felder.filter(z => z.konflikt);
+      if (konflikte.length) {
+        box.appendChild(el('p', { class: 'help', style: 'margin:0 0 6px;' }, 'Beide Einträge haben hier einen Wert. Der vorausgewählte ist der vollständigere bzw. der aus dem zuletzt geänderten Eintrag – der nicht gewählte geht nicht verloren, er bleibt im Archiv der Zusammenführung.'));
+        const tabelle = el('table', { class: 'dub-felder' });
+        tabelle.appendChild(el('thead', {}, el('tr', {}, [
+          el('th', {}, 'Feld'),
+          el('th', {}, M.personName(ziel) || 'bleibt bestehen'),
+          el('th', {}, M.personName(quelle) || 'wird eingerechnet'),
+        ])));
+        const tbody = el('tbody');
+        for (const z of konflikte) {
+          const mk = (seite) => {
+            const rb = el('input', { type: 'radio', name: 'dub_' + z.key, checked: z.auswahl === seite });
+            rb.onchange = () => { if (rb.checked) wahl[z.key] = seite; };
+            return el('label', { class: 'dub-wahl' }, [rb, ' ', el('span', {}, feldWertText(z, seite))]);
+          };
+          tbody.appendChild(el('tr', {}, [
+            el('td', {}, [z.label, z.feld.sensibel ? el('span', { class: 'help' }, ' 🔒') : null].filter(Boolean)),
+            el('td', {}, mk('ziel')),
+            el('td', {}, mk('quelle')),
+          ]));
+          wahl[z.key] = z.auswahl;
+        }
+        tabelle.appendChild(tbody);
+        box.appendChild(tabelle);
+      } else {
+        box.appendChild(el('p', { class: 'help' }, 'Keine widersprüchlichen Angaben – nichts zu entscheiden.'));
       }
-      return Array.from(map.values()).filter(g => g.length > 1);
-    };
-    const nameGleich = gruppen(p => M.personName(p).toLowerCase().replace(/\s+/g, ' ').trim());
-    const ibanGleich = gruppen(p => String(p.iban || '').replace(/\s+/g, '').toUpperCase());
-    return { nameGleich, ibanGleich };
+
+      const ergaenzt = vorschlag.felder.filter(z => z.ergaenzt);
+      if (ergaenzt.length) {
+        box.appendChild(el('p', { class: 'help', style: 'margin-top:8px;' },
+          'Wird ergänzt (bisher leer): ' + ergaenzt.map(z => `${z.label} → ${feldWertText(z, 'quelle')}`).join(' · ')));
+      }
+      if (vorschlag.rollenNeu.length) {
+        box.appendChild(el('p', { class: 'help' },
+          'Rollen kommen hinzu: ' + vorschlag.rollenNeu.map(r => ROLLEN_LABEL[r]).join(', ')));
+      }
+      const beideNotizen = String(ziel.notiz || '').trim() && String(quelle.notiz || '').trim()
+        && String(ziel.notiz).trim() !== String(quelle.notiz).trim();
+      if (beideNotizen) box.appendChild(el('p', { class: 'help' }, 'Beide Notizen bleiben erhalten und werden untereinander gestellt.'));
+
+      box.appendChild(el('p', { class: 'help', style: 'margin-top:10px;' },
+        `Die aufgegebene Kennung bleibt als Verweis hinterlegt, der komplette Eintrag „${M.personName(quelle)}" im Archiv – die Zusammenführung ist danach rückgängig zu machen.`));
+
+      box.appendChild(el('div', { class: 'toolbar', style: 'margin-top:16px; margin-bottom:0;' }, [
+        el('button', { class: 'btn-primary', onClick: ausfuehren }, 'Zusammenführen'),
+        el('button', { onClick: close }, 'Abbrechen'),
+      ]));
+    }
+
+    function ausfuehren() {
+      if (!confirmDialog(`„${M.personName(quelle)}" in „${M.personName(ziel)}" zusammenführen?\n\n` +
+        (verweisZusammenfassung(quelle.id).join(', ') || 'Keine Modul-Einträge') + ' werden umgeschrieben.')) return;
+      let bericht;
+      try {
+        bericht = store.fuehrePersonenZusammen(ziel.id, quelle.id, wahl);
+      } catch (e) {
+        toast('Zusammenführen fehlgeschlagen: ' + e.message, 5000);
+        return;
+      }
+      const n = Object.values(bericht.verweise).reduce((s, l) => s + l.length, 0);
+      toast(n ? `Zusammengeführt – ${n} Datensätze umgeschrieben` : 'Zusammengeführt', 3500);
+      close();
+      if (onFertig) onFertig(bericht);
+    }
+
+    zeichne();
+    overlay.addEventListener('click', e => { if (e.target === overlay) close(); });
+    document.body.appendChild(overlay);
+  }
+
+  // Schritt 1: Übersicht der Verdachtsfälle.
+  function openDublettenAssistent(onFertig) {
+    const overlay = el('div', { class: 'modal-overlay' });
+    const close = () => { overlay.remove(); if (onFertig) onFertig(); };
+    const box = el('div', { class: 'modal modal-breit' });
+    overlay.appendChild(box);
+
+    function zeichne() {
+      const paare = dublettenVerdacht(store.listPersonen());
+      box.innerHTML = '';
+      box.appendChild(el('h3', {}, 'Doppelte Personen zusammenführen'));
+      box.appendChild(el('p', { class: 'help' }, 'Vorschläge nach Sicherheit sortiert. Geprüft werden Namen (auch abweichende Schreibweisen), IBAN, E-Mail, Telefon, Geburtsdatum und Anschrift. Nichts wird ohne Bestätigung zusammengeführt.'));
+
+      if (!paare.length) {
+        box.appendChild(el('div', { class: 'empty' }, 'Keine Verdachtsfälle mehr offen.'));
+      } else {
+        const liste = el('div', { class: 'dub-vorschlaege' });
+        for (const paar of paare) {
+          liste.appendChild(el('div', { class: 'dub-vorschlag' }, [
+            el('div', { class: 'dub-vorschlag-kopf' }, [
+              el('span', { class: 'tag ' + (paar.stufe === 'sicher' ? 'ok' : paar.stufe === 'wahrscheinlich' ? 'prep' : '') },
+                M.DUBLETTE_STUFE_LABEL[paar.stufe]),
+              el('span', { class: 'help' }, ' ' + paar.gruende.join(' · ')),
+            ]),
+            el('div', { class: 'dub-vorschlag-namen' }, [
+              el('strong', {}, M.personName(paar.a) || '—'),
+              el('span', { class: 'help' }, ' ↔ '),
+              el('strong', {}, M.personName(paar.b) || '—'),
+            ]),
+            el('div', { class: 'dub-vorschlag-aktionen' }, [
+              el('button', { class: 'btn-sm btn-primary', onClick: () => openZusammenfuehren(paar.a, paar.b, () => zeichne()) }, 'Prüfen & zusammenführen'),
+              ' ',
+              el('button', { class: 'btn-sm', onClick: () => { merkeIgnoriert(paar.schluessel); toast('Als „kein Duplikat" gemerkt'); zeichne(); } }, 'Kein Duplikat'),
+            ]),
+          ]));
+        }
+        box.appendChild(liste);
+      }
+
+      // Von Hand: zwei beliebige Personen
+      box.appendChild(el('h4', { style: 'margin:18px 0 4px;' }, 'Von Hand zusammenführen'));
+      box.appendChild(el('p', { class: 'help', style: 'margin:0 0 6px;' }, 'Für Dubletten, die der Vorschlagsliste entgehen – etwa bei völlig verschiedenen Schreibweisen.'));
+      const alle = store.listPersonen().slice().sort((x, y) => M.personName(x).localeCompare(M.personName(y), 'de'));
+      const mkSel = () => {
+        const s = el('select', {});
+        s.appendChild(el('option', { value: '' }, '— Person wählen —'));
+        for (const p of alle) s.appendChild(el('option', { value: p.id }, M.personName(p) || p.id));
+        return s;
+      };
+      const selA = mkSel(), selB = mkSel();
+      box.appendChild(el('div', { class: 'dub-manuell' }, [
+        selA, el('span', { class: 'help' }, 'und'), selB,
+        el('button', {
+          class: 'btn-sm',
+          onClick: () => {
+            const a = store.getPerson(selA.value), b = store.getPerson(selB.value);
+            if (!a || !b) return toast('Bitte zwei Personen wählen');
+            if (a.id === b.id) return toast('Zweimal dieselbe Person');
+            openZusammenfuehren(a, b, () => zeichne());
+          },
+        }, 'Prüfen'),
+      ]));
+
+      box.appendChild(el('div', { class: 'toolbar', style: 'margin-top:16px; margin-bottom:0;' }, [
+        el('button', { onClick: close }, 'Schließen'),
+      ]));
+    }
+
+    zeichne();
+    overlay.addEventListener('click', e => { if (e.target === overlay) close(); });
+    document.body.appendChild(overlay);
+  }
+
+  // Zuletzt zusammengeführt – je Person ist der jüngste Vorgang umkehrbar.
+  function letzteZusammenfuehrungen(personen) {
+    return personen
+      .filter(p => (p.zusammengefuehrt || []).length)
+      .map(p => ({ person: p, eintrag: p.zusammengefuehrt[p.zusammengefuehrt.length - 1] }))
+      .sort((x, y) => String(y.eintrag.at || '').localeCompare(String(x.eintrag.at || '')));
   }
 
   // --------------------------------------------------------------- Formular
@@ -370,18 +601,64 @@
     // --- Fuß: Zusammenführung und Dubletten
     const info = el('div', { class: 'card', style: 'margin-top:16px;' });
     const verdacht = dublettenVerdacht(alle);
-    const anzahlVerdacht = verdacht.nameGleich.length + verdacht.ibanGleich.length;
+    const anzahlVerdacht = verdacht.length;
     info.appendChild(el('h3', {}, 'Zusammengeführte Listen'));
     info.appendChild(el('p', { class: 'help' }, 'Ratsmitglieder, Mieter, Empfänger, Arbeiter/Firmen und Vertragspartner sind zu dieser einen Liste zusammengefasst. Jede Person hat ihre bisherige Kennung behalten, darum zeigen alle Vermietungen, Auslagen, Abrechnungen, Verträge und Sitzungen unverändert auf die richtigen Datensätze.'));
     const zeilen = el('div', { class: 'pers-stat' }, ROLLEN.map(r =>
       el('div', {}, [el('strong', {}, String(zaehler[r] || 0)), el('div', { class: 'help' }, ROLLEN_LABEL[r])])));
     info.appendChild(zeilen);
-    info.appendChild(el('p', { class: 'help', style: 'margin-top:10px;' }, anzahlVerdacht
-      ? `${anzahlVerdacht} möglicher Doppeleintrag gefunden (gleicher Name bzw. gleiche IBAN): ` +
-        verdacht.nameGleich.concat(verdacht.ibanGleich).map(g => M.personName(g[0])).join(', ') +
-        '. Zusammenführen kommt als eigener Assistent – bis dahin bleibt jeder Eintrag unangetastet.'
-      : 'Keine offensichtlichen Doppeleinträge gefunden.'));
+
+    // --- Dubletten
+    if (!anzahlVerdacht) {
+      info.appendChild(el('p', { class: 'help', style: 'margin-top:10px;' }, 'Keine möglichen Doppeleinträge gefunden.'));
+    } else if (!istLeitung()) {
+      info.appendChild(el('p', { class: 'help', style: 'margin-top:10px;' },
+        `${anzahlVerdacht} ${anzahlVerdacht === 1 ? 'möglicher Doppeleintrag' : 'mögliche Doppeleinträge'} gefunden. Zum Zusammenführen in die Leitungs-Ansicht wechseln – dabei sind auch Bankverbindung und Steuerdaten abzugleichen, die hier ausgeblendet sind.`));
+    } else {
+      info.appendChild(el('p', { style: 'margin-top:10px;' },
+        `${anzahlVerdacht} ${anzahlVerdacht === 1 ? 'möglicher Doppeleintrag' : 'mögliche Doppeleinträge'}: ` +
+        verdacht.slice(0, 5).map(p => `${M.personName(p.a)} ↔ ${M.personName(p.b)}`).join(', ') +
+        (verdacht.length > 5 ? ' …' : '')));
+      info.appendChild(el('button', { class: 'btn-primary', onClick: () => openDublettenAssistent(refresh) }, 'Doppelte zusammenführen'));
+    }
+    if (istLeitung() && !anzahlVerdacht) {
+      info.appendChild(el('button', { class: 'btn-sm', onClick: () => openDublettenAssistent(refresh) }, 'Von Hand zusammenführen…'));
+    }
     mount.appendChild(info);
+
+    // --- Rückgängig
+    const rueck = letzteZusammenfuehrungen(alle);
+    if (istLeitung() && rueck.length) {
+      const karte = el('div', { class: 'card', style: 'margin-top:16px;' });
+      karte.appendChild(el('h3', {}, 'Zuletzt zusammengeführt'));
+      karte.appendChild(el('p', { class: 'help' }, 'Der jeweils jüngste Vorgang ist umkehrbar: der aufgegebene Eintrag wird wiederhergestellt und alle umgeschriebenen Verweise zeigen wieder auf ihn.'));
+      const t = el('table');
+      const tb = el('tbody');
+      for (const { person, eintrag } of rueck.slice(0, 10)) {
+        const anzahl = Object.values(eintrag.verweise || {}).reduce((s, l) => s + l.length, 0);
+        tb.appendChild(el('tr', {}, [
+          el('td', {}, [
+            el('div', {}, [el('strong', {}, eintrag.quelleName || '—'), ' → ', el('strong', {}, M.personName(person))]),
+            el('div', { class: 'help' }, new Date(eintrag.at).toLocaleString('de-DE')
+              + (anzahl ? ` · ${anzahl} ${anzahl === 1 ? 'Datensatz' : 'Datensätze'} umgeschrieben` : ' · keine Verweise')),
+          ]),
+          el('td', { style: 'text-align:right; white-space:nowrap;' }, el('button', {
+            class: 'btn-sm',
+            onClick: () => {
+              if (!confirmDialog(`Zusammenführung rückgängig machen?\n\n„${eintrag.quelleName}" wird als eigener Eintrag wiederhergestellt.`)) return;
+              try {
+                store.macheZusammenfuehrungRueckgaengig(person.id, eintrag.id);
+                toast('Zusammenführung rückgängig gemacht');
+                refresh();
+              } catch (e) { toast('Nicht möglich: ' + e.message, 5000); }
+            },
+          }, 'Rückgängig')),
+        ]));
+      }
+      t.appendChild(tb);
+      karte.appendChild(t);
+      mount.appendChild(karte);
+    }
 
     // Stand der einmaligen Migration (nur mit Backend verfügbar)
     if (GR.api && GR.api.personenMigration) {
@@ -396,5 +673,8 @@
 
   GR.views = GR.views || {};
   GR.views.renderStammdaten = renderStammdaten;
-  GR.stammdaten = { dialog, verwendungen, dublettenVerdacht };
+  GR.stammdaten = {
+    dialog, verwendungen, dublettenVerdacht,
+    openDublettenAssistent, openZusammenfuehren, letzteZusammenfuehrungen,
+  };
 })();

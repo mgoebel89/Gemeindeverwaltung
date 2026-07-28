@@ -235,8 +235,8 @@ Backend die fünf alten Tabellen einmalig in `personen`:
   Rückweg. Die Migration ist idempotent (Marker `personenMigration` in den
   Settings, zusätzlich wird jede bereits vorhandene Kennung übersprungen).
 - **Doppelt geführte Personen werden NICHT automatisch verschmolzen.** Die
-  Stammdaten zeigen nur die Verdachtsfälle (gleicher Name bzw. gleiche IBAN);
-  zusammengeführt wird erst mit dem geplanten Dubletten-Assistenten.
+  Stammdaten zeigen die Verdachtsfälle; zusammengeführt wird nur von Hand über
+  den Dubletten-Assistenten (siehe unten).
 
 **Kompatibilität:** `store.listMieter()`, `listEmpfaenger()`, `listArbeiter()`,
 `listVertragspartner()` und `listMitglieder()` gibt es weiter — sie sind Sichten
@@ -261,6 +261,64 @@ Ohne gesetzten Leitungs-PIN ist das **Blickschutz, kein Zugangsschutz**.
 **Löschen** ist nur möglich, wenn die Person in keinem Modul mehr verwendet wird;
 andernfalls nennt die App die Fundstellen und verweist auf „Aktiv"-Haken
 entfernen oder die einzelne Rolle abwählen.
+
+### Dubletten zusammenführen
+
+Nach dem Zusammenlegen der fünf alten Listen steht dieselbe Person leicht
+mehrfach in den Stammdaten — einmal als Mieter, einmal als Empfänger, oft mit
+abweichender Schreibweise. Der Knopf **„Doppelte zusammenführen"** am Fuß der
+Stammdaten öffnet den Assistenten. Er ist der **Leitungs-Ansicht** vorbehalten,
+weil beim Zusammenführen auch IBAN, Steuer-ID, SV-Nummer und Geburtsdatum
+abzuwägen sind.
+
+**Erkennung.** Vorschläge werden nach Sicherheit sortiert und einzeln bestätigt.
+Bewertet werden gleicher Name (auch über Umlaut-Schreibweisen wie
+Müller/Mueller, vertauschte Vor-/Nachnamen und Tippfehler), ein Name der
+vollständig im anderen steckt („Bauhof Kelberg" ⊂ „Bauhof Kelberg GmbH"), sowie
+gleiche IBAN, E-Mail, Telefonnummer, Geburtsdatum und Anschrift. Ein einzelner
+Nachname paart bewusst **nicht** mit einer gleichnamigen Firma („Meyer" ist keine
+Dublette von „Karl Meyer"). Ein Vorschlag lässt sich mit **„Kein Duplikat"**
+dauerhaft abhaken (gemerkt in `settings.personen.ignorierteDubletten`). Für alles
+andere gibt es **„Von Hand zusammenführen"** mit freier Auswahl zweier Personen.
+
+**Was beim Zusammenführen passiert** — und warum nichts verloren geht:
+
+1. **Ein Eintrag bleibt bestehen** und behält seine Kennung. Vorgeschlagen ist
+   der mit den meisten Verknüpfungen, umschaltbar per „⇄ Tauschen".
+2. **Alle Verweise werden umgeschrieben**, an *jeder* Stelle: `mieterId`,
+   `empfaengerId`, `arbeiterId` (Zeiten und Abrechnungen), `partnerId` sowie in
+   den Sitzungen Sitzungsleitung, Schriftführer, Anwesenheitsliste, die
+   **Anwesenheitszeiten (dort steht die Kennung als Objektschlüssel)** und je TOP
+   Sitzungsleitung, Befangenheit, freiwilliger Verzicht und ruhendes Stimmrecht.
+   Waren beide Personen in derselben Liste, entsteht kein Doppeleintrag.
+   Der Assistent nennt vorab, was er anfassen wird.
+3. **Felder verschmelzen:** leere Felder werden still ergänzt, bei echten
+   Konflikten stehen beide Werte nebeneinander (vorausgewählt der vollständigere
+   bzw. der aus dem zuletzt geänderten Eintrag). Rollen werden vereinigt,
+   **beide Notizen** bleiben untereinander erhalten, und aktiv bleibt die Person,
+   sobald eine der beiden Seiten aktiv war.
+4. **Der aufgegebene Eintrag wandert vollständig ins Archiv** der Zielperson
+   (`zusammengefuehrt`) — samt der nicht gewählten Werte und einem Protokoll der
+   umgeschriebenen Datensätze. Er läuft im Backup und im NocoDB-Sync mit.
+5. **Die aufgegebene Kennung bleibt als Alias** (`aliasIds`) hinterlegt.
+   `store.getPerson()` und `db.getPersonAufgeloest()` lösen darüber weiter auf,
+   damit ein später eingespieltes Backup nicht ins Leere zeigt. Der
+   NocoDB-Restore überspringt Personen, deren Kennung so auflöst — sonst holte er
+   die zusammengeführte Dublette als eigenen Eintrag zurück.
+
+**Rückgängig.** Die Karte „Zuletzt zusammengeführt" macht den jeweils jüngsten
+Vorgang einer Person umkehrbar: der aufgegebene Eintrag wird wiederhergestellt,
+alle umgeschriebenen Verweise zeigen wieder auf ihn, und die Zielperson geht auf
+ihren Stand davor zurück. Ältere Vorgänge sind bewusst nicht einzeln umkehrbar —
+bei zwischenzeitlichen Änderungen wäre nicht mehr entscheidbar, was gelten soll.
+
+> **Für Entwickler:** Die Zusammenführung liegt im Frontend
+> (`models.js`, Abschnitt „Personen zusammenführen" + `store.js`
+> `fuehrePersonenZusammen` / `macheZusammenfuehrungRueckgaengig`), weil sie die
+> Verweise aller Module mitziehen muss. `backend/personen.js` kennt davon nur das
+> Feld `zusammengefuehrt` und die Alias-Auflösung. **Kommt ein Modul mit einem
+> Personenverweis dazu, muss es in `M.PERSON_VERWEISE` eingetragen werden** —
+> sonst bleibt sein Verweis beim Zusammenführen auf der gelöschten Kennung stehen.
 
 ## Modul „Dokumente" (Paperless-ngx)
 

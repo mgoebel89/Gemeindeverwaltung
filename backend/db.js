@@ -313,6 +313,12 @@ function getPerson(id) {
   const p = personenStore.get(id);
   return p ? P.normalizePerson(p) : null;
 }
+// Wie getPerson, löst aber zusätzlich die ids zusammengeführter Dubletten auf.
+// NUR für lesende Sichten: beim Speichern muss die id exakt bleiben, sonst
+// bekäme die Zielperson beim Sichern eines Altdatensatzes dessen id.
+function getPersonAufgeloest(id) {
+  return getPerson(id) || P.findePersonMitAlias(listPersonen(), id);
+}
 function savePerson(p) {
   const person = P.normalizePerson(p);
   if (!person.id) throw new Error('person.id fehlt');
@@ -343,31 +349,31 @@ function entferneRolle(id, rolle) {
 
 // Sichten: Ratsmitglieder
 const listMitglieder = () => personenMitRolle('rat').map(P.toMitglied);
-const getMitglied = (id) => { const p = getPerson(id); return p ? P.toMitglied(p) : null; };
+const getMitglied = (id) => { const p = getPersonAufgeloest(id); return p ? P.toMitglied(p) : null; };
 const saveMitglied = (m) => P.toMitglied(speichereAlsRolle(P.applyMitglied, m));
 const deleteMitglied = (id) => entferneRolle(id, 'rat');
 
 // Sichten: Mieter
 const listMieter = () => personenMitRolle('mieter').map(P.toMieter);
-const getMieter = (id) => { const p = getPerson(id); return p ? P.toMieter(p) : null; };
+const getMieter = (id) => { const p = getPersonAufgeloest(id); return p ? P.toMieter(p) : null; };
 const saveMieter = (m) => P.toMieter(speichereAlsRolle(P.applyMieter, m));
 const deleteMieter = (id) => entferneRolle(id, 'mieter');
 
 // Sichten: Empfänger (Bargeldauslagen)
 const listEmpfaenger = () => personenMitRolle('empfaenger').map(P.toEmpfaenger);
-const getEmpfaenger = (id) => { const p = getPerson(id); return p ? P.toEmpfaenger(p) : null; };
+const getEmpfaenger = (id) => { const p = getPersonAufgeloest(id); return p ? P.toEmpfaenger(p) : null; };
 const saveEmpfaenger = (e) => P.toEmpfaenger(speichereAlsRolle(P.applyEmpfaenger, e));
 const deleteEmpfaenger = (id) => entferneRolle(id, 'empfaenger');
 
 // Sichten: Arbeiter/Firmen (Arbeitszeiten)
 const listArbeiter = () => personenMitRolle('arbeiter').map(P.toArbeiter);
-const getArbeiter = (id) => { const p = getPerson(id); return p ? P.toArbeiter(p) : null; };
+const getArbeiter = (id) => { const p = getPersonAufgeloest(id); return p ? P.toArbeiter(p) : null; };
 const saveArbeiter = (a) => P.toArbeiter(speichereAlsRolle(P.applyArbeiter, a));
 const deleteArbeiter = (id) => entferneRolle(id, 'arbeiter');
 
 // Sichten: Vertragspartner
 const listVertragspartner = () => personenMitRolle('partner').map(P.toVertragspartner);
-const getVertragspartner = (id) => { const p = getPerson(id); return p ? P.toVertragspartner(p) : null; };
+const getVertragspartner = (id) => { const p = getPersonAufgeloest(id); return p ? P.toVertragspartner(p) : null; };
 const saveVertragspartner = (p) => P.toVertragspartner(speichereAlsRolle(P.applyVertragspartner, p));
 const deleteVertragspartner = (id) => entferneRolle(id, 'partner');
 
@@ -651,7 +657,7 @@ try {
 
 module.exports = {
   DATA_DIR, ATTACH_DIR, BELEG_DIR, VERM_FILE_DIR,
-  listPersonen, getPerson, savePerson, deletePerson,
+  listPersonen, getPerson, getPersonAufgeloest, savePerson, deletePerson,
   personenMitRolle, entferneRolle,
   migrierePersonen, personenMigrationStatus,
   listSitzungen, getSitzung, saveSitzung, deleteSitzung,

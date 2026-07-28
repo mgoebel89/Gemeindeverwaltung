@@ -132,7 +132,9 @@
       funktion: '',           // nur Rolle rat
       ortsfremd: false,       // nur Rolle mieter
       notiz: '', aktiv: true,
-      aliasIds: [], herkunft: [],
+      aliasIds: [],           // ids zusammengeführter Dubletten
+      herkunft: [],
+      zusammengefuehrt: [],   // Archiv je Zusammenführung (Rückgängig-Grundlage)
       schemaVersion: 1,
     };
   }
@@ -142,6 +144,7 @@
     out.rollen = Object.assign(emptyPersonRollen(), (p && p.rollen) || {});
     out.aliasIds = Array.isArray(out.aliasIds) ? out.aliasIds : [];
     out.herkunft = Array.isArray(out.herkunft) ? out.herkunft : [];
+    out.zusammengefuehrt = Array.isArray(out.zusammengefuehrt) ? out.zusammengefuehrt : [];
     return out;
   }
 
@@ -299,6 +302,391 @@
     p.email = trim(v.email);
     if (v.notiz !== undefined) p.notiz = v.notiz;
     return setPersonRolle(p, 'partner', true);
+  }
+
+  // ===== Personen zusammenführen (Dubletten) =====
+  // Nach dem Zusammenlegen der fünf alten Listen steht dieselbe Person leicht
+  // mehrfach in den Stammdaten – einmal als Mieter, einmal als Empfänger, mit
+  // abweichender Schreibweise. Diese Helfer finden solche Paare und rechnen
+  // zwei Datensätze zu einem zusammen, OHNE dass etwas verloren geht:
+  //
+  //  * Felder, die nur eine Seite gefüllt hat, wandern still herüber.
+  //  * Bei echten Konflikten entscheidet die Auswahl des Nutzers; der nicht
+  //    gewählte Wert bleibt im Archiv (`zusammengefuehrt`) erhalten.
+  //  * Alle Verweise der Module werden auf die Zielperson umgeschrieben, und
+  //    zwar an ALLEN Stellen – auch in den TOPs einer Sitzung und in den
+  //    Anwesenheitszeiten, wo die id als Objekt-SCHLÜSSEL steht.
+  //  * Die aufgegebene id bleibt als Alias stehen, damit ein später
+  //    eingespieltes Backup weiterhin auflöst.
+
+  // Felder, die beim Zusammenführen abgeglichen werden. `sensibel` = nur in der
+  // Leitungs-Ansicht sichtbar (IBAN, Steuer/SV) – siehe views/stammdaten.js.
+  const PERSON_FELDER = [
+    { key: 'anrede', label: 'Anrede' },
+    { key: 'firma', label: 'Firma' },
+    { key: 'vorname', label: 'Vorname' },
+    { key: 'nachname', label: 'Nachname' },
+    { key: 'ansprechpartner', label: 'Ansprechpartner' },
+    { key: 'strasse', label: 'Straße & Hausnummer' },
+    { key: 'plz', label: 'PLZ' },
+    { key: 'ort', label: 'Ort' },
+    { key: 'anschriftFreitext', label: 'Abweichende Anschrift', mehrzeilig: true },
+    { key: 'telefon', label: 'Telefon' },
+    { key: 'email', label: 'E-Mail' },
+    { key: 'iban', label: 'IBAN', sensibel: true },
+    { key: 'kontoinhaber', label: 'Kontoinhaber', sensibel: true },
+    { key: 'svNummer', label: 'Sozialversicherungsnummer', sensibel: true },
+    { key: 'steuerId', label: 'Steuer-ID', sensibel: true },
+    { key: 'geburtsdatum', label: 'Geburtsdatum', sensibel: true },
+    { key: 'funktion', label: 'Funktion im Rat' },
+    { key: 'ortsfremd', label: 'Ortsfremd', bool: true },
+  ];
+
+  // Wo in den Modulen Personen-ids stecken. Die Sitzung ist der Sonderfall:
+  // dort hängen Verweise zusätzlich in jedem TOP und als Schlüssel der
+  // Anwesenheitszeiten.
+  const PERSON_VERWEISE = [
+    { art: 'sitzungen', label: 'Sitzung', labelMehrzahl: 'Sitzungen', rolle: 'rat' },
+    { art: 'vermietungen', label: 'Vermietung', labelMehrzahl: 'Vermietungen', rolle: 'mieter', felder: ['mieterId'] },
+    { art: 'auslagen', label: 'Bargeldauslage', labelMehrzahl: 'Bargeldauslagen', rolle: 'empfaenger', felder: ['empfaengerId'] },
+    { art: 'arbeitszeiten', label: 'Arbeitszeit', labelMehrzahl: 'Arbeitszeiten', rolle: 'arbeiter', felder: ['arbeiterId'] },
+    { art: 'arbeitsabrechnungen', label: 'Abrechnung', labelMehrzahl: 'Abrechnungen', rolle: 'arbeiter', felder: ['arbeiterId'] },
+    { art: 'vertraege', label: 'Vertrag', labelMehrzahl: 'Verträge', rolle: 'partner', felder: ['partnerId'] },
+  ];
+
+  const TOP_PERSON_LISTEN = ['befangenheitsIds', 'freiwilligerVerzichtIds', 'stimmrechtRuhtIds'];
+
+  function verweisArt(art) { return PERSON_VERWEISE.find(v => v.art === art) || null; }
+
+  // --- Vergleichs-Normalisierung ---
+  // Umlaute falten, damit „Müller" und „Mueller" zusammenfinden.
+  function faltUmlaute(text) {
+    return String(text || '').toLowerCase()
+      .replace(/ä/g, 'ae').replace(/ö/g, 'oe').replace(/ü/g, 'ue').replace(/ß/g, 'ss');
+  }
+  function namensTeile(p) {
+    const roh = [p && p.firma, p && p.vorname, p && p.nachname].map(x => faltUmlaute(x));
+    return roh.join(' ').replace(/[^a-z0-9]+/g, ' ').trim().split(' ').filter(Boolean);
+  }
+  // Reihenfolge-unabhängiger Namensschlüssel: „Hans Müller" == „Müller, Hans".
+  function personNameSchluessel(p) { return namensTeile(p).slice().sort().join(' '); }
+  function nurZiffern(text) { return String(text || '').replace(/\D+/g, ''); }
+  function ibanSchluessel(p) { return String((p && p.iban) || '').replace(/\s+/g, '').toUpperCase(); }
+  function emailSchluessel(p) { return String((p && p.email) || '').trim().toLowerCase(); }
+  // Telefonnummern nur über die letzten Stellen vergleichen – Vorwahl-
+  // Schreibweisen (0049, +49, 02692) gehen sonst auseinander.
+  function telefonSchluessel(p) {
+    const z = nurZiffern(p && p.telefon);
+    return z.length >= 6 ? z.slice(-8) : '';
+  }
+  function anschriftSchluessel(p) {
+    const s = faltUmlaute([p && p.strasse, p && p.plz, p && p.ort].filter(Boolean).join(' '))
+      .replace(/stra(ss|s)e\b/g, 'str').replace(/[^a-z0-9]+/g, '');
+    return s.length >= 6 ? s : '';
+  }
+
+  function levenshtein(a, b) {
+    if (a === b) return 0;
+    if (!a.length) return b.length;
+    if (!b.length) return a.length;
+    let zeile = Array.from({ length: b.length + 1 }, (_, i) => i);
+    for (let i = 1; i <= a.length; i++) {
+      let vorher = zeile[0];
+      zeile[0] = i;
+      for (let j = 1; j <= b.length; j++) {
+        const temp = zeile[j];
+        zeile[j] = Math.min(zeile[j] + 1, zeile[j - 1] + 1, vorher + (a[i - 1] === b[j - 1] ? 0 : 1));
+        vorher = temp;
+      }
+    }
+    return zeile[b.length];
+  }
+  function namensAehnlichkeit(a, b) {
+    if (!a || !b) return 0;
+    const max = Math.max(a.length, b.length);
+    return max ? 1 - levenshtein(a, b) / max : 0;
+  }
+
+  // Rechtsformen zählen beim Namensvergleich nicht als eigenes Namenswort.
+  const RECHTSFORMEN = ['gmbh', 'mbh', 'ag', 'kg', 'ohg', 'gbr', 'ug', 'se', 'kgaa', 'co', 'e', 'v', 'ev'];
+
+  // Steckt der eine Name vollständig im anderen? „Bauhof Kelberg" ⊂ „Bauhof
+  // Kelberg GmbH". Bei nur EINEM gemeinsamen Wort darf der Rest ausschließlich
+  // aus Rechtsformen bestehen – sonst wäre „Meyer" eine Dublette jedes
+  // „Karl Meyer", und das ist es gerade nicht.
+  function nameEnthalten(a, b) {
+    const tA = namensTeile(a), tB = namensTeile(b);
+    if (!tA.length || !tB.length) return false;
+    const klein = tA.length <= tB.length ? tA : tB;
+    const gross = tA.length <= tB.length ? tB : tA;
+    if (!klein.every(w => gross.includes(w))) return false;
+    if (klein.length >= 2) return true;
+    const rest = gross.filter(w => !klein.includes(w));
+    return rest.length > 0 && rest.every(w => RECHTSFORMEN.includes(w));
+  }
+
+  const DUBLETTE_SICHER = 80;
+  const DUBLETTE_WAHRSCHEINLICH = 55;
+  const DUBLETTE_SCHWELLE = 35;
+
+  // Bewertet zwei Personen als mögliche Dublette. Rückgabe {score, gruende[]}.
+  // Die Punkte sind bewusst grob: sie sortieren die Vorschläge, entscheiden
+  // aber nichts – zusammengeführt wird nur, was bestätigt wurde.
+  function personDublettenScore(a, b) {
+    const gruende = [];
+    let score = 0;
+    const iban = ibanSchluessel(a);
+    if (iban && iban === ibanSchluessel(b)) { score += 50; gruende.push('gleiche IBAN'); }
+    const mail = emailSchluessel(a);
+    if (mail && mail === emailSchluessel(b)) { score += 40; gruende.push('gleiche E-Mail'); }
+    const tel = telefonSchluessel(a);
+    if (tel && tel === telefonSchluessel(b)) { score += 25; gruende.push('gleiche Telefonnummer'); }
+    const gebA = String(a.geburtsdatum || '').trim();
+    if (gebA && gebA === String(b.geburtsdatum || '').trim()) { score += 25; gruende.push('gleiches Geburtsdatum'); }
+    const adr = anschriftSchluessel(a);
+    if (adr && adr === anschriftSchluessel(b)) { score += 15; gruende.push('gleiche Anschrift'); }
+
+    const nA = personNameSchluessel(a);
+    const nB = personNameSchluessel(b);
+    let nameTrifft = false;
+    if (nA && nB) {
+      // Ein exakt gleicher Name reicht allein für „wahrscheinlich" – genau so
+      // sehen die Dubletten aus, die beim Zusammenlegen der fünf alten Listen
+      // entstanden sind (dieselbe Person einmal als Mieter, einmal als
+      // Empfänger). Zusammen mit IBAN, E-Mail oder Geburtsdatum wird daraus
+      // „sehr wahrscheinlich".
+      if (nA === nB) { score += 55; gruende.push('gleicher Name'); nameTrifft = true; }
+      // Muss VOR den Zeichenabstand: der Zusatz verlängert die Zeichenkette
+      // stark, „Bauhof Kelberg" gegen „Bauhof Kelberg GmbH" käme sonst nur als
+      // schwacher Zufallstreffer durch.
+      else if (nameEnthalten(a, b)) { score += 35; gruende.push('Name im anderen enthalten'); nameTrifft = true; }
+      else {
+        const aehnlich = namensAehnlichkeit(nA, nB);
+        if (aehnlich >= 0.85) { score += 35; gruende.push('fast gleicher Name'); nameTrifft = true; }
+        else if (aehnlich >= 0.72) { score += 15; gruende.push('ähnlicher Name'); nameTrifft = true; }
+      }
+    }
+
+    // Nachname gleich und Vorname mit demselben Buchstaben („H. Müller").
+    if (!nameTrifft) {
+      const nnA = faltUmlaute(a.nachname).trim();
+      const nnB = faltUmlaute(b.nachname).trim();
+      const vA = faltUmlaute(a.vorname).trim();
+      const vB = faltUmlaute(b.vorname).trim();
+      if (nnA && nnA === nnB && vA && vB && vA[0] === vB[0]) {
+        score += 20; gruende.push('gleicher Nachname, gleiche Anfangsbuchstaben');
+      }
+    }
+    return { score, gruende };
+  }
+
+  function dublettenStufe(score) {
+    if (score >= DUBLETTE_SICHER) return 'sicher';
+    if (score >= DUBLETTE_WAHRSCHEINLICH) return 'wahrscheinlich';
+    return 'moeglich';
+  }
+  const DUBLETTE_STUFE_LABEL = { sicher: 'sehr wahrscheinlich', wahrscheinlich: 'wahrscheinlich', moeglich: 'möglich' };
+
+  function paarSchluessel(idA, idB) { return [idA, idB].sort().join('|'); }
+
+  // Alle Verdachtspaare, stärkster Verdacht zuerst. `ignoriert` ist die Liste
+  // der als „kein Duplikat" abgehakten Paare (Paarschlüssel).
+  function findePersonenDubletten(personen, ignoriert) {
+    const weg = new Set(ignoriert || []);
+    const paare = [];
+    for (let i = 0; i < personen.length; i++) {
+      for (let j = i + 1; j < personen.length; j++) {
+        const a = personen[i], b = personen[j];
+        if (weg.has(paarSchluessel(a.id, b.id))) continue;
+        const { score, gruende } = personDublettenScore(a, b);
+        if (score < DUBLETTE_SCHWELLE || !gruende.length) continue;
+        paare.push({ schluessel: paarSchluessel(a.id, b.id), a, b, score, gruende, stufe: dublettenStufe(score) });
+      }
+    }
+    return paare.sort((x, y) => y.score - x.score
+      || personName(x.a).localeCompare(personName(y.a), 'de'));
+  }
+
+  const wert = (p, key, feld) => (feld && feld.bool ? !!(p && p[key]) : trim(p && p[key]));
+  const gefuellt = (p, key, feld) => (feld && feld.bool ? !!(p && p[key]) : !!trim(p && p[key]));
+
+  function anzahlGefuellt(p) {
+    return PERSON_FELDER.filter(f => gefuellt(p, f.key, f)).length + (trim(p && p.notiz) ? 1 : 0);
+  }
+
+  // Welcher der beiden Datensätze soll bestehen bleiben? Es gewinnt, wer mehr
+  // Einträge in den Modulen hat (dann sind weniger Verweise umzuschreiben);
+  // bei Gleichstand der vollständigere, dann der ältere.
+  function besseresZiel(a, b, verweiseA, verweiseB) {
+    if ((verweiseA || 0) !== (verweiseB || 0)) return (verweiseA || 0) > (verweiseB || 0) ? a : b;
+    const fa = anzahlGefuellt(a), fb = anzahlGefuellt(b);
+    if (fa !== fb) return fa > fb ? a : b;
+    const za = String(a.lastModifiedAt || ''), zb = String(b.lastModifiedAt || '');
+    if (za && zb && za !== zb) return za < zb ? a : b;
+    return a;
+  }
+
+  // Welcher Wert steht bei einem Konflikt vorne? Der längere (meist der
+  // vollständigere), sonst der aus dem zuletzt geänderten Datensatz.
+  function vorauswahl(ziel, quelle, key, feld) {
+    const zw = wert(ziel, key, feld), qw = wert(quelle, key, feld);
+    if (feld && feld.bool) return 'ziel';
+    if (String(qw).length !== String(zw).length) return String(qw).length > String(zw).length ? 'quelle' : 'ziel';
+    const zz = String(ziel.lastModifiedAt || ''), qz = String(quelle.lastModifiedAt || '');
+    return (qz && zz && qz > zz) ? 'quelle' : 'ziel';
+  }
+
+  // Feldweiser Vergleich als Grundlage der Assistenten-Oberfläche.
+  // `konflikt` = beide Seiten gefüllt und verschieden; `ergaenzt` = nur die
+  // Quelle hat einen Wert, er wandert ohne Rückfrage herüber.
+  function mergeVorschlag(ziel, quelle) {
+    const felder = [];
+    for (const feld of PERSON_FELDER) {
+      const zw = wert(ziel, feld.key, feld), qw = wert(quelle, feld.key, feld);
+      const zGefuellt = gefuellt(ziel, feld.key, feld), qGefuellt = gefuellt(quelle, feld.key, feld);
+      if (!zGefuellt && !qGefuellt) continue;
+      const zeile = { key: feld.key, label: feld.label, feld, zielWert: zw, quelleWert: qw };
+      if (String(zw) === String(qw)) zeile.gleich = true;
+      else if (!zGefuellt) { zeile.ergaenzt = true; zeile.auswahl = 'quelle'; }
+      else if (!qGefuellt) { zeile.nurZiel = true; zeile.auswahl = 'ziel'; }
+      else { zeile.konflikt = true; zeile.auswahl = vorauswahl(ziel, quelle, feld.key, feld); }
+      felder.push(zeile);
+    }
+    const rollenNeu = PERSON_ROLLEN.filter(r => hatRolle(quelle, r) && !hatRolle(ziel, r));
+    return { felder, konflikte: felder.filter(f => f.konflikt), rollenNeu };
+  }
+
+  // Notizen gehen nie verloren: unterschiedliche Texte werden aneinandergehängt.
+  function notizenVerbinden(zielNotiz, quelleNotiz, quelleName) {
+    const z = trim(zielNotiz), q = trim(quelleNotiz);
+    if (!q || z === q) return zielNotiz || '';
+    if (!z) return quelleNotiz || '';
+    return z + '\n\n— aus zusammengeführtem Eintrag' + (quelleName ? ' „' + quelleName + '"' : '') + ':\n' + q;
+  }
+
+  function vereinige(a, b) {
+    const out = [];
+    for (const x of [].concat(a || [], b || [])) if (x && !out.includes(x)) out.push(x);
+    return out;
+  }
+
+  const kopie = (o) => JSON.parse(JSON.stringify(o == null ? null : o));
+
+  // Baut die zusammengeführte Person. `wahl` = {feldKey: 'ziel'|'quelle'},
+  // `verweise` = das Protokoll der umgeschriebenen Datensätze (fürs Rückgängig).
+  // Verändert die übergebenen Objekte nicht.
+  function mergePersonen(ziel, quelle, wahl, verweise) {
+    const z = normalizePerson(kopie(ziel));
+    const q = normalizePerson(kopie(quelle));
+    const vorher = normalizePerson(kopie(ziel));
+    delete vorher.zusammengefuehrt;  // sonst schachtelt sich das Archiv bei jeder Zusammenführung neu
+
+    for (const feld of PERSON_FELDER) {
+      const w = wahl && wahl[feld.key];
+      if (w === 'quelle') z[feld.key] = q[feld.key];
+      else if (w === 'ziel') continue;
+      else if (!gefuellt(z, feld.key, feld) && gefuellt(q, feld.key, feld)) z[feld.key] = q[feld.key];
+    }
+    z.notiz = notizenVerbinden(ziel.notiz, quelle.notiz, personName(quelle));
+    for (const r of PERSON_ROLLEN) if (hatRolle(q, r)) setPersonRolle(z, r, true);
+    // Aktiv, sobald eine der beiden Seiten aktiv war – sonst verschwände die
+    // Person unbemerkt aus allen Auswahllisten.
+    z.aktiv = (ziel.aktiv !== false) || (quelle.aktiv !== false);
+    z.aliasIds = vereinige(vereinige(z.aliasIds, q.aliasIds), [q.id]);
+    z.herkunft = vereinige(z.herkunft, q.herkunft);
+    z.zusammengefuehrt = (Array.isArray(ziel.zusammengefuehrt) ? ziel.zusammengefuehrt.slice() : []).concat([{
+      id: uuid(),
+      at: new Date().toISOString(),
+      quelleId: q.id,
+      quelleName: personName(q),
+      quelle: q,            // vollständige Kopie des aufgegebenen Datensatzes
+      zielVorher: vorher,   // Zielperson vor der Zusammenführung
+      wahl: Object.assign({}, wahl || {}),
+      verweise: verweise || {},
+    }]);
+    return z;
+  }
+
+  // --- Verweise in den Modul-Datensätzen ---
+  function istPersonImDatensatz(rec, art, id) {
+    if (!rec || !id) return false;
+    if (art === 'sitzungen') {
+      if (rec.sitzungsleitungId === id || rec.schriftfuehrerId === id) return true;
+      if (Array.isArray(rec.anwesendIds) && rec.anwesendIds.includes(id)) return true;
+      const zeiten = rec.anwesenheitsZeiten;
+      if (zeiten && typeof zeiten === 'object' && Object.prototype.hasOwnProperty.call(zeiten, id)) return true;
+      return (rec.tops || []).some(t => t.sitzungsleitungId === id
+        || TOP_PERSON_LISTEN.some(k => Array.isArray(t[k]) && t[k].includes(id)));
+    }
+    const def = verweisArt(art);
+    return !!(def && (def.felder || []).some(f => rec[f] === id));
+  }
+
+  // Schreibt alle Verweise von `altId` auf `neuId` um. Rückgabe
+  // {geaendert, vorher} – `vorher` enthält NUR die angefassten Felder und ist
+  // die Grundlage für stellePersonVerweiseHer().
+  function ersetzePersonVerweise(rec, art, altId, neuId) {
+    const vorher = {};
+    let geaendert = false;
+    const skalar = (obj, key, ziel) => {
+      if (obj[key] !== altId) return;
+      ziel[key] = obj[key];
+      obj[key] = neuId;
+      geaendert = true;
+    };
+    // In Listen kann die Zielperson schon stehen (beide waren anwesend) –
+    // dann darf sie nicht doppelt auftauchen.
+    const liste = (obj, key, ziel) => {
+      const arr = obj[key];
+      if (!Array.isArray(arr) || !arr.includes(altId)) return;
+      ziel[key] = arr.slice();
+      const neu = [];
+      for (const id of arr) {
+        const x = id === altId ? neuId : id;
+        if (!neu.includes(x)) neu.push(x);
+      }
+      obj[key] = neu;
+      geaendert = true;
+    };
+
+    if (art === 'sitzungen') {
+      skalar(rec, 'sitzungsleitungId', vorher);
+      skalar(rec, 'schriftfuehrerId', vorher);
+      liste(rec, 'anwesendIds', vorher);
+      const zeiten = rec.anwesenheitsZeiten;
+      if (zeiten && typeof zeiten === 'object' && Object.prototype.hasOwnProperty.call(zeiten, altId)) {
+        vorher.anwesenheitsZeiten = Object.assign({}, zeiten);
+        // Hat die Zielperson eigene Zeiten, behalten sie Vorrang.
+        if (!Object.prototype.hasOwnProperty.call(zeiten, neuId)) zeiten[neuId] = zeiten[altId];
+        delete zeiten[altId];
+        geaendert = true;
+      }
+      const tops = [];
+      for (const t of (rec.tops || [])) {
+        const tv = {};
+        skalar(t, 'sitzungsleitungId', tv);
+        for (const k of TOP_PERSON_LISTEN) liste(t, k, tv);
+        if (Object.keys(tv).length) tops.push(Object.assign({ id: t.id }, tv));
+      }
+      if (tops.length) vorher.tops = tops;
+    } else {
+      const def = verweisArt(art);
+      for (const f of ((def && def.felder) || [])) skalar(rec, f, vorher);
+    }
+    return { geaendert, vorher };
+  }
+
+  function stellePersonVerweiseHer(rec, art, vorher) {
+    if (!rec || !vorher) return;
+    for (const [key, alt] of Object.entries(vorher)) {
+      if (key === 'tops') {
+        for (const tv of alt) {
+          const t = (rec.tops || []).find(x => x.id === tv.id);
+          if (!t) continue;
+          for (const [tk, tw] of Object.entries(tv)) if (tk !== 'id') t[tk] = tw;
+        }
+      } else rec[key] = alt;
+    }
   }
 
   // ===== Modul Vermietung =====
@@ -976,6 +1364,10 @@
     personName, personLangname, personZusatz, personAnschrift, personKontakt,
     toMitglied, applyMitglied, toMieter, applyMieter, toEmpfaenger, applyEmpfaenger,
     toArbeiter, applyArbeiter, toVertragspartner, applyVertragspartner,
+    PERSON_FELDER, PERSON_VERWEISE, DUBLETTE_STUFE_LABEL,
+    personNameSchluessel, personDublettenScore, findePersonenDubletten, paarSchluessel,
+    besseresZiel, mergeVorschlag, mergePersonen, notizenVerbinden, anzahlGefuellt,
+    istPersonImDatensatz, ersetzePersonVerweise, stellePersonVerweiseHer, verweisArt,
     KOSTENBOGEN_TYPEN, RAUM_ABRECHNUNGSARTEN, istPauschal,
     emptyMieter, emptyRaum, emptyRaumPreise, emptyVermietung, defaultUebergabeCheckliste,
     fullNameMieter, anzahlTage, berechneGrundmiete, berechneVerbrauch, berechneGesamt,

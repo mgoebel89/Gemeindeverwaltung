@@ -822,16 +822,16 @@
   // vorher konnte die Wiederherstellung NUR Sitzungen und Mitglieder.
   function payloadModule() {
     return [
-      { kind: 'mieter', label: 'Mieter', idKey: 'tableMieterId', nameKey: 'tableMieterName', fallback: 'Mieter', list: () => store.listMieter(), save: (o) => store.saveMieter(o) },
+      { kind: 'mieter', label: 'Mieter', idKey: 'tableMieterId', nameKey: 'tableMieterName', fallback: 'Mieter', list: () => store.listMieter(), save: (o) => store.saveMieter(o), istPerson: true },
       { kind: 'raeume', label: 'Objekte', idKey: 'tableRaeumeId', nameKey: 'tableRaeumeName', fallback: 'Raeume', list: () => store.listRaeume(), save: (o) => store.saveRaum(o) },
       { kind: 'vermietungen', label: 'Vermietungen', idKey: 'tableVermietungenId', nameKey: 'tableVermietungenName', fallback: 'Vermietungen', list: () => store.listVermietungen(), save: (o) => store.saveVermietung(o) },
-      { kind: 'empfaenger', label: 'Empfänger', idKey: 'tableEmpfaengerId', nameKey: 'tableEmpfaengerName', fallback: 'Empfaenger', list: () => store.listEmpfaenger(), save: (o) => store.saveEmpfaenger(o) },
+      { kind: 'empfaenger', label: 'Empfänger', idKey: 'tableEmpfaengerId', nameKey: 'tableEmpfaengerName', fallback: 'Empfaenger', list: () => store.listEmpfaenger(), save: (o) => store.saveEmpfaenger(o), istPerson: true },
       { kind: 'haushaltsstellen', label: 'Haushaltsstellen', idKey: 'tableHaushaltsstellenId', nameKey: 'tableHaushaltsstellenName', fallback: 'Haushaltsstellen', list: () => store.listHaushaltsstellen(), save: (o) => store.saveHaushaltsstelle(o) },
       { kind: 'auslagen', label: 'Auslagen', idKey: 'tableAuslagenId', nameKey: 'tableAuslagenName', fallback: 'Auslagen', list: () => store.listAuslagen(), save: (o) => store.saveAuslage(o) },
-      { kind: 'vertragspartner', label: 'Vertragspartner', idKey: 'tableVertragspartnerId', nameKey: 'tableVertragspartnerName', fallback: 'Vertragspartner', list: () => store.listVertragspartner(), save: (o) => store.saveVertragspartner(o) },
+      { kind: 'vertragspartner', label: 'Vertragspartner', idKey: 'tableVertragspartnerId', nameKey: 'tableVertragspartnerName', fallback: 'Vertragspartner', list: () => store.listVertragspartner(), save: (o) => store.saveVertragspartner(o), istPerson: true },
       { kind: 'vertraege', label: 'Verträge', idKey: 'tableVertraegeId', nameKey: 'tableVertraegeName', fallback: 'Vertraege', list: () => store.listVertraege(), save: (o) => store.saveVertrag(o) },
       { kind: 'vorgaenge', label: 'Vorgänge', idKey: 'tableVorgaengeId', nameKey: 'tableVorgaengeName', fallback: 'Vorgaenge', list: () => store.listVorgaenge(), save: (o) => store.saveVorgang(o) },
-      { kind: 'arbeiter', label: 'Arbeiter/Firmen', idKey: 'tableArbeiterId', nameKey: 'tableArbeiterName', fallback: 'Arbeiter', list: () => store.listArbeiter(), save: (o) => store.saveArbeiter(o) },
+      { kind: 'arbeiter', label: 'Arbeiter/Firmen', idKey: 'tableArbeiterId', nameKey: 'tableArbeiterName', fallback: 'Arbeiter', list: () => store.listArbeiter(), save: (o) => store.saveArbeiter(o), istPerson: true },
       { kind: 'arbeitszeiten', label: 'Arbeitszeiten', idKey: 'tableArbeitszeitenId', nameKey: 'tableArbeitszeitenName', fallback: 'Arbeitszeiten', list: () => store.listArbeitszeiten(), save: (o) => store.saveArbeitszeit(o) },
       { kind: 'arbeitsabrechnungen', label: 'Abrechnungen', idKey: 'tableArbeitsabrechnungenId', nameKey: 'tableArbeitsabrechnungenName', fallback: 'Arbeitsabrechnungen', list: () => store.listArbeitsabrechnungen(), save: (o) => store.saveArbeitsabrechnung(o) },
     ];
@@ -849,12 +849,20 @@
 
     const rows = await fetchAllRecords(tableId);
     const lokaleIds = new Set(mod.list().map(x => x.id));
+    // Personen-Module: eine id, die als Dublette zusammengeführt wurde, steht
+    // in NocoDB noch mit ihrer alten Zeile. Ohne diese Prüfung holte ein
+    // Restore die zusammengeführte Person als eigenen Eintrag zurück – die
+    // Zusammenführung wäre unbemerkt rückgängig. store.getPerson() löst die
+    // Kennung über `aliasIds` auf.
+    const schonDa = mod.istPerson
+      ? (id) => lokaleIds.has(id) || !!store.getPerson(id)
+      : (id) => lokaleIds.has(id);
     let added = 0, kaputt = 0;
     for (const r of rows) {
       if (!r.Payload) continue;
       let parsed = null;
       try { parsed = JSON.parse(r.Payload); } catch (_) { kaputt++; continue; }
-      if (!parsed || !parsed.id || lokaleIds.has(parsed.id)) continue;
+      if (!parsed || !parsed.id || schonDa(parsed.id)) continue;
       mod.save(parsed);
       store.markSynced(mod.kind, parsed.id);
       added++;

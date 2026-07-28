@@ -27,6 +27,12 @@
 // (app/src/models.js, Abschnitt „Personen"). Node-Modul und Browser-Skript
 // können sich keine Datei teilen – Änderungen hier müssen dort nachgezogen
 // werden.
+//
+// Das Zusammenführen von Dubletten selbst liegt bewusst NUR im Frontend
+// (models.js, Abschnitt „Personen zusammenführen" + store.js): es muss die
+// Verweise aller Module mitziehen, und die kennt der Store ohnehin komplett im
+// Cache. Hier gehören nur das Feld `zusammengefuehrt` und die Alias-Auflösung
+// her, damit ein eingespieltes Backup dieselbe Form behält.
 
 const ROLLEN = ['rat', 'mieter', 'empfaenger', 'arbeiter', 'partner'];
 
@@ -73,8 +79,9 @@ function emptyPerson(id) {
     // Allgemein
     notiz: '',
     aktiv: true,
-    aliasIds: [],           // ids zusammengeführter Dubletten (Phase 4)
+    aliasIds: [],           // ids zusammengeführter Dubletten
     herkunft: [],           // aus welchen Altlisten die Person stammt
+    zusammengefuehrt: [],   // Archiv je Zusammenführung (Rückgängig-Grundlage)
     schemaVersion: 1,
   };
 }
@@ -85,7 +92,18 @@ function normalizePerson(p) {
   out.rollen = Object.assign(emptyRollen(), (p && p.rollen) || {});
   out.aliasIds = Array.isArray(out.aliasIds) ? out.aliasIds : [];
   out.herkunft = Array.isArray(out.herkunft) ? out.herkunft : [];
+  out.zusammengefuehrt = Array.isArray(out.zusammengefuehrt) ? out.zusammengefuehrt : [];
   return out;
+}
+
+// Eine über `aliasIds` aufgegebene id findet ihre Zielperson wieder. Nötig für
+// alte Backups und NocoDB-Zeilen, die noch die id der zusammengeführten
+// Dublette tragen – ohne das liefe der Verweis ins Leere.
+function findePersonMitAlias(personen, id) {
+  if (!id) return null;
+  const direkt = (personen || []).find(p => p.id === id);
+  if (direkt) return direkt;
+  return (personen || []).find(p => Array.isArray(p.aliasIds) && p.aliasIds.includes(id)) || null;
 }
 
 function setRolle(p, rolle, an) {
@@ -295,7 +313,7 @@ const QUELLEN = [
 
 module.exports = {
   ROLLEN, ROLLEN_LABEL, QUELLEN,
-  emptyRollen, emptyPerson, normalizePerson,
+  emptyRollen, emptyPerson, normalizePerson, findePersonMitAlias,
   setRolle, hatRolle, hatIrgendeineRolle,
   personName, personLangname, personAnschrift,
   toMitglied, applyMitglied,
