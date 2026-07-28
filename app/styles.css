@@ -1165,3 +1165,15 @@ tr:hover td { background: #fafbfc; }
 @media (max-width: 760px) {
   .mail-datum { align-self: start; }
 }
+
+/* Kontextmenü (Rechtsklick), aktuell für Anhänge im E-Mail-Modul */
+.kontext-menue {
+  position: fixed; z-index: 3000; min-width: 220px;
+  background: white; border: 1px solid var(--border); border-radius: var(--radius);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, .16); padding: 4px; display: flex; flex-direction: column;
+}
+.kontext-eintrag {
+  text-align: left; border: none; background: none; padding: 8px 10px;
+  border-radius: 4px; cursor: pointer; font-size: 0.92rem; width: 100%;
+}
+.kontext-eintrag:hover { background: #f0f4fa; }

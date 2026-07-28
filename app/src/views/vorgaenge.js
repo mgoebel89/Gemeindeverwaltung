@@ -1056,16 +1056,26 @@
     // Antworten geht nur auf empfangene Nachrichten und nur, wenn das
     // E-Mail-Modul geladen ist.
     if (!raus && GR.mailUi) {
+      // Aus den gespeicherten Feldern eine nachrichtenähnliche Vorlage bauen;
+      // ältere Einträge haben nur die Textfassungen, das fängt adressen() ab.
+      const vorlage = {
+        betreff: e.betreff, datum: e.datum, text: e.text,
+        von: e.von, vonListe: e.vonListe || [],
+        an: e.an, anListe: e.anListe || [],
+        cc: e.cc, ccListe: e.ccListe || [],
+        antwortAn: e.antwortAn || '', antwortAnListe: e.antwortAnListe || [],
+        messageId: e.messageId, references: e.references || [],
+      };
       box.appendChild(el('div', { class: 'toolbar', style: 'margin:8px 0 0;' }, [
         el('button', {
-          class: 'btn-sm', onClick: () => {
-            GR.mailUi.openAntwort({
-              betreff: e.betreff, von: e.von, vonListe: [], datum: e.datum,
-              text: e.text, messageId: e.messageId, references: e.references || [],
-            }, v, refresh);
-          },
+          class: 'btn-sm', onClick: () => GR.mailUi.openAntwort(vorlage, v, refresh),
         }, '↩ Antworten'),
-      ]));
+        GR.mailUi.hatWeitereEmpfaenger(vorlage)
+          ? el('button', {
+            class: 'btn-sm', onClick: () => GR.mailUi.openAntwort(vorlage, v, refresh, true),
+          }, '↩↩ Allen antworten')
+          : null,
+      ].filter(Boolean)));
     }
 
     box.appendChild(el('div', { class: 'vg-label', style: 'margin-top:10px;' }, 'Anhänge / Dokumente (Paperless)'));

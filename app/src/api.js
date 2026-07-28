@@ -211,6 +211,9 @@
   }
   async function getMail(uid) { return jsonFetch(`/api/mail/messages/${encodeURIComponent(uid)}`); }
   function mailAttachmentUrl(uid, idx) { return `/api/mail/messages/${encodeURIComponent(uid)}/attachments/${encodeURIComponent(idx)}`; }
+  async function markMailSeen(uid, gelesen = true) {
+    return jsonFetch(`/api/mail/messages/${encodeURIComponent(uid)}/seen`, { method: 'POST', body: { gelesen } });
+  }
   async function sendMail(body) { return jsonFetch('/api/mail/send', { method: 'POST', body }); }
 
   async function getTaskConfig() { return jsonFetch('/api/aufgaben/config'); }
@@ -277,7 +280,7 @@
     uploadDocument, scanDocument, scanPageUrl, discardScan, commitScan, getDocTask, createCorrespondent, createDocumentType, createTag,
     getDocConfig, putDocConfig,
     getCalConfig, putCalConfig, testCalUrl, listCalEvents,
-    getMailConfig, putMailConfig, testMail, listMails, getMail, mailAttachmentUrl, sendMail,
+    getMailConfig, putMailConfig, testMail, listMails, getMail, mailAttachmentUrl, markMailSeen, sendMail,
     getTaskConfig, putTaskConfig, taskHealth, listOpenTasks, listTaskProjects, completeTask, createTask,
     getTask, updateTask, listTaskLabels, addTaskLabel, removeTaskLabel,
     listDocNotes, addDocNote, deleteDocNote,

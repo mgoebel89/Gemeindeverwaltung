@@ -50,6 +50,14 @@ router.get('/messages/:uid/attachments/:idx', async (req, res) => {
   } catch (err) { sendError(res, err); }
 });
 
+// Gelesen-Kennzeichen setzen (wird gesetzt, sobald eine Nachricht angesehen wurde).
+router.post('/messages/:uid/seen', async (req, res) => {
+  try {
+    const gelesen = !(req.body && req.body.gelesen === false);
+    res.json(await mail.markSeen(req.params.uid, gelesen));
+  } catch (err) { sendError(res, err); }
+});
+
 // Senden (Antwort aus dem Vorgang heraus oder neue Nachricht).
 router.post('/send', async (req, res) => {
   try { res.json(await mail.sendMail(req.body || {})); } catch (err) { sendError(res, err); }

@@ -662,20 +662,32 @@ Post durchsehen, eine Nachricht einem **Vorgang zuordnen**, aus dem Vorgang hera
 - **Anhänge** werden beim Zuordnen zum Anhaken angeboten und laufen einzeln durch den
   Paperless-Assistenten (Titel vorbelegt); die abgelegten Dokumente werden am Eintrag
   verknüpft. Bewusst kein Automatismus – sonst landen Signaturbilder und Logos in der Ablage.
+- **Gelesen-Kennzeichen:** Sobald eine Nachricht angesehen wurde (Vorschau oder großes
+  Fenster), setzt die App im Postfach das `\Seen`-Flag – die Nachricht gilt damit auch im
+  gewohnten Mailprogramm als gelesen. Scheitert das Setzen, bleibt es folgenlos.
+- **Anhänge per Rechtsklick ablegen:** Ein Rechtsklick auf einen Anhang öffnet ein kleines
+  Menü mit *In Paperless speichern* (öffnet den normalen Hochladedialog mit vorbelegtem Titel)
+  und *In neuem Tab öffnen*. Linksklick öffnet den Anhang wie gewohnt.
+- **Antworten** und **Allen antworten**: Bei *Allen antworten* wandern die übrigen
+  An-Empfänger ins An-Feld und die Kopie-Empfänger bleiben in Kopie; die **eigene Adresse
+  fällt überall heraus**, Doppelte werden entfernt. Ist ein `Reply-To` gesetzt (Verteiler,
+  Ticketsysteme), schlägt es den Absender. Der Knopf erscheint nur, wenn es außer dem Absender
+  überhaupt weitere Empfänger gibt.
 - **Antworten** aus dem Vorgang heraus: Empfänger, Betreff (`Re: …`) und Zitat sind vorbelegt.
   Die Antwort geht per SMTP raus, wird per `In-Reply-To` korrekt in den Thread eingehängt,
   **zusätzlich in den IMAP-Ordner „Gesendet" gelegt** (sonst fehlte sie im Mailprogramm) und
   als eigener Historieneintrag im Vorgang mitgeführt. Damit steht der ganze Schriftwechsel
   in der Akte – und im **Ablauf-PDF** des Vorgangs.
 - **Zugang** unter *Einstellungen → E-Mail*: Server, Benutzer, Passwort, IMAP-/SMTP-Port,
-  Absender und Name des Ordners „Gesendet". Alles wird **serverseitig** im Container
+  Absenderadresse, **Absendername** und Name des Ordners „Gesendet". Ohne Absendername sieht
+  der Empfänger nur die nackte Adresse – hier gehört z. B. „Ortsgemeinde Hörschhausen" hinein. Alles wird **serverseitig** im Container
   gespeichert (eigener DB-Schlüssel, **nicht** im Snapshot und **nicht** in der
   NocoDB-Sicherung); das Passwort wird nie an den Browser zurückgegeben. Ein leeres
   Passwortfeld lässt das gespeicherte unangetastet. *Verbindung testen* prüft IMAP und SMTP
   getrennt, damit klar wird, welche Seite klemmt.
 - Übliche Ports: IMAP **993** (SSL), SMTP **587** (STARTTLS) oder **465** (SSL). Alternativ
   per Env: `MAIL_HOST`, `MAIL_USER`, `MAIL_PASS`, `MAIL_IMAP_PORT`, `MAIL_SMTP_PORT`,
-  `MAIL_FROM`, `MAIL_SENT`.
+  `MAIL_FROM`, `MAIL_FROM_NAME`, `MAIL_SENT`.
 
 > **Shared-Hosting-Falle (Evanzo):** Als Server gehört der **Servername des Anbieters** hinein
 > – bei Hörschhausen `s101.evanzo-server.de` –, **nicht** `mail.hoerschhausen.de` oder

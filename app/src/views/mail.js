@@ -27,6 +27,109 @@
     return t.length > n ? t.slice(0, n) + ' …' : t;
   }
 
+  // Eigene Adresse, damit sie beim „Allen antworten" nicht mitverschickt wird.
+  // Bewusst nachladbar: ein einmaliger Abruf beim Modulladen scheitert, solange
+  // das Backend noch nicht bereit oder das Postfach nicht konfiguriert ist – und
+  // dann stünde die eigene Adresse für immer im Empfängerfeld.
+  let eigeneAdresse = '';
+  async function ladeEigeneAdresse() {
+    if (eigeneAdresse) return eigeneAdresse;
+    try {
+      const c = await GR.api.getMailConfig();
+      eigeneAdresse = String((c && c.user) || '').toLowerCase();
+    } catch (_) { /* bleibt leer, nächster Aufruf versucht es erneut */ }
+    return eigeneAdresse;
+  }
+
+  // Adressliste vereinheitlichen: bevorzugt die strukturierte Liste, sonst der
+  // zusammengesetzte String (so kommen die Werte aus gespeicherten Vorgangs-
+  // Einträgen zurück).
+  function adressen(liste, text) {
+    if (Array.isArray(liste) && liste.length) {
+      return liste.map(x => ({
+        address: String(x.address || '').trim(),
+        text: x.name ? `${x.name} <${x.address}>` : String(x.address || ''),
+      })).filter(x => x.address);
+    }
+    return String(text || '').split(',')
+      .map(s => s.trim()).filter(Boolean)
+      .map(s => {
+        const m = /<([^>]+)>/.exec(s);
+        return { address: (m ? m[1] : s).trim(), text: s };
+      });
+  }
+  // Doppelte und die eigene Adresse raus, Reihenfolge bleibt erhalten.
+  function ohneDoppelte(eintraege, zusaetzlichRaus = []) {
+    const raus = new Set([eigeneAdresse, ...zusaetzlichRaus.map(a => String(a || '').toLowerCase())].filter(Boolean));
+    const gesehen = new Set();
+    const out = [];
+    for (const e of eintraege) {
+      const key = e.address.toLowerCase();
+      if (!key || raus.has(key) || gesehen.has(key)) continue;
+      gesehen.add(key);
+      out.push(e);
+    }
+    return out;
+  }
+
+  // Kontextmenü (Rechtsklick) mit einem Eintrag je Aktion.
+  function kontextMenue(ev, eintraege) {
+    ev.preventDefault();
+    document.querySelectorAll('.kontext-menue').forEach(m => m.remove());
+    const menu = el('div', { class: 'kontext-menue' },
+      eintraege.map(([label, fn]) => el('button', {
+        class: 'kontext-eintrag',
+        onClick: () => { menu.remove(); fn(); },
+      }, label)));
+    menu.style.left = Math.min(ev.clientX, window.innerWidth - 240) + 'px';
+    menu.style.top = Math.min(ev.clientY, window.innerHeight - 60) + 'px';
+    document.body.appendChild(menu);
+    const zu = (e) => {
+      if (menu.contains(e.target)) return;
+      menu.remove();
+      document.removeEventListener('mousedown', zu);
+      document.removeEventListener('keydown', esc);
+    };
+    const esc = (e) => { if (e.key === 'Escape') zu({ target: document.body }); };
+    setTimeout(() => {
+      document.addEventListener('mousedown', zu);
+      document.addEventListener('keydown', esc);
+    }, 0);
+  }
+
+  // Anhang holen und durch den normalen Paperless-Hochladedialog schicken.
+  async function anhangNachPaperless(msg, a, onFertig) {
+    try {
+      toast('Anhang wird geholt …');
+      const res = await fetch(GR.api.mailAttachmentUrl(msg.uid, a.index));
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      const blob = await res.blob();
+      const file = new File([blob], a.filename, { type: a.contentType || blob.type });
+      GR.ui.uploadPaperlessDocument({
+        presetFile: file,
+        title: 'Anhang ablegen: ' + a.filename,
+        prefillTitle: String(a.filename).replace(/\.[^.]+$/, ''),
+        onUploaded: onFertig,
+      });
+    } catch (err) {
+      toast('Anhang konnte nicht geladen werden: ' + err.message, 4000);
+    }
+  }
+
+  // Anhang-Chip: Linksklick öffnet, Rechtsklick bietet die Paperless-Ablage an.
+  function anhangChip(msg, a, onAbgelegt) {
+    const link = el('a', {
+      class: 'mail-anhang', href: GR.api.mailAttachmentUrl(msg.uid, a.index),
+      target: '_blank', rel: 'noopener',
+      title: 'Linksklick öffnet, Rechtsklick legt in Paperless ab',
+    }, `📎 ${a.filename}${a.size ? ' (' + Math.round(a.size / 1024) + ' kB)' : ''}`);
+    link.addEventListener('contextmenu', (ev) => kontextMenue(ev, [
+      ['📥 In Paperless speichern', () => anhangNachPaperless(msg, a, onAbgelegt)],
+      ['↗ In neuem Tab öffnen', () => window.open(link.href, '_blank', 'noopener')],
+    ]));
+    return link;
+  }
+
   // Sortierung explizit statt implizit: das Umschlagsdatum mancher Server ist
   // unzuverlässig, deshalb soll nachvollziehbar sein, wonach geordnet wird.
   const SORTEN = {
@@ -44,6 +147,7 @@
   // ===================== Posteingang =====================
   function renderMail(mount) {
     function refresh() { mount.innerHTML = ''; renderMail(mount); }
+    ladeEigeneAdresse(); // früh anstoßen, damit „Allen antworten" korrekt filtert
 
     const sucheI = el('input', { type: 'search', placeholder: 'Betreff oder Absender suchen …' });
     let sortKey = '-datum';
@@ -111,6 +215,17 @@
       vorschau.appendChild(el('div', { class: 'empty' }, text));
     }
 
+    // Angesehene Nachricht im Postfach als gelesen kennzeichnen. Scheitert das,
+    // bleibt es folgenlos – die Nachricht ist trotzdem angezeigt worden.
+    function alsGelesen(m) {
+      if (m.gelesen) return;
+      m.gelesen = true;
+      const row = zeilenNachUid.get(m.uid);
+      if (row) row.classList.remove('mail-ungelesen');
+      GR.api.markMailSeen(m.uid, true).catch(err =>
+        console.warn('Gelesen-Kennzeichen nicht gesetzt', err));
+    }
+
     let vorschauLauf = 0;
     async function zeigeVorschau(m) {
       const lauf = ++vorschauLauf;
@@ -119,26 +234,28 @@
       try {
         const voll = await GR.api.getMail(m.uid);
         if (lauf !== vorschauLauf) return; // schneller Klick weiter – Antwort verwerfen
+        alsGelesen(m);
         vorschau.innerHTML = '';
         vorschau.appendChild(el('div', { class: 'mail-vorschau-kopf' }, [
           el('strong', {}, voll.betreff || '(kein Betreff)'),
           el('div', { class: 'help' }, voll.von || '—'),
+          voll.cc ? el('div', { class: 'help' }, 'Kopie: ' + voll.cc) : null,
           el('div', { class: 'help' }, datumZeit(voll.datum)),
-        ]));
+        ].filter(Boolean)));
         vorschau.appendChild(el('pre', { class: 'mail-text mail-vorschau-text' }, voll.text || '(kein Textinhalt)'));
         if ((voll.anhaenge || []).length) {
-          vorschau.appendChild(el('div', { class: 'mail-anhaenge' }, voll.anhaenge.map(a =>
-            el('a', {
-              class: 'mail-anhang', href: GR.api.mailAttachmentUrl(voll.uid, a.index),
-              target: '_blank', rel: 'noopener',
-            }, `📎 ${a.filename}`))));
+          vorschau.appendChild(el('div', { class: 'mail-anhaenge' },
+            voll.anhaenge.map(a => anhangChip(voll, a))));
         }
         vorschau.appendChild(el('div', { class: 'toolbar', style: 'margin:12px 0 0;' }, [
           el('button', { class: 'btn-sm btn-primary', onClick: () => openZuordnen(voll) }, '📁 Zu Vorgang'),
           el('button', { class: 'btn-sm', onClick: () => openAntwort(voll, null) }, '↩ Antworten'),
+          hatWeitereEmpfaenger(voll)
+            ? el('button', { class: 'btn-sm', onClick: () => openAntwort(voll, null, null, true) }, '↩↩ Allen antworten')
+            : null,
           el('div', { class: 'spacer', style: 'flex:1;' }),
           el('button', { class: 'btn-sm', onClick: () => openNachricht(voll.uid, refresh) }, '⤢ Großes Fenster'),
-        ]));
+        ].filter(Boolean)));
       } catch (err) {
         if (lauf !== vorschauLauf) return;
         vorschau.innerHTML = '';
@@ -233,11 +350,10 @@
 
       if ((msg.anhaenge || []).length) {
         modal.appendChild(el('div', { class: 'vg-label', style: 'margin-top:10px;' }, 'Anhänge'));
-        modal.appendChild(el('div', { class: 'mail-anhaenge' }, msg.anhaenge.map(a =>
-          el('a', {
-            class: 'mail-anhang', href: GR.api.mailAttachmentUrl(msg.uid, a.index),
-            target: '_blank', rel: 'noopener',
-          }, `📎 ${a.filename}${a.size ? ' (' + Math.round(a.size / 1024) + ' kB)' : ''}`))));
+        modal.appendChild(el('p', { class: 'help', style: 'margin:0 0 6px;' },
+          'Rechtsklick auf einen Anhang legt ihn in Paperless ab.'));
+        modal.appendChild(el('div', { class: 'mail-anhaenge' },
+          msg.anhaenge.map(a => anhangChip(msg, a))));
       }
 
       modal.appendChild(el('div', { class: 'toolbar', style: 'margin-top:16px; margin-bottom:0;' }, [
@@ -246,9 +362,12 @@
           onClick: () => { close(); openZuordnen(msg); },
         }, '📁 Zu Vorgang zuordnen'),
         el('button', { onClick: () => { close(); openAntwort(msg, null); } }, '↩ Antworten'),
+        hatWeitereEmpfaenger(msg)
+          ? el('button', { onClick: () => { close(); openAntwort(msg, null, null, true); } }, '↩↩ Allen antworten')
+          : null,
         el('div', { class: 'spacer', style: 'flex:1;' }),
         el('button', { onClick: close }, 'Schließen'),
-      ]));
+      ].filter(Boolean)));
     }).catch(err => {
       modal.innerHTML = '';
       modal.appendChild(el('div', { class: 'warn' }, 'Nachricht konnte nicht geladen werden: ' + err.message));
@@ -331,6 +450,10 @@
       datum: (msg.datum || new Date().toISOString()).slice(0, 10),
       richtung: 'ein',
       von: msg.von || '', an: msg.an || '', cc: msg.cc || '',
+      // Strukturierte Listen mitschreiben, damit „Allen antworten" später auch
+      // aus dem Vorgang heraus die richtigen Empfänger trifft.
+      vonListe: msg.vonListe || [], anListe: msg.anListe || [], ccListe: msg.ccListe || [],
+      antwortAn: msg.antwortAn || '', antwortAnListe: msg.antwortAnListe || [],
       betreff: msg.betreff || '',
       text: msg.text || '',
       messageId: msg.messageId || '',
@@ -378,9 +501,32 @@
   }
 
   // ===================== Antworten =====================
+  // Empfänger einer Antwort. `alle` nimmt zusätzlich die übrigen Empfänger der
+  // Ursprungsnachricht auf: die weiteren An-Adressen wandern ins An-Feld, die
+  // Kopie-Adressen bleiben Kopie. Die eigene Adresse fällt überall raus.
+  function antwortEmpfaenger(msg, alle) {
+    // Reply-To schlägt den Absender, wenn gesetzt (Verteiler, Ticketsysteme).
+    const absender = adressen(msg.antwortAnListe, msg.antwortAn);
+    const an = absender.length ? absender : adressen(msg.vonListe, msg.von);
+    if (!alle) return { an: ohneDoppelte(an), cc: [] };
+    const weitereAn = ohneDoppelte(adressen(msg.anListe, msg.an), an.map(x => x.address));
+    const cc = ohneDoppelte(adressen(msg.ccListe, msg.cc),
+      [...an, ...weitereAn].map(x => x.address));
+    return { an: ohneDoppelte([...an, ...weitereAn]), cc };
+  }
+  // Gibt es überhaupt jemanden außer dem Absender? Sonst ist „Allen antworten"
+  // dasselbe wie „Antworten" und der Knopf bleibt weg.
+  function hatWeitereEmpfaenger(msg) {
+    const e = antwortEmpfaenger(msg, true);
+    const einfach = antwortEmpfaenger(msg, false);
+    return e.an.length > einfach.an.length || e.cc.length > 0;
+  }
+
   // `vorgang` gesetzt ⇒ die gesendete Nachricht wandert als Historieneintrag
-  // in genau diesen Vorgang.
-  function openAntwort(msg, vorgang, onFertig) {
+  // in genau diesen Vorgang. Async, weil die eigene Adresse bekannt sein muss,
+  // bevor die Empfängerfelder vorbelegt werden.
+  async function openAntwort(msg, vorgang, onFertig, alle) {
+    await ladeEigeneAdresse();
     const overlay = el('div', { class: 'modal-overlay' });
     const modal = el('div', { class: 'modal mail-modal' });
     overlay.appendChild(modal);
@@ -389,19 +535,20 @@
     document.addEventListener('keydown', onKey);
     overlay.addEventListener('click', (ev) => { if (ev.target === overlay) close(); });
 
-    const empfaenger = (msg.vonListe && msg.vonListe.length)
-      ? msg.vonListe.map(x => x.address).filter(Boolean).join(', ')
-      : (msg.von || '');
+    const ziel = antwortEmpfaenger(msg, alle);
     const betreffVor = /^re:/i.test(msg.betreff || '') ? (msg.betreff || '') : 'Re: ' + (msg.betreff || '');
     const zitat = String(msg.text || '').split('\n').map(z => '> ' + z).join('\n');
 
-    const anI = el('input', { class: 'input', type: 'text', value: empfaenger });
-    const ccI = el('input', { class: 'input', type: 'text', placeholder: 'Kopie (optional)' });
+    const anI = el('input', { class: 'input', type: 'text', value: ziel.an.map(x => x.text).join(', ') });
+    const ccI = el('input', {
+      class: 'input', type: 'text', placeholder: 'Kopie (optional)',
+      value: ziel.cc.map(x => x.text).join(', '),
+    });
     const betreffI = el('input', { class: 'input', type: 'text', value: betreffVor });
     const textI = el('textarea', { class: 'input', rows: '10' });
     textI.value = '\n\n' + (msg.von ? `Am ${datumZeit(msg.datum)} schrieb ${msg.von}:\n` : '') + zitat;
 
-    modal.appendChild(el('h3', {}, 'Antwort schreiben'));
+    modal.appendChild(el('h3', {}, alle ? 'Allen antworten' : 'Antwort schreiben'));
     modal.appendChild(el('div', { class: 'vg-field' }, [el('label', { class: 'vg-label' }, 'An'), anI]));
     modal.appendChild(el('div', { class: 'vg-field' }, [el('label', { class: 'vg-label' }, 'Kopie'), ccI]));
     modal.appendChild(el('div', { class: 'vg-field' }, [el('label', { class: 'vg-label' }, 'Betreff'), betreffI]));
@@ -513,5 +660,8 @@
   GR.views = GR.views || {};
   GR.views.renderMail = renderMail;
   // Für das Vorgangs-Modul
-  GR.mailUi = { openNachrichtenWahl, openZuordnen, openAntwort, eintragAusNachricht, anhaengeAblegen, datumZeit };
+  GR.mailUi = {
+    openNachrichtenWahl, openZuordnen, openAntwort, eintragAusNachricht, anhaengeAblegen,
+    datumZeit, hatWeitereEmpfaenger, anhangNachPaperless, kontextMenue,
+  };
 })();

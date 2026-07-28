@@ -439,7 +439,8 @@
     const mlPass = el('input', { type: 'password', placeholder: 'Passwort' });
     const mlImap = el('input', { type: 'number', step: '1', value: '993', style: 'max-width:120px;' });
     const mlSmtp = el('input', { type: 'number', step: '1', value: '587', style: 'max-width:120px;' });
-    const mlFrom = el('input', { type: 'text', placeholder: 'Ortsgemeinde <buergermeister@meine-domain.de>' });
+    const mlFrom = el('input', { type: 'text', placeholder: 'leer = Benutzeradresse' });
+    const mlFromName = el('input', { type: 'text', placeholder: 'Ortsgemeinde Hörschhausen' });
     const mlSent = el('input', { type: 'text', placeholder: 'Sent', style: 'max-width:200px;' });
     const mlStatus = el('div', { class: 'help', style: 'margin-top:8px;' }, '');
     function setMlStatus(t, c) { mlStatus.textContent = t; mlStatus.style.color = c || ''; }
@@ -451,6 +452,7 @@
         mlImap.value = c.imapPort || 993;
         mlSmtp.value = c.smtpPort || 587;
         mlFrom.value = c.from || '';
+        mlFromName.value = c.fromName || '';
         mlSent.value = c.sentBox || 'Sent';
         mlPass.placeholder = c.hasPass ? '(gesetzt – leer lassen zum Behalten)' : 'Passwort';
         setMlStatus(c.hasPass ? 'Zugang hinterlegt (Quelle: ' + c.source + ')' : 'Noch kein Passwort hinterlegt.');
@@ -461,7 +463,8 @@
         await GR.api.putMailConfig({
           host: mlHost.value.trim(), user: mlUser.value.trim(), pass: mlPass.value,
           imapPort: Number(mlImap.value) || 993, smtpPort: Number(mlSmtp.value) || 587,
-          from: mlFrom.value.trim(), sentBox: mlSent.value.trim() || 'Sent',
+          from: mlFrom.value.trim(), fromName: mlFromName.value.trim(),
+          sentBox: mlSent.value.trim() || 'Sent',
         });
         mlPass.value = '';
         setMlStatus('Gespeichert.', '#2f855a');
@@ -489,7 +492,8 @@
         el('div', {}, [el('label', {}, 'Server (IMAP und SMTP)'), mlHost]),
         el('div', {}, [el('label', {}, 'Benutzer / E-Mail-Adresse'), mlUser]),
         el('div', {}, [el('label', {}, 'Passwort'), mlPass]),
-        el('div', {}, [el('label', {}, 'Absender (optional, sonst Benutzer)'), mlFrom]),
+        el('div', {}, [el('label', {}, 'Absenderadresse (optional, sonst Benutzer)'), mlFrom]),
+        el('div', {}, [el('label', {}, 'Absendername (erscheint beim Empfänger)'), mlFromName]),
       ]),
       el('div', { class: 'grid-2', style: 'margin-top:8px;' }, [
         el('div', {}, [el('label', {}, 'IMAP-Port'), mlImap]),

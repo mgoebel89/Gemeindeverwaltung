@@ -4,7 +4,8 @@
 // kein Sonderprotokoll). Zugangsdaten bleiben serverseitig – Backend-Proxy wie
 // Paperless/Vikunja/Kalender. Konfiguration aus Env als Vorgabe/Fallback:
 //   MAIL_HOST, MAIL_USER, MAIL_PASS, MAIL_IMAP_PORT (993), MAIL_SMTP_PORT (587),
-//   MAIL_FROM (Anzeigename/Absender), MAIL_SENT (Ordnername, Standard „Sent")
+//   MAIL_FROM (Absenderadresse), MAIL_FROM_NAME (Anzeigename beim Empfänger),
+//   MAIL_SENT (Ordnername, Standard „Sent")
 //
 // Zweck ist NICHT ein Mailclient-Ersatz, sondern die Brücke zur Vorgangsakte:
 // Posteingang durchsehen, eine Nachricht einem Vorgang zuordnen, aus dem
@@ -22,6 +23,7 @@ const ENV = {
   imapPort: Number(process.env.MAIL_IMAP_PORT || 993),
   smtpPort: Number(process.env.MAIL_SMTP_PORT || 587),
   from: process.env.MAIL_FROM || '',
+  fromName: process.env.MAIL_FROM_NAME || '',
   sentBox: process.env.MAIL_SENT || 'Sent',
 };
 
@@ -42,6 +44,7 @@ function loadConfig() {
     imapPort: Number(pick('imapPort', ENV.imapPort)) || 993,
     smtpPort: Number(pick('smtpPort', ENV.smtpPort)) || 587,
     from: String(pick('from', ENV.from)).trim(),
+    fromName: String(pick('fromName', ENV.fromName)).trim(),
     sentBox: String(pick('sentBox', ENV.sentBox)).trim() || 'Sent',
   };
   return cfg;
@@ -60,6 +63,7 @@ function setConfig(patch = {}) {
     imapPort: Number(patch.imapPort != null ? patch.imapPort : (cur.imapPort || ENV.imapPort)) || 993,
     smtpPort: Number(patch.smtpPort != null ? patch.smtpPort : (cur.smtpPort || ENV.smtpPort)) || 587,
     from: str('from'),
+    fromName: str('fromName'),
     sentBox: str('sentBox') || 'Sent',
   };
   db.saveMailConfig(next);
@@ -75,7 +79,7 @@ function publicConfig() {
   return {
     host: cfg.host || '', user: cfg.user || '',
     imapPort: cfg.imapPort, smtpPort: cfg.smtpPort,
-    from: cfg.from || '', sentBox: cfg.sentBox || 'Sent',
+    from: cfg.from || '', fromName: cfg.fromName || '', sentBox: cfg.sentBox || 'Sent',
     hasPass: !!cfg.pass, source: src,
   };
 }
@@ -209,7 +213,8 @@ async function getMessage(uid) {
         betreff: p.subject || '(kein Betreff)',
         von: adr(p.from), vonListe: adrListe(p.from),
         an: adr(p.to), anListe: adrListe(p.to),
-        cc: adr(p.cc),
+        cc: adr(p.cc), ccListe: adrListe(p.cc),
+        antwortAn: adr(p.replyTo), antwortAnListe: adrListe(p.replyTo),
         datum: p.date ? new Date(p.date).toISOString() : null,
         messageId: p.messageId || '',
         references: [].concat(p.references || []).filter(Boolean),
@@ -250,7 +255,36 @@ async function getAttachment(uid, index) {
   });
 }
 
+// Gelesen-Kennzeichen setzen bzw. entfernen. Läuft absichtlich als eigener
+// Aufruf und nicht nebenbei beim Abrufen, damit das Lesen einer Nachricht
+// nicht an einem gescheiterten Flag-Schreibversuch hängt.
+async function markSeen(uid, seen = true) {
+  const id = Number(uid);
+  if (!Number.isFinite(id)) throw new MailError('Ungültige UID.', 400);
+  return withImap(async (client) => {
+    const lock = await client.getMailboxLock('INBOX');
+    try {
+      if (seen) await client.messageFlagsAdd(String(id), ['\\Seen'], { uid: true });
+      else await client.messageFlagsRemove(String(id), ['\\Seen'], { uid: true });
+      return { uid: id, gelesen: !!seen };
+    } finally {
+      lock.release();
+    }
+  });
+}
+
 // --- SMTP ------------------------------------------------------------------
+
+// Absender für den From-Kopf. Ohne Anzeigename sieht der Empfänger nur die
+// nackte Adresse – deshalb wird der Name, wenn gepflegt, davorgesetzt.
+function absender() {
+  const adresse = (cfg.from || cfg.user || '').trim();
+  const name = (cfg.fromName || '').trim();
+  if (!name) return adresse;
+  // Enthält `from` bereits ein "Name <adresse>", nicht doppelt verpacken.
+  if (/</.test(adresse)) return adresse;
+  return { name, address: adresse };
+}
 function transporter() {
   requireConfig();
   return nodemailer.createTransport({
@@ -271,7 +305,7 @@ async function sendMail({ an, cc, betreff, text, inReplyTo, references }) {
   if (!empfaenger) throw new MailError('Kein Empfänger angegeben.', 400);
 
   const mail = {
-    from: cfg.from || cfg.user,
+    from: absender(),
     to: empfaenger,
     cc: String(cc || '').trim() || undefined,
     subject: String(betreff || '').trim() || '(kein Betreff)',
@@ -341,6 +375,6 @@ async function testConnection() {
 
 module.exports = {
   loadConfig, setConfig, publicConfig, isConfigured,
-  listInbox, getMessage, getAttachment, sendMail, testConnection,
+  listInbox, getMessage, getAttachment, markSeen, sendMail, testConnection,
   MailError,
 };
