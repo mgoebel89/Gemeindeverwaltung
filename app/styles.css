@@ -839,6 +839,64 @@ tr:hover td { background: #fafbfc; }
 }
 .pers-stat strong { font-size: 1.3rem; }
 
+/* ===== Modul Inventar (Homebox) ===== */
+.inv-grid {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
+  gap: 12px; margin-top: 10px;
+}
+.inv-kachel {
+  border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface);
+  padding: 12px 14px; cursor: pointer; display: grid; gap: 3px; align-content: start;
+}
+.inv-kachel:hover { border-color: var(--primary); }
+.inv-kachel-name { font-weight: 600; }
+.inv-kachel-fuss {
+  display: flex; justify-content: space-between; align-items: baseline;
+  gap: 8px; margin-top: 6px; flex-wrap: wrap;
+}
+.inv-menge { font-weight: 600; }
+
+.inv-suchzeile { display: flex; gap: 6px; align-items: center; }
+.inv-suchzeile input { flex: 1; }
+
+.inv-bestand { font-size: 1.4rem; margin: 6px 0 0; }
+.inv-buchen { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+.inv-anzahl { width: 80px; text-align: center; }
+
+.inv-daten { width: 100%; }
+.inv-daten th { text-align: left; width: 40%; font-weight: 500; color: var(--muted); }
+
+.inv-treffer { display: grid; gap: 4px; margin-top: 8px; max-height: 260px; overflow-y: auto; }
+.inv-treffer-zeile {
+  text-align: left; border: 1px solid var(--border); background: var(--surface);
+  border-radius: 6px; padding: 8px 10px; font-family: inherit; font-size: inherit; cursor: pointer;
+}
+.inv-treffer-zeile:hover { background: #eef2f7; }
+
+/* Barcode-Scanner (Vollbild über der Kamera) */
+.scan-overlay { position: fixed; inset: 0; z-index: 1200; background: #000; display: flex; flex-direction: column; }
+.scan-buehne { flex: 1; position: relative; overflow: hidden; }
+.scan-video { width: 100%; height: 100%; object-fit: cover; display: block; }
+.scan-rahmen {
+  position: absolute; left: 8%; right: 8%; top: 50%; height: 22%;
+  transform: translateY(-50%);
+  border: 2px solid rgba(255, 255, 255, .9); border-radius: 10px;
+  box-shadow: 0 0 0 100vmax rgba(0, 0, 0, .45);
+}
+.scan-status { color: #fff; text-align: center; padding: 12px 16px; font-size: .95rem; background: #000; min-height: 44px; }
+.scan-leiste {
+  display: flex; align-items: center; gap: 10px; padding: 12px 16px;
+  padding-bottom: calc(12px + env(safe-area-inset-bottom)); background: #000;
+}
+.scan-werkzeug { color: rgba(255, 255, 255, .55); font-size: .8rem; }
+.scan-leiste .spacer { flex: 1; }
+
+@media (max-width: 760px) {
+  .inv-grid { grid-template-columns: 1fr; }
+  .inv-buchen { display: grid; grid-template-columns: auto 1fr auto; }
+  .inv-buchen button.btn-danger, .inv-buchen button.btn-primary { grid-column: span 3; }
+}
+
 /* ===== Dubletten-Assistent (Personen zusammenführen) ===== */
 .modal-breit { max-width: 860px; }
 

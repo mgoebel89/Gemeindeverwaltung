@@ -100,12 +100,24 @@ Variablen (mit Defaults):
 | `BRIDGE`          | `vmbr0`       | Netzwerk-Bridge                          |
 | `IPV4`            | `dhcp`        | z. B. `192.168.1.50/24`                  |
 | `GATEWAY`         | —             | Pflicht bei statischer IP                |
-| `HTTP_PORT`       | `80`          | nginx-Port                               |
+| `HTTP_PORT`       | `80`          | nginx-Port (leitet auf HTTPS um)         |
+| `HTTPS_PORT`      | `443`         | nginx-Port für HTTPS                     |
 | `PASSWORD`        | zufällig      | root-Passwort                            |
 | `REPO_URL`        | dieses Repo   | aus dem geklont wird                     |
 | `REPO_BRANCH`     | `main`        | Branch                                   |
 
 Am Ende zeigt das Skript IP, URL und (falls generiert) root-Passwort.
+
+**HTTPS und das selbstsignierte Zertifikat.** Die App läuft über **https**; der
+HTTP-Port leitet dorthin um. Grund ist der Kamera-Zugriff: der Barcode-Scanner
+im Inventar funktioniert im Browser nur in einem „secure context" — über
+`http://<IP>` bleibt die Kamera am Handy stumm. Der Installer erzeugt dafür ein
+selbstsigniertes Zertifikat unter `/etc/ssl/gemeindeverwaltung/`. Beim ersten
+Aufruf warnt der Browser einmalig; die Ausnahme ist zu bestätigen. Ein
+vorhandenes Zertifikat wird bei Updates **nicht** überschrieben, damit die
+Bestätigung erhalten bleibt. Bestandsinstallationen bekommen das Zertifikat
+beim nächsten `sitzungsapp-update` automatisch nachgereicht — **danach ändert
+sich die Adresse auf `https://`, Lesezeichen sind anzupassen.**
 
 ## 2) Updates einspielen
 
@@ -737,6 +749,96 @@ Standard-Kündigungsfrist und die editierbare Kategorienliste.
 > **Migration:** Neue Tabellen entstehen per `CREATE TABLE IF NOT EXISTS` beim
 > Backend-Start; neue Settings-Defaults werden für Bestandsinstallationen nachgezogen.
 > Frontend nach dem Update mit **Strg+F5** neu laden.
+
+## Modul „Inventar" (Homebox)
+
+Das Gemeindeinventar — Rasenmäher, Feuerlöscher, Werkzeug, Verbrauchsmaterial —
+wird in **Homebox** geführt. Die App legt **keine eigene Kopie** an, sondern
+arbeitet über einen Backend-Proxy direkt darauf (Muster wie Paperless und
+Vikunja: Zugangsdaten serverseitig unter eigenem DB-Key `homebox`, nie im
+Snapshot oder NocoDB-Sync). Fällt Homebox aus, ist nur dieses Modul betroffen.
+
+Einrichtung unter **Einstellungen → Inventar (Homebox)**: URL, Benutzer,
+Passwort. Homebox kennt **keine dauerhaften API-Tokens**, nur
+`POST /v1/users/login` mit kurzlebigem Token — deshalb Benutzername und
+Passwort statt eines Tokens; der Proxy meldet sich bei Ablauf (401) selbst neu
+an. Das Passwort wird nie an den Browser zurückgegeben.
+
+**Sammlungen.** Ein Homebox-Konto kann mehrere vollständig getrennte Bestände
+haben. Welcher gemeint ist, entscheidet ein Auswahlfeld in den Einstellungen
+(Header `X-Tenant`). Die Liste wird bewusst **ohne** die gespeicherte Sammlung
+abgefragt — sonst sperrte eine ungültige Auswahl den Weg, sie zu korrigieren.
+Eine gespeicherte, nicht mehr zugängliche Sammlung bleibt sichtbar stehen,
+statt still auf die Standard-Sammlung zu fallen; sonst arbeitete die App
+unbemerkt im falschen Bestand.
+
+**Die Ansicht** (`#/inventar`): Kachelliste mit Suche und Lagerort-Auswahl,
+Detailfenster mit Bestandsbuchung (± Stückzahl), Anlegen, Bearbeiten und
+**Löschen** (entfernt den Gegenstand auch aus Homebox). Etiketten/Tags sind zum
+Anhaken; Lagerorte kommen als Auswahlliste aus Homebox.
+
+**Barcode.** Der Code steht in einem benutzerdefinierten Feld `Barcode` — nicht
+in der Asset-ID, die vergibt Homebox selbst. Gescannt wird mit der Handykamera
+(nativer `BarcodeDetector`, sonst vendored ZXing für iOS/Safari); Eintippen ist
+immer erreichbar. Ein unbekannter Code führt zum Anlegen **oder** lässt sich
+einem vorhandenen Gegenstand zuordnen — ohne diesen zweiten Weg legt man ihn
+ein zweites Mal an und führt den Bestand doppelt.
+
+### Wartungen
+
+Wartungspflichtige Gegenstände (Feuerlöscher, Leitern, Rasenmäher) bekommen im
+Detailfenster Wartungstermine. **Die Wartungen liegen in Homebox** — es hat
+dafür eine eigene Funktion, geprüft am Quelltext
+(`/v1/entities/{id}/maintenance`). Damit sind sie auch in Homebox selbst
+sichtbar, und es gibt keine zwei Wahrheiten über denselben Gegenstand.
+
+Was Homebox **nicht** kann, führt die Gemeindeverwaltung lokal (Tabelle
+`inventar_wartungen`, id = id der Homebox-Wartung):
+
+- **Wiederholung.** Homebox kennt kein „alle 24 Monate". Am Termin steht darum
+  ein Intervall in Monaten; ist die Wartung erledigt, entsteht der nächste
+  Termin automatisch (Erledigungsdatum + Intervall). So reißt die Kette nie ab.
+- **Vorlauffrist.** Standard in den Einstellungen, je Wartung überschreibbar.
+- **Verknüpfung zur Aufgabe.** Verhindert, dass täglich dieselbe Aufgabe neu
+  entsteht.
+
+**Der tägliche Lauf** (`backend/wartungslauf.js`) läuft im Backend, nicht im
+Browser — eine Frist läuft weiter, auch wenn wochenlang niemand die App öffnet.
+Einmal täglich (und einmal kurz nach dem Start des Containers):
+
+1. Jede offene Wartung, die in die Vorlauffrist rutscht, bekommt eine Aufgabe im
+   Aufgabenmodul — in dem Projekt, das unter „Aufgaben" als synchronisiertes
+   Projekt eingestellt ist. Ohne ein solches Projekt kann nichts angelegt werden.
+2. Ist die **Aufgabe** abgehakt, gilt die Wartung als erledigt und wird in
+   Homebox gebucht.
+3. Ist die **Wartung** erledigt (in der App oder direkt in Homebox), schließt
+   sich die Aufgabe, und mit Intervall entsteht der Folgetermin.
+
+Beide Richtungen also — egal wo gearbeitet wird, es stimmt überall. Von Hand
+anstoßen lässt sich der Lauf unter Einstellungen → Inventar mit „Jetzt prüfen";
+er meldet, was er getan hat.
+
+**Fallen, die beim Bauen Zeit gekostet hätten** (alle am Homebox-Quelltext
+geprüft, nicht geraten):
+
+- `cost` ist im JSON eine **Zeichenkette** (Go-Tag `,string`). Als Zahl
+  geschickt lehnt Homebox den ganzen Datensatz ab.
+- Bei `GET /v1/maintenance` ist `status` **Pflicht**; ohne den Parameter
+  antwortet Homebox mit „unknown status" statt mit allen Einträgen.
+- Ein Eintrag ist **entweder** geplant **oder** erledigt. „Offen" heißt:
+  geplantes Datum gesetzt, Erledigungsdatum leer — und leer kommt als **leere
+  Zeichenkette**, nicht als `null`.
+- Ältere Homebox-Versionen kennen die Wartungspfade nicht. Die App prüft das
+  einmal (`wartungenVerfuegbar`) und blendet den Wartungsteil dann mit Hinweis
+  aus, statt Fehler zu werfen.
+- Wie beim übrigen Homebox-Verkehr gilt die **entities/items-Weiche**: neuere
+  Versionen sprechen `/v1/entities`, ältere `/v1/items`. Der Client probiert neu
+  zuerst und fällt bei 404 zurück.
+
+> **Für Entwickler:** Löscht man einen Gegenstand, räumt Homebox seine Wartungen
+> mit weg — die lokalen Ergänzungen dazu blieben sonst als Waisen liegen und der
+> Tageslauf stolperte darüber. Das erledigt
+> `db.deleteInventarWartungenZuArtikel()` in der Löschroute.
 
 ## Modul „Kalender" (iCal-Abos)
 

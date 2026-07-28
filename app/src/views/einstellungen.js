@@ -91,7 +91,7 @@
       allgemein: el('div'), darstellung: el('div'), dokumente: el('div'), kalender: el('div'), aufgaben: el('div'),
       mail: el('div'),
       vorgaenge: el('div'), vermietung: el('div'), vertraege: el('div'), auslagen: el('div'),
-      arbeitszeiten: el('div'), daten: el('div'),
+      arbeitszeiten: el('div'), inventar: el('div'), daten: el('div'),
     };
 
     C.allgemein.appendChild(el('div', { class: 'card' }, [
@@ -866,6 +866,145 @@
       ]),
     ]));
 
+    // --- Inventar (Homebox) ---
+    // Homebox kennt keine dauerhaften API-Tokens, nur Benutzername + Passwort.
+    // Beides bleibt serverseitig; das Passwort wird nie zurückgeliefert.
+    const hbUrl = el('input', { type: 'text', placeholder: 'https://homebox.example.de' });
+    const hbUser = el('input', { type: 'text', placeholder: 'benutzer@example.de' });
+    const hbPass = el('input', { type: 'password', placeholder: 'Passwort' });
+    const hbSammlung = el('select', {}, [el('option', { value: '' }, 'Standard-Sammlung des Kontos')]);
+    const hbStatus = el('div', { class: 'help', style: 'margin-top:8px;' }, '');
+    const setHbStatus = (t, c) => { hbStatus.textContent = t; hbStatus.style.color = c || ''; };
+
+    // Die Sammlungsliste wird OHNE gespeicherte Sammlung abgefragt — sonst
+    // sperrte eine ungültige Auswahl den Weg, sie zu korrigieren.
+    function ladeSammlungen(aktivId) {
+      GR.api.listInventarSammlungen().then(liste => {
+        hbSammlung.innerHTML = '';
+        hbSammlung.appendChild(el('option', { value: '' }, 'Standard-Sammlung des Kontos'));
+        for (const g of liste) {
+          hbSammlung.appendChild(el('option', { value: g.id, selected: g.id === aktivId }, g.name));
+        }
+        // Eine gespeicherte, nicht mehr zugängliche Sammlung bleibt sichtbar
+        // stehen, statt still auf Standard zu fallen — sonst arbeitete die App
+        // unbemerkt im falschen Bestand.
+        if (aktivId && !liste.some(g => g.id === aktivId)) {
+          hbSammlung.appendChild(el('option', { value: aktivId, selected: true }, 'Gespeicherte Sammlung (nicht mehr zugänglich)'));
+        }
+      }).catch(() => {
+        hbSammlung.innerHTML = '';
+        hbSammlung.appendChild(el('option', { value: aktivId || '' }, 'Sammlungen nicht ladbar (Zugang prüfen)'));
+      });
+    }
+
+    function ladeHbConfig() {
+      GR.api.getInventarConfig().then(c => {
+        hbUrl.value = c.url || '';
+        hbUser.value = c.username || '';
+        hbPass.placeholder = c.hasPassword ? '(gesetzt – leer lassen zum Behalten)' : 'Passwort';
+        setHbStatus(c.hasPassword ? 'Zugang hinterlegt (Quelle: ' + c.source + ')' : 'Noch kein Zugang hinterlegt.');
+        if (c.url && c.username) ladeSammlungen(c.groupId || '');
+      }).catch(e => setHbStatus('Konfiguration nicht ladbar: ' + e.message, '#c53030'));
+    }
+
+    const onHbSave = async () => {
+      try {
+        const gewaehlt = hbSammlung.options[hbSammlung.selectedIndex];
+        await GR.api.putInventarConfig({
+          url: hbUrl.value.trim(),
+          username: hbUser.value.trim(),
+          password: hbPass.value,
+          groupId: hbSammlung.value || '',
+          groupName: hbSammlung.value ? (gewaehlt ? gewaehlt.textContent : '') : '',
+        });
+        hbPass.value = '';
+        // Lagerorte und Etiketten gehören zur Sammlung — nach einem Wechsel
+        // wären die zwischengespeicherten falsch.
+        if (GR.inventar) GR.inventar.zuruecksetzen();
+        setHbStatus('Gespeichert.', '#2f855a');
+        ladeHbConfig();
+      } catch (e) { setHbStatus('Fehler: ' + e.message, '#c53030'); }
+    };
+
+    const onHbTest = async () => {
+      setHbStatus('Verbindung wird geprüft…');
+      try {
+        const h = await GR.api.inventarHealth();
+        if (!h || h.ok !== true) { setHbStatus('Keine Verbindung: ' + ((h && h.error) || 'unbekannt'), '#c53030'); return; }
+        setHbStatus(`Verbunden — Sammlung „${h.sammlung || 'Standard'}"`
+          + (h.wartungen === false ? '. Achtung: Diese Homebox-Version kennt keine Wartungen.' : ', Wartungen werden unterstützt.'),
+          h.wartungen === false ? '#b7791f' : '#2f855a');
+      } catch (e) { setHbStatus('Fehler: ' + e.message, '#c53030'); }
+    };
+
+    if (!settings.inventar) settings.inventar = { vorlaufTage: 30, wartungsaufgaben: true };
+    const invVorlauf = el('input', {
+      type: 'number', min: '0', step: '1', style: 'max-width:120px;',
+      value: String(settings.inventar.vorlaufTage == null ? 30 : settings.inventar.vorlaufTage),
+    });
+    invVorlauf.onchange = () => {
+      const n = Number(invVorlauf.value);
+      settings.inventar.vorlaufTage = Number.isFinite(n) && n >= 0 ? n : 30;
+      invVorlauf.value = String(settings.inventar.vorlaufTage);
+      store.saveSettings(settings);
+      toast('Vorlauffrist gespeichert');
+    };
+    const invAktiv = el('input', { type: 'checkbox', checked: settings.inventar.wartungsaufgaben !== false });
+    invAktiv.onchange = () => {
+      settings.inventar.wartungsaufgaben = invAktiv.checked;
+      store.saveSettings(settings);
+    };
+    const laufStatus = el('div', { class: 'help', style: 'margin-top:8px;' }, '');
+    const onLauf = async () => {
+      laufStatus.textContent = 'Wird geprüft…';
+      try {
+        const b = await GR.api.wartungslaufJetzt();
+        if (b.uebersprungen) { laufStatus.textContent = b.uebersprungen; return; }
+        laufStatus.textContent = `${b.geprueft} offene Wartungen geprüft · ${b.aufgabenAngelegt} Aufgaben angelegt · `
+          + `${b.wartungenErledigt} Wartungen erledigt · ${b.folgetermine} Folgetermine · ${b.aufgabenGeschlossen} Aufgaben geschlossen`
+          + (b.fehler && b.fehler.length ? ` · Fehler: ${b.fehler.join('; ')}` : '');
+      } catch (e) { laufStatus.textContent = 'Fehler: ' + e.message; }
+    };
+
+    C.inventar.appendChild(el('div', { class: 'card' }, [
+      el('h3', {}, 'Inventar (Homebox)'),
+      el('p', { class: 'help' }, 'Das Gemeindeinventar wird in Homebox geführt; diese App arbeitet direkt darauf und legt keine eigene Kopie an. Homebox kennt keine dauerhaften Tokens — deshalb Benutzername und Passwort. Beides wird serverseitig im Container gespeichert und nie an den Browser zurückgegeben.'),
+      el('div', { class: 'grid-2' }, [
+        el('div', {}, [el('label', {}, 'Homebox-URL (ohne /api)'), hbUrl]),
+        el('div', {}, [el('label', {}, 'Benutzer (E-Mail)'), hbUser]),
+      ]),
+      el('div', { class: 'grid-2' }, [
+        el('div', {}, [el('label', {}, 'Passwort'), hbPass]),
+        el('div', {}, [
+          el('label', {}, 'Sammlung'),
+          hbSammlung,
+          el('p', { class: 'help', style: 'margin:2px 0 0;' }, 'Ein Konto kann mehrere getrennte Bestände haben. Die Auswahl entscheidet, welcher hier erscheint.'),
+        ]),
+      ]),
+      el('div', { class: 'toolbar', style: 'margin-top:10px;' }, [
+        el('button', { class: 'btn-primary', onClick: onHbSave }, 'Speichern'),
+        el('button', { onClick: onHbTest }, 'Verbindung testen'),
+      ]),
+      hbStatus,
+    ]));
+
+    C.inventar.appendChild(el('div', { class: 'card' }, [
+      el('h3', {}, 'Wartungen und Aufgaben'),
+      el('p', { class: 'help' }, 'Wird eine Wartung fällig, legt der Server im Aufgabenmodul automatisch eine Aufgabe an — einmal täglich, auch wenn niemand die App öffnet. Erledigt sich die Wartung, schließt sich die Aufgabe, und mit hinterlegtem Intervall entsteht sofort der nächste Termin. Umgekehrt gilt dasselbe: eine abgehakte Aufgabe bucht die Wartung als erledigt.'),
+      el('div', {}, [
+        el('label', {}, 'Vorlauf: wie viele Tage vorher soll die Aufgabe erscheinen?'),
+        invVorlauf,
+        el('p', { class: 'help', style: 'margin:2px 0 0;' }, 'Gilt als Standard; an einer einzelnen Wartung lässt sich davon abweichen.'),
+      ]),
+      el('label', { class: 'pers-check', style: 'margin-top:10px;' }, [invAktiv, ' Aufgaben automatisch anlegen']),
+      el('p', { class: 'help', style: 'margin-top:8px;' }, 'Die Aufgaben landen im Projekt, das unter „Aufgaben" als synchronisiertes Projekt eingestellt ist. Ohne ein solches Projekt kann der Lauf nichts anlegen.'),
+      el('div', { class: 'toolbar', style: 'margin-top:10px;' }, [
+        el('button', { onClick: onLauf }, 'Jetzt prüfen'),
+      ]),
+      laufStatus,
+    ]));
+    ladeHbConfig();
+
     // --- Kategorie-Unternavigation zusammenbauen ---
     const catDefs = [
       ['allgemein', 'Allgemein'],
@@ -879,6 +1018,7 @@
       ['vertraege', 'Verträge & Pacht'],
       ['auslagen', 'Bargeldauslagen'],
       ['arbeitszeiten', 'Arbeitszeiten'],
+      ['inventar', 'Inventar (Homebox)'],
       ['daten', 'Datensicherung'],
     ];
     const content = el('div', { class: 'settings-content' });

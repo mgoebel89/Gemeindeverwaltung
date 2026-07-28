@@ -127,6 +127,15 @@ db.exec(`
     last_modified TEXT NOT NULL
   );
   CREATE INDEX IF NOT EXISTS idx_vorgaenge_modified ON vorgaenge(last_modified);
+  -- Ergänzung zu den Wartungen, die in Homebox liegen. Homebox kennt keine
+  -- Wiederholung und keine Verknüpfung zu einer Aufgabe – genau das steht hier.
+  -- Die id ist die der Homebox-Wartung, damit beides ohne Suchen zusammenfindet.
+  CREATE TABLE IF NOT EXISTS inventar_wartungen (
+    id           TEXT PRIMARY KEY,
+    payload      TEXT NOT NULL,
+    last_modified TEXT NOT NULL
+  );
+  CREATE INDEX IF NOT EXISTS idx_inventar_wartungen_modified ON inventar_wartungen(last_modified);
   -- Fotos zu Verlaufseinträgen eines Vorgangs (kind = hist_<eintragId>)
   CREATE TABLE IF NOT EXISTS vorgang_files (
     id           TEXT PRIMARY KEY,
@@ -267,6 +276,22 @@ function getMailConfig() {
 function saveMailConfig(c) {
   db.prepare(`
     INSERT INTO settings (key, value) VALUES ('mail', ?)
+    ON CONFLICT(key) DO UPDATE SET value = excluded.value
+  `).run(JSON.stringify(c));
+  return c;
+}
+
+// Homebox-Zugang (URL + Benutzer + Passwort + gewählte Sammlung): eigener Key,
+// damit er NICHT im allgemeinen Settings-Blob (Snapshot/NocoDB-Sync) landet.
+// Homebox kennt keine dauerhaften Tokens, deshalb liegt hier das Passwort im
+// Klartext – es bleibt serverseitig und wird nie im Snapshot ausgegeben.
+function getHomeboxConfig() {
+  const r = db.prepare("SELECT value FROM settings WHERE key = 'homebox'").get();
+  return r ? JSON.parse(r.value) : null;
+}
+function saveHomeboxConfig(c) {
+  db.prepare(`
+    INSERT INTO settings (key, value) VALUES ('homebox', ?)
     ON CONFLICT(key) DO UPDATE SET value = excluded.value
   `).run(JSON.stringify(c));
   return c;
@@ -495,6 +520,25 @@ function deleteVorgang(id) {
   vorgaengeStore.delete(id);
 }
 
+// --- Modul Inventar: lokale Ergänzung zu den Homebox-Wartungen ---
+// Die Wartungen selbst liegen in Homebox. Hier steht nur, was Homebox nicht
+// kennt: das Wiederholungsintervall, eine abweichende Vorlauffrist und die
+// Aufgabe, die dafür schon angelegt wurde. Die id ist die der Homebox-Wartung.
+const inventarWartungenStore = makePayloadStore('inventar_wartungen');
+const listInventarWartungen = () => inventarWartungenStore.list();
+const getInventarWartung = (id) => inventarWartungenStore.get(id);
+const saveInventarWartung = (w) => inventarWartungenStore.save(w);
+const deleteInventarWartung = (id) => inventarWartungenStore.delete(id);
+// Beim Löschen eines Gegenstands räumt Homebox seine Wartungen mit weg – die
+// lokalen Ergänzungen blieben sonst als Waisen liegen.
+function deleteInventarWartungenZuArtikel(itemId) {
+  let n = 0;
+  for (const w of listInventarWartungen()) {
+    if (w && w.itemId === itemId) { inventarWartungenStore.delete(w.id); n++; }
+  }
+  return n;
+}
+
 // --- Modul Arbeitszeiten & Vergütung ---
 const arbeitszeitenStore = makePayloadStore('arbeitszeiten');
 const listArbeitszeiten = () => arbeitszeitenStore.list();
@@ -667,6 +711,9 @@ module.exports = {
   getKalenderConfig, saveKalenderConfig,
   getVikunjaConfig, saveVikunjaConfig,
   getMailConfig, saveMailConfig,
+  getHomeboxConfig, saveHomeboxConfig,
+  listInventarWartungen, getInventarWartung, saveInventarWartung,
+  deleteInventarWartung, deleteInventarWartungenZuArtikel,
   listAttachments, getAttachment, attachmentPath, ensureAttachmentDir,
   insertAttachment, deleteAttachment,
   listMieter, getMieter, saveMieter, deleteMieter,

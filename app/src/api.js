@@ -235,6 +235,35 @@
   async function addTaskLabel(id, labelId) { return jsonFetch(`/api/aufgaben/tasks/${encodeURIComponent(id)}/labels`, { method: 'PUT', body: { labelId } }); }
   async function removeTaskLabel(id, labelId) { return jsonFetch(`/api/aufgaben/tasks/${encodeURIComponent(id)}/labels/${encodeURIComponent(labelId)}`, { method: 'DELETE' }); }
 
+  // --- Modul Inventar (Homebox-Proxy) ---
+  // Es gibt bewusst keinen lokalen Cache: Homebox ist die führende Quelle,
+  // deshalb ist hier alles asynchron und jede Ansicht fragt frisch nach.
+  const inv = (p) => '/api/inventar' + p;
+  async function getInventarConfig() { return jsonFetch(inv('/config')); }
+  async function putInventarConfig(cfg) { return jsonFetch(inv('/config'), { method: 'PUT', body: cfg }); }
+  async function inventarHealth() { return jsonFetch(inv('/health')); }
+  async function listInventarSammlungen() { return jsonFetch(inv('/sammlungen')); }
+  async function inventarStammdaten() { return jsonFetch(inv('/stammdaten')); }
+  async function suchenInventar({ q = '', ortId = '', seite = 1, proSeite = 50 } = {}) {
+    const p = new URLSearchParams();
+    if (q) p.set('q', q);
+    if (ortId) p.set('ortId', ortId);
+    p.set('seite', seite); p.set('proSeite', proSeite);
+    return jsonFetch(inv('/?' + p.toString()));
+  }
+  async function getInventarArtikel(id) { return jsonFetch(inv(`/${encodeURIComponent(id)}`)); }
+  async function inventarBeiBarcode(code) { return jsonFetch(inv(`/barcode/${encodeURIComponent(code)}`)); }
+  async function anlegenInventarArtikel(a) { return jsonFetch(inv('/'), { method: 'POST', body: a }); }
+  async function speichernInventarArtikel(id, a) { return jsonFetch(inv(`/${encodeURIComponent(id)}`), { method: 'PUT', body: a }); }
+  async function loeschenInventarArtikel(id) { return jsonFetch(inv(`/${encodeURIComponent(id)}`), { method: 'DELETE' }); }
+  async function buchenInventarBestand(id, arg) { return jsonFetch(inv(`/${encodeURIComponent(id)}/bestand`), { method: 'POST', body: arg }); }
+  async function listInventarWartungen(id, status = 'both') { return jsonFetch(inv(`/${encodeURIComponent(id)}/wartungen?status=${status}`)); }
+  async function listOffeneWartungen(status = 'scheduled') { return jsonFetch(inv(`/wartungen?status=${status}`)); }
+  async function anlegenWartung(id, w) { return jsonFetch(inv(`/${encodeURIComponent(id)}/wartungen`), { method: 'POST', body: w }); }
+  async function speichernWartung(wid, w) { return jsonFetch(inv(`/wartung/${encodeURIComponent(wid)}`), { method: 'PUT', body: w }); }
+  async function loeschenWartung(wid) { return jsonFetch(inv(`/wartung/${encodeURIComponent(wid)}`), { method: 'DELETE' }); }
+  async function wartungslaufJetzt() { return jsonFetch(inv('/wartungslauf'), { method: 'POST' }); }
+
   async function listDocNotes(id) { return jsonFetch(`/api/dokumente/${encodeURIComponent(id)}/notes`); }
   async function addDocNote(id, note) { return jsonFetch(`/api/dokumente/${encodeURIComponent(id)}/notes`, { method: 'POST', body: { note } }); }
   async function deleteDocNote(id, noteId) { return jsonFetch(`/api/dokumente/${encodeURIComponent(id)}/notes/${encodeURIComponent(noteId)}`, { method: 'DELETE' }); }
@@ -289,6 +318,11 @@
     getCalConfig, putCalConfig, testCalUrl, listCalEvents,
     getMailConfig, putMailConfig, testMail, listMails, getMail, mailAttachmentUrl, markMailSeen, sendMail,
     getTaskConfig, putTaskConfig, taskHealth, listOpenTasks, listTaskProjects, completeTask, createTask,
+    getInventarConfig, putInventarConfig, inventarHealth, listInventarSammlungen, inventarStammdaten,
+    suchenInventar, getInventarArtikel, inventarBeiBarcode, anlegenInventarArtikel,
+    speichernInventarArtikel, loeschenInventarArtikel, buchenInventarBestand,
+    listInventarWartungen, listOffeneWartungen, anlegenWartung, speichernWartung, loeschenWartung,
+    wartungslaufJetzt,
     getTask, updateTask, listTaskLabels, addTaskLabel, removeTaskLabel,
     listDocNotes, addDocNote, deleteDocNote,
     putMieter, deleteMieterRemote,

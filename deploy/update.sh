@@ -35,10 +35,38 @@ if [[ -f backend/package.json ]]; then
   systemctl restart gemeindeverwaltung-backend || true
 fi
 
-# nginx-Site übernehmen, falls geändert
+# nginx-Site übernehmen, falls geändert.
+# Die Ports aus der INSTALLIERTEN Konfiguration übernehmen, damit eine
+# abweichende Portwahl ein Update überlebt. Erste listen-Zeile ohne „ssl" ist
+# HTTP, erste mit „ssl" ist HTTPS.
 if ! diff -q deploy/nginx-site.conf /etc/nginx/sites-available/sitzungsapp >/dev/null 2>&1; then
-  PORT=$(awk '/listen / && $2 !~ /\[/ {sub(";","",$2); print $2; exit}' /etc/nginx/sites-available/sitzungsapp 2>/dev/null || echo 80)
-  sed "s/__HTTP_PORT__/${PORT}/g" deploy/nginx-site.conf > /etc/nginx/sites-available/sitzungsapp
+  CONF=/etc/nginx/sites-available/sitzungsapp
+  PORT=$(awk '/listen / && $2 !~ /\[/ && $0 !~ /ssl/ {sub(";","",$2); print $2; exit}' "$CONF" 2>/dev/null || echo 80)
+  HTTPS_PORT=$(awk '/listen / && $2 !~ /\[/ && $0 ~ /ssl/ {sub(";","",$2); print $2; exit}' "$CONF" 2>/dev/null || true)
+  : "${PORT:=80}"
+  : "${HTTPS_PORT:=443}"
+
+  # Erstes Update einer Installation, die noch kein HTTPS hatte: Zertifikat
+  # nachlegen, sonst scheitert nginx -t am fehlenden Schlüssel und die Seite
+  # bliebe nach dem Reload tot.
+  install -d -m 0700 /etc/ssl/gemeindeverwaltung
+  if [[ ! -f /etc/ssl/gemeindeverwaltung/server.crt ]]; then
+    IP="$(hostname -I 2>/dev/null | awk '{print $1}')"
+    : "${IP:=127.0.0.1}"
+    openssl req -x509 -nodes -newkey rsa:2048 -days 3650 \
+      -keyout /etc/ssl/gemeindeverwaltung/server.key \
+      -out /etc/ssl/gemeindeverwaltung/server.crt \
+      -subj "/CN=${IP}" \
+      -addext "subjectAltName=IP:${IP},DNS:localhost" >/dev/null 2>&1
+    chmod 0600 /etc/ssl/gemeindeverwaltung/server.key
+    echo "HTTPS eingerichtet — die App ist ab jetzt unter https://${IP} erreichbar."
+  fi
+
+  if [[ "$HTTPS_PORT" == "443" ]]; then HTTPS_SUFFIX=""; else HTTPS_SUFFIX=":${HTTPS_PORT}"; fi
+  sed -e "s/__HTTP_PORT__/${PORT}/g" \
+      -e "s/__HTTPS_PORT__/${HTTPS_PORT}/g" \
+      -e "s/__HTTPS_SUFFIX__/${HTTPS_SUFFIX}/g" \
+    deploy/nginx-site.conf > "$CONF"
   nginx -t && systemctl reload nginx
 fi
 

@@ -30,6 +30,7 @@ set -euo pipefail
 : "${REPO_URL:=https://github.com/mgoebel89/Gemeindeverwaltung.git}"
 : "${REPO_BRANCH:=main}"
 : "${HTTP_PORT:=80}"
+: "${HTTPS_PORT:=443}"
 
 log()  { printf '\033[1;34m[*]\033[0m %s\n' "$*"; }
 ok()   { printf '\033[1;32m[✓]\033[0m %s\n' "$*"; }
@@ -145,7 +146,17 @@ pct exec "$CTID" -- bash -lc "
   # Frontend
   install -d /var/www
   ln -sfn /opt/gemeindeverwaltung/app /var/www/sitzungsapp
-  sed 's/__HTTP_PORT__/${HTTP_PORT}/g' /opt/gemeindeverwaltung/deploy/nginx-site.conf > /etc/nginx/sites-available/sitzungsapp
+  # TLS: selbstsigniertes Zertifikat. Der Kamera-Zugriff im Browser
+  # (Barcode-Scan im Inventar) setzt einen 'secure context' voraus.
+  install -d -m 0700 /etc/ssl/gemeindeverwaltung
+  IP_LOCAL=\$(hostname -I | awk '{print \$1}')
+  : \"\${IP_LOCAL:=127.0.0.1}\"
+  if [ ! -f /etc/ssl/gemeindeverwaltung/server.crt ]; then
+    openssl req -x509 -nodes -newkey rsa:2048 -days 3650       -keyout /etc/ssl/gemeindeverwaltung/server.key       -out /etc/ssl/gemeindeverwaltung/server.crt       -subj \"/CN=\${IP_LOCAL}\"       -addext \"subjectAltName=IP:\${IP_LOCAL},DNS:localhost\" >/dev/null 2>&1
+    chmod 0600 /etc/ssl/gemeindeverwaltung/server.key
+  fi
+  if [ '${HTTPS_PORT}' = '443' ]; then SUF=''; else SUF=':${HTTPS_PORT}'; fi
+  sed -e 's/__HTTP_PORT__/${HTTP_PORT}/g'       -e 's/__HTTPS_PORT__/${HTTPS_PORT}/g'       -e \"s/__HTTPS_SUFFIX__/\${SUF}/g\"     /opt/gemeindeverwaltung/deploy/nginx-site.conf > /etc/nginx/sites-available/sitzungsapp
   ln -sfn /etc/nginx/sites-available/sitzungsapp /etc/nginx/sites-enabled/sitzungsapp
   rm -f /etc/nginx/sites-enabled/default
 
@@ -175,7 +186,9 @@ echo "────────────────────────�
 echo "  Container-ID : $CTID"
 echo "  Hostname     : $HOSTNAME"
 echo "  IP           : ${CT_IP:-(noch nicht verfügbar)}"
-echo "  URL          : http://${CT_IP:-<IP>}:${HTTP_PORT}"
+if [[ "$HTTPS_PORT" == "443" ]]; then SUFFIX=""; else SUFFIX=":${HTTPS_PORT}"; fi
+echo "  URL          : https://${CT_IP:-<IP>}${SUFFIX}"
+echo "  Zertifikat   : selbstsigniert - der Browser warnt einmalig"
 if [[ "$GENERATED_PW" -eq 1 ]]; then
   echo "  root-Passwort: $PASSWORD"
 fi

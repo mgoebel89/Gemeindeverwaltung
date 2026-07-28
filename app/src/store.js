@@ -190,7 +190,15 @@
       vorgaenge: defaultVorgaengeSettings(),
       arbeitszeiten: defaultArbeitszeitenSettings(),
       personen: defaultPersonenSettings(),
+      inventar: defaultInventarSettings(),
     };
+  }
+  // Modul Inventar: die Gegenstände selbst liegen in Homebox. Hier steht nur,
+  // wie früh eine fällige Wartung zur Aufgabe werden soll. Der Homebox-Zugang
+  // liegt bewusst NICHT hier, sondern serverseitig unter eigenem DB-Key —
+  // dieser Block läuft im Snapshot und im NocoDB-Backup mit.
+  function defaultInventarSettings() {
+    return { vorlaufTage: 30, wartungsaufgaben: true };
   }
   // Stammdaten: Paare, die der Dubletten-Assistent vorgeschlagen hat und die
   // als „kein Duplikat" abgehakt wurden. Sonst stünde derselbe Vorschlag bei
@@ -369,6 +377,11 @@
     else {
       const daz = defaultArbeitszeitenSettings();
       for (const k of Object.keys(daz)) if (cache.settings.arbeitszeiten[k] === undefined) cache.settings.arbeitszeiten[k] = daz[k];
+    }
+    if (!cache.settings.inventar) cache.settings.inventar = defaultInventarSettings();
+    else {
+      const di = defaultInventarSettings();
+      for (const k of Object.keys(di)) if (cache.settings.inventar[k] === undefined) cache.settings.inventar[k] = di[k];
     }
     if (!cache.settings.personen) cache.settings.personen = defaultPersonenSettings();
     else if (!Array.isArray(cache.settings.personen.ignorierteDubletten)) {

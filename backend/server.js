@@ -19,6 +19,8 @@ const createScanRouter = require('./routes/scan');
 const createVertraegeRouter = require('./routes/vertraege');
 const createVorgaengeRouter = require('./routes/vorgaenge');
 const createArbeitszeitenRouter = require('./routes/arbeitszeiten');
+const createInventarRouter = require('./routes/inventar');
+const { starteWartungslauf } = require('./wartungslauf');
 
 const PORT = parseInt(process.env.PORT || '3000', 10);
 const HOST = process.env.HOST || '127.0.0.1';
@@ -68,6 +70,9 @@ app.use('/api', createVorgaengeRouter(broadcast));
 
 // --- Modul: Arbeitszeiten & Vergütung ---
 app.use('/api', createArbeitszeitenRouter(broadcast));
+
+// --- Modul: Inventar (Homebox-Proxy + Wartungen) ---
+app.use('/api/inventar', createInventarRouter());
 
 // --- Snapshot (Bootstrap) ---
 app.get('/api/snapshot', (_req, res) => {
@@ -287,4 +292,8 @@ app.use((err, _req, res, _next) => {
 
 server.listen(PORT, HOST, () => {
   console.log(`Gemeindeverwaltung-Backend lauscht auf http://${HOST}:${PORT}`);
+  // Wartungsfristen laufen weiter, auch wenn niemand die App öffnet — deshalb
+  // prüft der Server einmal täglich selbst und legt die fälligen Aufgaben an.
+  // Ohne eingerichtete Homebox steigt der Lauf sofort wieder aus.
+  starteWartungslauf();
 });

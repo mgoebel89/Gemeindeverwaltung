@@ -24,6 +24,7 @@
     grid.appendChild(cardFristen(heute));
     grid.appendChild(cardTermine());
     grid.appendChild(cardAufgaben(heute));
+    grid.appendChild(cardWartungen());
     mount.appendChild(grid);
   }
 
@@ -186,6 +187,49 @@
     return card;
   }
   function p2(n) { return String(n).padStart(2, '0'); }
+
+  // --- Anstehende Wartungen (Homebox, serverseitig geladen) ---
+  // Ohne eingerichtete Homebox bleibt die Karte still: das Inventar ist
+  // optional, und eine Fehlermeldung auf der Startseite wäre nur Lärm.
+  function cardWartungen() {
+    const bodyBox = el('div', {}, [emptyLine('Wartungen werden geladen…')]);
+    const card = dashCard('Anstehende Wartungen', '🔧', [bodyBox],
+      el('a', { href: '#/inventar' }, 'Zum Inventar →'));
+
+    const vorlaufStandard = (() => {
+      const v = Number((GR.store.getSettings().inventar || {}).vorlaufTage);
+      return Number.isFinite(v) && v >= 0 ? v : 30;
+    })();
+
+    GR.api.listOffeneWartungen('scheduled').then(liste => {
+      bodyBox.innerHTML = '';
+      const tage = (iso) => {
+        const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(iso || ''));
+        if (!m) return null;
+        const ziel = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+        const h = new Date();
+        return Math.round((ziel - new Date(h.getFullYear(), h.getMonth(), h.getDate())) / 86400000);
+      };
+      const anstehend = liste
+        .map(w => ({ w, t: tage(w.geplantAm) }))
+        .filter(x => x.t != null && x.t <= (x.w.vorlaufTage == null ? vorlaufStandard : x.w.vorlaufTage))
+        .sort((a, b) => a.t - b.t)
+        .slice(0, 6);
+      if (!anstehend.length) { bodyBox.appendChild(emptyLine('Keine Wartung steht an.')); return; }
+      bodyBox.appendChild(el('ul', { class: 'dash-list' }, anstehend.map(({ w, t }) => el('li', {}, [
+        el('span', { class: 'dash-date', style: t < 0 ? 'color:#c53030;font-weight:600;' : '' },
+          (t < 0 ? '⚠ ' : '') + formatDatum(w.geplantAm)),
+        el('span', { class: 'dash-main' }, [
+          el('strong', {}, w.itemName || 'Gegenstand'),
+          el('span', { class: 'help' }, ' · ' + (w.name || 'Prüfung')),
+        ]),
+      ]))));
+    }).catch(() => {
+      // Nicht eingerichtet oder nicht erreichbar – Karte leise ausblenden.
+      card.remove();
+    });
+    return card;
+  }
 
   function cardPlaceholder(title, icon, text) {
     return dashCard(title, icon, [
