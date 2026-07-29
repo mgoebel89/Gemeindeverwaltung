@@ -13,9 +13,24 @@ if [[ ! -d "$REPO_DIR/.git" ]]; then
 fi
 
 cd "$REPO_DIR"
+
+# Merker VOR dem Pull: dieses Skript aktualisiert sich selbst mit.
+SELBST_VORHER=$(sha1sum deploy/update.sh 2>/dev/null | awk '{print $1}' || true)
+
 git fetch --depth=1 origin
 BRANCH=$(git rev-parse --abbrev-ref HEAD)
 git reset --hard "origin/${BRANCH}"
+
+# Hat der Pull DIESES Skript verändert, ist die laufende Fassung veraltet —
+# bash hat sie längst eingelesen und arbeitet sie zu Ende ab. Dann rendert eine
+# alte Fassung womöglich eine neue Vorlage und hinterlässt Unfug (real passiert:
+# __HTTPS_PORT__ blieb in der nginx-Konfiguration stehen, weil das alte sed den
+# Platzhalter nicht kannte). Also einmal mit der neuen Fassung neu starten.
+SELBST_NACHHER=$(sha1sum deploy/update.sh 2>/dev/null | awk '{print $1}' || true)
+if [[ "${UPDATE_NEUSTART:-0}" != "1" && -n "$SELBST_VORHER" && "$SELBST_VORHER" != "$SELBST_NACHHER" ]]; then
+  echo "Das Update-Skript wurde selbst erneuert — es startet sich mit der neuen Fassung neu."
+  UPDATE_NEUSTART=1 exec bash "$REPO_DIR/deploy/update.sh"
+fi
 
 # Scanner-Unterstützung (SANE) sicherstellen – nötig für Netzwerkscanner ohne
 # eSCL (nur WSD), z. B. Epson ES-580W. Idempotent: nur wenn scanimage fehlt.
@@ -43,8 +58,11 @@ if ! diff -q deploy/nginx-site.conf /etc/nginx/sites-available/sitzungsapp >/dev
   CONF=/etc/nginx/sites-available/sitzungsapp
   PORT=$(awk '/listen / && $2 !~ /\[/ && $0 !~ /ssl/ {sub(";","",$2); print $2; exit}' "$CONF" 2>/dev/null || echo 80)
   HTTPS_PORT=$(awk '/listen / && $2 !~ /\[/ && $0 ~ /ssl/ {sub(";","",$2); print $2; exit}' "$CONF" 2>/dev/null || true)
-  : "${PORT:=80}"
-  : "${HTTPS_PORT:=443}"
+  # Nur Zahlen gelten. Steht in der installierten Konfiguration ein nicht
+  # ersetzter Platzhalter (weil ein früherer Lauf sie kaputt hinterlassen hat),
+  # würde er sonst als „Port" übernommen und der Schaden bliebe für immer.
+  [[ "$PORT" =~ ^[0-9]+$ ]] || PORT=80
+  [[ "$HTTPS_PORT" =~ ^[0-9]+$ ]] || HTTPS_PORT=443
 
   # Erstes Update einer Installation, die noch kein HTTPS hatte: Zertifikat
   # nachlegen, sonst scheitert nginx -t am fehlenden Schlüssel und die Seite
@@ -63,11 +81,33 @@ if ! diff -q deploy/nginx-site.conf /etc/nginx/sites-available/sitzungsapp >/dev
   fi
 
   if [[ "$HTTPS_PORT" == "443" ]]; then HTTPS_SUFFIX=""; else HTTPS_SUFFIX=":${HTTPS_PORT}"; fi
+
+  # Erst in eine Zwischendatei rendern und prüfen. Eine Konfiguration mit
+  # übrig gebliebenen Platzhaltern darf gar nicht erst installiert werden —
+  # nginx startet damit nach dem nächsten Neustart nicht mehr.
+  NEU=$(mktemp)
   sed -e "s/__HTTP_PORT__/${PORT}/g" \
       -e "s/__HTTPS_PORT__/${HTTPS_PORT}/g" \
       -e "s/__HTTPS_SUFFIX__/${HTTPS_SUFFIX}/g" \
-    deploy/nginx-site.conf > "$CONF"
-  nginx -t && systemctl reload nginx
+    deploy/nginx-site.conf > "$NEU"
+  if grep -q '__[A-Z_]\+__' "$NEU"; then
+    rm -f "$NEU"
+    echo "FEHLER: Platzhalter in der nginx-Vorlage nicht ersetzt — Konfiguration NICHT übernommen." >&2
+    exit 1
+  fi
+
+  # Mit Sicherungskopie tauschen: schlägt der Test fehl, bleibt die alte,
+  # funktionierende Konfiguration stehen statt einer kaputten.
+  cp "$CONF" "${CONF}.bak" 2>/dev/null || true
+  cp "$NEU" "$CONF"
+  rm -f "$NEU"
+  if nginx -t; then
+    systemctl reload nginx
+  else
+    echo "nginx-Test fehlgeschlagen — vorherige Konfiguration wiederhergestellt." >&2
+    [[ -f "${CONF}.bak" ]] && cp "${CONF}.bak" "$CONF"
+    exit 1
+  fi
 fi
 
 # systemd-Unit übernehmen, falls geändert
