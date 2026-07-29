@@ -18,19 +18,6 @@
   function euro(n) { return (Number(n) || 0).toLocaleString('de-DE', { style: 'currency', currency: 'EUR' }); }
   function num(n) { return (Number(n) || 0).toLocaleString('de-DE', { maximumFractionDigits: 3 }); }
 
-  // Wappen als Data-URL (hochgeladenes bevorzugt, sonst Datei via Canvas).
-  function getWappenDataUrl() {
-    const s = store.getSettings();
-    if (s && s.wappenDataUrl) return s.wappenDataUrl;
-    try {
-      const img = document.getElementById('wappenImg');
-      if (!img || !img.complete || !img.naturalWidth) return null;
-      const canvas = document.createElement('canvas');
-      canvas.width = img.naturalWidth; canvas.height = img.naturalHeight;
-      canvas.getContext('2d').drawImage(img, 0, 0);
-      return canvas.toDataURL('image/png');
-    } catch (_) { return null; }
-  }
 
   function newDoc() {
     if (!window.jspdf || !window.jspdf.jsPDF) {
@@ -166,20 +153,20 @@
     const vm = settings.vermietung;
     const raum = store.getRaum(v.raumId) || { name: 'Gemeindehaus', preise: { stromProKwh: 0, gasProCbm: 0 } };
     const mieter = store.getMieter(v.mieterId);
-    const wappen = getWappenDataUrl();
     const preise = v.preisSnapshot || { grundMiete: 0, stromProKwh: raum.preise.stromProKwh, gasProCbm: raum.preise.gasProCbm };
 
     const state = { y: MARGIN_TOP };
 
     // Kopf: Titel links, Wappen + Absender rechts
-    if (wappen) {
-      try { doc.addImage(wappen, 'PNG', RIGHT_X - 20, state.y - 2, 20, 24, undefined, 'SLOW'); } catch (_) {}
-    }
+    const kopf = GR.pdfKopf.platziere(doc, {
+      seite: 'rechts', x: RIGHT_X, y: state.y - 2, inhaltsBreite: CONTENT_W,
+    });
     setFont(doc, 26, true);
-    doc.text('Mietvertrag', MARGIN_X, state.y + 12);
+    doc.text('Mietvertrag', MARGIN_X, state.y + 12, { maxWidth: kopf.textBreite });
 
-    // Absenderblock rechts (unter dem Wappen)
-    let ry = state.y + 26;
+    // Absenderblock rechts — beginnt unter der tatsächlichen Wappenkante,
+    // nicht auf einem geschätzten Abstand.
+    let ry = GR.pdfKopf.unterhalb(kopf, state.y + 26);
     setFont(doc, 9, false, false, C_MUTED);
     doc.text('Ortsgemeinde ' + (vm.ortsgemeinde || ''), RIGHT_X, ry, { align: 'right' }); ry += 5;
     setFont(doc, 9, false);
@@ -392,12 +379,15 @@
     const mieter = store.getMieter(v.mieterId);
     const state = { y: MARGIN_TOP };
 
-    const wappen = getWappenDataUrl();
-    if (wappen) { try { doc.addImage(wappen, 'PNG', RIGHT_X - 22, MARGIN_TOP - 6, 22, 22, undefined, 'SLOW'); } catch (_) {} }
+    const kopf = GR.pdfKopf.platziere(doc, {
+      seite: 'rechts', x: RIGHT_X, y: MARGIN_TOP - 6,
+      box: { w: 22, h: 22 }, inhaltsBreite: CONTENT_W,
+    });
 
     const titel = type === 'uebergabe' ? 'Übergabeprotokoll' : 'Abnahmeprotokoll';
-    line(doc, state, titel, { size: 16, bold: true });
-    line(doc, state, ortsname ? 'Ortsgemeinde ' + ortsname : 'Ortsgemeinde', { size: 10, color: C_MUTED, gap: 6 });
+    line(doc, state, titel, { size: 16, bold: true, maxWidth: kopf.textBreite });
+    line(doc, state, ortsname ? 'Ortsgemeinde ' + ortsname : 'Ortsgemeinde', { size: 10, color: C_MUTED, gap: 6, maxWidth: kopf.textBreite });
+    state.y = GR.pdfKopf.unterhalb(kopf, state.y);
     gap(state, 2);
     line(doc, state, 'Objekt: ' + (raum ? raum.name : '—'), { size: 11 });
     line(doc, state, 'Mieter: ' + (mieter ? fullNameMieter(mieter) : '—') + (mieterAnschrift(mieter) ? ', ' + mieterAnschrift(mieter) : ''), { size: 11 });
@@ -470,13 +460,18 @@
     const vm = settings.vermietung || {};
     const state = { y: MARGIN_TOP };
 
-    const wappen = getWappenDataUrl();
-    if (wappen) { try { doc.addImage(wappen, 'PNG', RIGHT_X - 20, state.y - 2, 20, 24, undefined, 'SLOW'); } catch (_) {} }
+    // Kopf: Titel links, Wappen rechts. Die Tabelle darunter beginnt erst
+    // unterhalb der tatsächlichen Wappen-Unterkante — vorher stand hier ein
+    // festes `state.y += 20`, während das Wappen bis 22 mm reichte: die erste
+    // Tabellenzeile lief damit ins Bild.
+    const kopf = GR.pdfKopf.platziere(doc, {
+      seite: 'rechts', x: RIGHT_X, y: state.y - 2, inhaltsBreite: CONTENT_W,
+    });
     setFont(doc, 15, true);
-    doc.text('Vermietungen ' + jahr, MARGIN_X, state.y + 4);
+    doc.text('Vermietungen ' + jahr, MARGIN_X, state.y + 4, { maxWidth: kopf.textBreite });
     setFont(doc, 10, false, false, C_MUTED);
-    doc.text('Ortsgemeinde ' + (vm.ortsgemeinde || ''), MARGIN_X, state.y + 10);
-    state.y += 20;
+    doc.text('Ortsgemeinde ' + (vm.ortsgemeinde || ''), MARGIN_X, state.y + 10, { maxWidth: kopf.textBreite });
+    state.y = GR.pdfKopf.unterhalb(kopf, state.y + 20);
 
     const rows = store.listVermietungen()
       .filter(v => v.startDatum && String(new Date(v.startDatum).getFullYear()) === String(jahr))

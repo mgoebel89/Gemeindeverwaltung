@@ -49,18 +49,6 @@
     doc.setLineWidth(0.2);
   }
 
-  function getWappenDataUrl() {
-    const s = store.getSettings();
-    if (s && s.wappenDataUrl) return s.wappenDataUrl;
-    try {
-      const img = document.getElementById('wappenImg');
-      if (!img || !img.complete || !img.naturalWidth) return null;
-      const canvas = document.createElement('canvas');
-      canvas.width = img.naturalWidth; canvas.height = img.naturalHeight;
-      canvas.getContext('2d').drawImage(img, 0, 0);
-      return canvas.toDataURL('image/png');
-    } catch (_) { return null; }
-  }
 
   function newDoc() {
     if (!window.jspdf || !window.jspdf.jsPDF) { alert('jsPDF ist nicht geladen.'); return null; }
@@ -138,13 +126,6 @@
     });
   }
 
-  // Bild seitenverhältnistreu in eine Box einpassen → tatsächliche mm-Maße.
-  function fitBox(natW, natH, maxW, maxH) {
-    if (!natW || !natH) return { w: maxW, h: maxH };
-    const s = Math.min(maxW / natW, maxH / natH);
-    return { w: natW * s, h: natH * s };
-  }
-
   // === Gesamt-Dokumentation eines Vorgangs ===
   // opts.target: 'download' (Standard) | 'paperless'; opts.onUploaded (Paperless).
   async function buildVorgangDokumentation(v, opts = {}) {
@@ -156,17 +137,10 @@
 
     // Kopf — das Wappen sitzt rechts oben; die Kopftexte dürfen nicht darunter
     // laufen, daher ist ihre Breite um die Wappenspalte verkürzt.
-    const WAPPEN_BOX = { w: 20, h: 24 };
-    let kopfW = CONTENT_W;
-    const wappen = getWappenDataUrl();
-    if (wappen) {
-      try {
-        const p = doc.getImageProperties(wappen);
-        const fit = fitBox(p.width, p.height, WAPPEN_BOX.w, WAPPEN_BOX.h);
-        doc.addImage(wappen, 'PNG', RIGHT_X - fit.w, state.y - 2, fit.w, fit.h, undefined, 'SLOW');
-        kopfW = CONTENT_W - fit.w - 5;
-      } catch (_) { kopfW = CONTENT_W - WAPPEN_BOX.w - 5; }
-    }
+    const kopfBild = GR.pdfKopf.platziere(doc, {
+      seite: 'rechts', x: RIGHT_X, y: state.y - 2, inhaltsBreite: CONTENT_W,
+    });
+    const kopfW = kopfBild.textBreite;
     setFont(doc, 15, true);
     const titelZeilen = doc.splitTextToSize(winAnsi('Vorgang: ' + (v.titel || '(ohne Titel)')), kopfW);
     for (const tz of titelZeilen) { doc.text(tz, MARGIN_X, state.y + 4); state.y += 7; }
@@ -180,7 +154,7 @@
     line(doc, state, kopf, { size: 9.5, color: C_MUTED, maxWidth: kopfW });
     if (v.vertraulich) line(doc, state, 'VERTRAULICH', { size: 9.5, bold: true, color: [183, 121, 31], maxWidth: kopfW });
     // Unter das Wappen zurückfallen, damit die erste Sektion frei steht.
-    state.y = Math.max(state.y, MARGIN_TOP + WAPPEN_BOX.h);
+    state.y = GR.pdfKopf.unterhalb(kopfBild, state.y);
     hr(doc, state, 4);
 
     // Beschreibung
@@ -395,7 +369,7 @@
     for (const f of fotos) {
       try {
         const img = await loadImage(store.vorgangFotoUrl(f.id), f.mimetype);
-        const fit = fitBox(img.w, img.h, BOX_W, BOX_H);
+        const fit = GR.pdfKopf.fitBox(img.w, img.h, BOX_W, BOX_H);
         ensureSpace(doc, state, fit.h + 3);
         doc.addImage(img.dataUrl, img.format, MARGIN_X + IND, state.y, fit.w, fit.h, undefined, 'FAST');
         state.y += fit.h + 3;
@@ -416,17 +390,10 @@
     const state = { y: MARGIN_TOP };
 
     // Kopf mit Wappen rechts oben
-    const WAPPEN_BOX = { w: 20, h: 24 };
-    let kopfW = CONTENT_W;
-    const wappen = getWappenDataUrl();
-    if (wappen) {
-      try {
-        const p = doc.getImageProperties(wappen);
-        const fit = fitBox(p.width, p.height, WAPPEN_BOX.w, WAPPEN_BOX.h);
-        doc.addImage(wappen, 'PNG', RIGHT_X - fit.w, state.y - 2, fit.w, fit.h, undefined, 'SLOW');
-        kopfW = CONTENT_W - fit.w - 5;
-      } catch (_) { kopfW = CONTENT_W - WAPPEN_BOX.w - 5; }
-    }
+    const kopfBild = GR.pdfKopf.platziere(doc, {
+      seite: 'rechts', x: RIGHT_X, y: state.y - 2, inhaltsBreite: CONTENT_W,
+    });
+    const kopfW = kopfBild.textBreite;
     setFont(doc, 15, true);
     doc.text(winAnsi('Entscheidungsmatrix'), MARGIN_X, state.y + 4); state.y += 9;
     const kopf = [
@@ -436,7 +403,7 @@
       e.datum ? ('Datum: ' + formatDatum(e.datum)) : null,
     ].filter(Boolean).join('  ·  ');
     line(doc, state, kopf, { size: 9.5, color: C_MUTED, maxWidth: kopfW });
-    state.y = Math.max(state.y, MARGIN_TOP + WAPPEN_BOX.h);
+    state.y = GR.pdfKopf.unterhalb(kopfBild, state.y);
     hr(doc, state, 4);
 
     if (!e.teilnehmer || !e.teilnehmer.length || !e.eigenschaften || !e.eigenschaften.length) {

@@ -11,19 +11,6 @@
 
   function euro(n) { return (Number(n) || 0).toLocaleString('de-DE', { style: 'currency', currency: 'EUR' }); }
 
-  // Wappen als Data-URL (hochgeladenes bevorzugt, sonst Datei via Canvas).
-  function getWappenDataUrl() {
-    const s = store.getSettings();
-    if (s && s.wappenDataUrl) return s.wappenDataUrl;
-    try {
-      const img = document.getElementById('wappenImg');
-      if (!img || !img.complete || !img.naturalWidth) return null;
-      const canvas = document.createElement('canvas');
-      canvas.width = img.naturalWidth; canvas.height = img.naturalHeight;
-      canvas.getContext('2d').drawImage(img, 0, 0);
-      return canvas.toDataURL('image/png');
-    } catch (_) { return null; }
-  }
 
   function newDoc() {
     if (!window.jspdf || !window.jspdf.jsPDF) {
@@ -93,13 +80,13 @@
     const cfg = settings.auslagen || {};
     const emp = store.getEmpfaenger(auslage.empfaengerId);
     const hs = store.getHaushaltsstelle(auslage.haushaltsstelleId);
-    const wappen = getWappenDataUrl();
     const ort = cfg.ortsgemeinde || 'Hörschhausen';
 
-    // Kopf: Wappen + Titel
-    if (wappen) {
-      try { doc.addImage(wappen, 'PNG', 20, 16, 18, 22, undefined, 'SLOW'); } catch (_) {}
-    }
+    // Kopf: Wappen links, Titel daneben. Die Maße stammen aus dem Vordruck
+    // (Bargeldauslage_Vorlage.pdf) und bleiben unverändert — der gemeinsame
+    // Baustein passt das Bild nur seitenverhältnistreu in diese Box ein, statt
+    // es auf 18×22 zu quetschen.
+    GR.pdfKopf.platziere(doc, { seite: 'links', x: 20, y: 16, box: { w: 18, h: 22 } });
     setFont(doc, 22, true);
     doc.text('Ortsgemeinde ' + ort, 44, 30);
 

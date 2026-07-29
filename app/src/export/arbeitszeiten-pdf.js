@@ -59,23 +59,6 @@
     state.y += (mm || 3);
   }
 
-  function getWappenDataUrl() {
-    const s = store.getSettings();
-    if (s && s.wappenDataUrl) return s.wappenDataUrl;
-    try {
-      const img = document.getElementById('wappenImg');
-      if (!img || !img.complete || !img.naturalWidth) return null;
-      const canvas = document.createElement('canvas');
-      canvas.width = img.naturalWidth; canvas.height = img.naturalHeight;
-      canvas.getContext('2d').drawImage(img, 0, 0);
-      return canvas.toDataURL('image/png');
-    } catch (_) { return null; }
-  }
-  function fitBox(natW, natH, maxW, maxH) {
-    if (!natW || !natH) return { w: maxW, h: maxH };
-    const s = Math.min(maxW / natW, maxH / natH);
-    return { w: natW * s, h: natH * s };
-  }
 
   function openPdf(doc, filename) {
     try {
@@ -108,16 +91,10 @@
     const state = { y: MARGIN_TOP };
 
     // --- Kopf (Wappen rechts; Titel darf nicht darunter laufen) ---
-    let kopfW = CONTENT_W;
-    const wappen = getWappenDataUrl();
-    if (wappen) {
-      try {
-        const p = doc.getImageProperties(wappen);
-        const fit = fitBox(p.width, p.height, 20, 24);
-        doc.addImage(wappen, 'PNG', RIGHT_X - fit.w, state.y - 2, fit.w, fit.h, undefined, 'SLOW');
-        kopfW = CONTENT_W - fit.w - 5;
-      } catch (_) { kopfW = CONTENT_W - 25; }
-    }
+    const kopf = GR.pdfKopf.platziere(doc, {
+      seite: 'rechts', x: RIGHT_X, y: state.y - 2, inhaltsBreite: CONTENT_W,
+    });
+    const kopfW = kopf.textBreite;
     setFont(doc, 15, true);
     text(doc, 'Abrechnung Arbeitsleistung', MARGIN_X, state.y + 4);
     state.y += 11;
@@ -126,7 +103,7 @@
       + '  ·  erstellt ' + formatDatum(abr.erstelltAm), { size: 9.5, color: C_MUTED, maxWidth: kopfW });
     setFont(doc, 8.5, false, true, C_MUTED);
     text(doc, 'Vorläufige interne Abrechnung – kein Formular der Verbandsgemeinde.', MARGIN_X, state.y);
-    state.y = Math.max(state.y + 5, MARGIN_TOP + 24);
+    state.y = GR.pdfKopf.unterhalb(kopf, state.y + 5);
     hr(doc, state, 5);
 
     // --- Leistungserbringer ---

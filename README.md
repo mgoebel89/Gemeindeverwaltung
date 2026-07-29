@@ -70,6 +70,41 @@ Gemeindeverwaltung/
 └── LICENSE
 ```
 
+### PDF-Kopf (Wappen)
+
+Alle PDF-Bauer in `app/src/export/` setzen das Wappen über **einen** Baustein:
+`export/pdf-kopf.js` (`GR.pdfKopf`). Er muss in `index.html` **vor** den übrigen
+Export-Skripten geladen werden.
+
+```js
+const kopf = GR.pdfKopf.platziere(doc, {
+  seite: 'rechts',        // oder 'links'
+  x: RIGHT_X,             // bei 'rechts' die RECHTE Kante, bei 'links' die linke
+  y: state.y - 2,
+  box: { w: 20, h: 24 },  // Höchstmaße, Standard
+  inhaltsBreite: CONTENT_W,
+});
+// kopf.textBreite  → Textbreite ohne die Wappenspalte
+// kopf.unterkante  → tatsächliche Unterkante des Bildes
+state.y = GR.pdfKopf.unterhalb(kopf, state.y + 20);
+```
+
+Zwei Fehler, die das verhindert und die vorher real aufgetreten sind:
+
+- **Verzerrung.** `addImage(..., 20, 24)` quetscht das Wappen in ein festes
+  Rechteck. Das Wappen von Hörschhausen ist 140 × 160 Pixel und wurde so um
+  gut 5 % gestaucht. `platziere` passt seitenverhältnistreu ein.
+- **Überlappung.** Wer die tatsächliche Höhe nicht kennt, rät den Abstand
+  darunter. In der Vermietungsübersicht stand `state.y += 20`, während das
+  Wappen bis 42 mm reichte — die Tabelle begann 2 mm im Bild. `unterhalb()`
+  rechnet mit der echten Unterkante.
+
+Ohne Wappen liefert `platziere` `{ vorhanden: false, unterkante: y }`; die
+Aufrufer brauchen keine Sonderbehandlung. Die **Typografie bleibt bei den
+einzelnen Bauern** — das Bargeldauslagen-Formular und der VG-Vordruck sind
+maßgetreue Nachbauten amtlicher Vorlagen, denen ein gemeinsamer Kopf keine
+Schriftgrößen vorschreiben darf.
+
 ## 1) Installation auf Proxmox
 
 Auf dem **Proxmox-Host** als root:

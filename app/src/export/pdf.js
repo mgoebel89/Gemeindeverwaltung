@@ -5,28 +5,6 @@
   const { fullName, isEinstimmig, einstimmigRichtung } = GR.models;
   const { formatDatum, wochentag, toast } = GR.ui;
 
-  // --- Wappen-Helfer ---
-  function imageElementToDataUrl(img) {
-    try {
-      if (!img || !img.complete || !img.naturalWidth) return null;
-      const canvas = document.createElement('canvas');
-      canvas.width = img.naturalWidth;
-      canvas.height = img.naturalHeight;
-      const ctx = canvas.getContext('2d');
-      ctx.drawImage(img, 0, 0);
-      return canvas.toDataURL('image/png');
-    } catch (e) {
-      console.warn('Wappen Canvas-Konvertierung fehlgeschlagen', e);
-      return null;
-    }
-  }
-
-  function getWappenDataUrl() {
-    const settings = store.getSettings();
-    if (settings && settings.wappenDataUrl) return settings.wappenDataUrl;
-    const img = document.getElementById('wappenImg');
-    return imageElementToDataUrl(img);
-  }
 
   function nameOf(id, mitglieder) {
     const m = mitglieder.find(x => x.id === id);
@@ -432,14 +410,11 @@
     }
   }
 
-  function drawHeader(doc, state, sitzung, wappenDataUrl) {
-    if (wappenDataUrl) {
-      try {
-        doc.addImage(wappenDataUrl, 'PNG', MARGIN_X, state.y - 2, 20, 24, undefined, 'SLOW');
-      } catch (e) {
-        console.warn('Wappen konnte nicht in PDF eingefügt werden', e);
-      }
-    }
+  function drawHeader(doc, state, sitzung) {
+    // Wappen links, Titel rechtsbündig — die beiden stehen sich nicht im Weg.
+    // Der gemeinsame Baustein sorgt nur dafür, dass das Bild nicht mehr in
+    // einen festen 20×24-Kasten gequetscht wird.
+    const kopf = GR.pdfKopf.platziere(doc, { seite: 'links', x: MARGIN_X, y: state.y - 2 });
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(18);
     doc.setTextColor(C_TEXT[0], C_TEXT[1], C_TEXT[2]);
@@ -448,7 +423,7 @@
     doc.setFontSize(10.5);
     doc.setTextColor(C_MUTED[0], C_MUTED[1], C_MUTED[2]);
     doc.text(`Gemeinderatssitzung — ${wochentag(sitzung.datum)}, ${formatDatum(sitzung.datum)}`, PAGE_W - MARGIN_X, state.y + 13, { align: 'right' });
-    state.y += 26;
+    state.y = GR.pdfKopf.unterhalb(kopf, state.y + 26, 0);
     drawLine(doc, state, C_LINE_DARK, 0.4, 0, 9);
   }
 
@@ -560,7 +535,6 @@
 
     const mitglieder = store.listMitglieder();
     const settings = store.getSettings();
-    const wappen = getWappenDataUrl();
     const state = { y: MARGIN_TOP };
 
     const aktive = mitglieder.filter(m => m.aktiv);
@@ -579,7 +553,7 @@
     const wechsel = computeWechselSaetze(alleTops, sitzung, mitglieder);
     const wechselFor = new Map(alleTops.map((t, i) => [t.id, wechsel.perTop[i]]));
 
-    drawHeader(doc, state, sitzung, wappen);
+    drawHeader(doc, state, sitzung);
 
     drawList(doc, state, 'Anwesende Ratsmitglieder', anwesendeNamen);
     drawList(doc, state, 'Abwesend', abwesendeNamen);
