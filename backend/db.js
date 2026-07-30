@@ -166,6 +166,20 @@ db.exec(`
     last_modified TEXT NOT NULL
   );
   CREATE INDEX IF NOT EXISTS idx_arbeitsabr_modified ON arbeitsabrechnungen(last_modified);
+
+  -- Modul Einwohner: Ergänzung zu den Altersjubiläen. Die Einwohner selbst
+  -- liegen in einer eigenen NocoDB-Base und werden NICHT lokal kopiert; wer
+  -- wann ein Jubiläum hat, wird aus dem Geburtsdatum gerechnet. Hier steht nur,
+  -- was die Rechnung nicht weiß: Status, Notiz und die angelegte Aufgabe.
+  -- Die id ist einwohnerId-alter und verhindert dadurch Doppelanlagen.
+  -- (Keine Backticks in diesem Kommentar: das ganze Schema steht in einem
+  --  JS-Template-Literal, ein Backtick hier würde es beenden.)
+  CREATE TABLE IF NOT EXISTS ehrungen (
+    id           TEXT PRIMARY KEY,
+    payload      TEXT NOT NULL,
+    last_modified TEXT NOT NULL
+  );
+  CREATE INDEX IF NOT EXISTS idx_ehrungen_modified ON ehrungen(last_modified);
 `);
 
 const BELEG_DIR = path.join(ATTACH_DIR, 'auslagen');
@@ -292,6 +306,23 @@ function getHomeboxConfig() {
 function saveHomeboxConfig(c) {
   db.prepare(`
     INSERT INTO settings (key, value) VALUES ('homebox', ?)
+    ON CONFLICT(key) DO UPDATE SET value = excluded.value
+  `).run(JSON.stringify(c));
+  return c;
+}
+
+// Einwohner-Zugang (zweite NocoDB-Base) + PIN des Moduls: eigener Key, damit er
+// NICHT im allgemeinen Settings-Blob (Snapshot/NocoDB-Sync) landet. Das ist hier
+// wichtiger als bei allen anderen Modulen: neben dem API-Token steht in diesem
+// Datensatz auch der PIN-Hash, der das Melderegister absichert. Läge er im
+// Snapshot, ginge er an jeden Browser im Netz und wäre offline angreifbar.
+function getEinwohnerConfig() {
+  const r = db.prepare("SELECT value FROM settings WHERE key = 'einwohner'").get();
+  return r ? JSON.parse(r.value) : null;
+}
+function saveEinwohnerConfig(c) {
+  db.prepare(`
+    INSERT INTO settings (key, value) VALUES ('einwohner', ?)
     ON CONFLICT(key) DO UPDATE SET value = excluded.value
   `).run(JSON.stringify(c));
   return c;
@@ -539,6 +570,16 @@ function deleteInventarWartungenZuArtikel(itemId) {
   return n;
 }
 
+// --- Modul Einwohner: Ergänzung zu den Altersjubiläen ---
+// Die Einwohner liegen in einer eigenen NocoDB-Base, nicht hier. Gespeichert
+// wird nur, was sich nicht aus dem Geburtsdatum rechnen lässt: Status, Notiz
+// und die Aufgabe, die der Tageslauf für die Ehrung angelegt hat.
+const ehrungenStore = makePayloadStore('ehrungen');
+const listEhrungen = () => ehrungenStore.list();
+const getEhrung = (id) => ehrungenStore.get(id);
+const saveEhrung = (e) => ehrungenStore.save(e);
+const deleteEhrung = (id) => ehrungenStore.delete(id);
+
 // --- Modul Arbeitszeiten & Vergütung ---
 const arbeitszeitenStore = makePayloadStore('arbeitszeiten');
 const listArbeitszeiten = () => arbeitszeitenStore.list();
@@ -712,6 +753,8 @@ module.exports = {
   getVikunjaConfig, saveVikunjaConfig,
   getMailConfig, saveMailConfig,
   getHomeboxConfig, saveHomeboxConfig,
+  getEinwohnerConfig, saveEinwohnerConfig,
+  listEhrungen, getEhrung, saveEhrung, deleteEhrung,
   listInventarWartungen, getInventarWartung, saveInventarWartung,
   deleteInventarWartung, deleteInventarWartungenZuArtikel,
   listAttachments, getAttachment, attachmentPath, ensureAttachmentDir,

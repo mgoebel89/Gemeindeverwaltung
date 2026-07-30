@@ -38,7 +38,7 @@ eingebautem Node-Backend (SQLite + WebSocket) und nginx-Frontend.
 ## Oberfläche
 
 Die App nutzt eine **linke Seitenleiste** (gruppiert: *Übersicht*, *Gremien*,
-*Liegenschaften*, *Finanzen*, unten *Stammdaten*/*Einstellungen*), die sich per Knopf
+*Liegenschaften*, *Finanzen*, *Bürger*, unten *Stammdaten*/*Einstellungen*), die sich per Knopf
 **einklappen** lässt (nur Icons) und auf schmalen Geräten als **Hamburger-Drawer** erscheint.
 Die Navigation wird aus einer zentralen Config in `app/src/app.js` (`NAV`) aufgebaut — ein
 neues Modul ist dort ein Eintrag.
@@ -50,8 +50,11 @@ Sitzungsliste liegt unter `#/sitzungen`, die vollständige Terminliste unter `#/
 Aufgaben unter `#/aufgaben`.
 
 Die **Einstellungen** sind in Kategorien gegliedert (Unter-Navigation): Allgemein, Darstellung,
-Dokumente, Kalender, Aufgaben, Vorgänge & Projekte, Vermietung, Verträge & Pacht,
-Bargeldauslagen, Arbeitszeiten, Datensicherung.
+Dokumente, Kalender, Aufgaben, E-Mail, Vorgänge & Projekte, Vermietung, Verträge & Pacht,
+Bargeldauslagen, Arbeitszeiten, Inventar, Einwohner, Datensicherung.
+
+Eine Ausnahme in der Navigation ist das Modul **Einwohner**: es liegt hinter einer eigenen,
+serverseitig geprüften PIN und zeigt ohne sie nichts an (siehe unten).
 
 ## Struktur
 
@@ -221,6 +224,12 @@ Browser-Speicher leert.
 | Anhänge                    | `/var/lib/gemeindeverwaltung/attachments/<sitzungId>/<attachmentId>` |
 | Backups                    | `/var/backups/gemeindeverwaltung/<DATUM>/`   |
 | App-Code                   | `/opt/gemeindeverwaltung/`                   |
+| **Einwohner**              | **eigene NocoDB-Base** (nicht lokal, nicht im Snapshot) |
+| Ehrungen (Status/Notizen)  | SQLite, Tabelle `ehrungen` — nur im Container-Backup |
+
+> Die **Ehrungs-Historie** liegt bewusst nur lokal: sie enthält Namen und würde beim
+> NocoDB-Sync in der Sicherungs-Base landen, die von den Einwohnerdaten getrennt bleiben soll.
+> Gesichert wird sie über das tägliche Container-Backup. Die Einwohner selbst sichert NocoDB.
 
 ## 6) Lokal testen (ohne Proxmox)
 
@@ -989,6 +998,143 @@ REST-API angebunden. Der Zugriff läuft **serverseitig** (`backend/vikunja.js`, 
 
 > **Migration:** Kein neues Schema nötig (nutzt die bestehende `settings`-Tabelle). Frontend
 > nach dem Update mit **Strg+F5** neu laden.
+
+## Modul „Einwohner"
+
+Einwohnerliste der Ortsgemeinde mit **Altersjubiläen** und **Ehrenurkunde**. Das Modul
+unterscheidet sich in zwei Punkten bewusst von allen anderen.
+
+### 1. Eine zweite, getrennte NocoDB-Base
+
+Die Einwohner liegen in einer **eigenen** NocoDB-Base — **nicht** in der, in die unter
+*Datensicherung* gesichert wird. Ein Melderegister hat in der Sicherung von Sitzungen,
+Vermietungen und Rechnungen nichts verloren, deshalb bleiben beide getrennt.
+
+NocoDB ist die **führende Quelle**; es gibt bewusst **keine lokale Kopie** der Einwohner
+(zwei Bestände laufen auseinander, und beim zweiten weiß niemand mehr, welcher stimmt).
+Gelesen und geschrieben wird über den Backend-Proxy `backend/einwohner.js`, Route
+`/api/einwohner` — Muster wie Paperless/Vikunja/Homebox, damit der API-Token serverseitig
+bleibt.
+
+- **Konfiguration** unter *Einstellungen → Einwohner*: NocoDB-URL, API-Token, Base-ID und
+  Tabelle. Gespeichert serverseitig unter dem DB-Key `einwohner` (eigener Key, **nicht** im
+  Snapshot/NocoDB-Sync); Env-Fallback `EINWOHNER_NOCODB_URL` / `_TOKEN` / `_BASE` / `_TABLE`.
+  Leeres Token-Feld beim Speichern = bestehenden Token behalten.
+- **Spaltenzuordnung** ebenfalls dort, vorbelegt mit den Spalten der bestehenden Liste.
+  **Wichtig:** `Name` ist im Melderegister der **Nachname**, `Rufname` der **Vorname** —
+  davon hängen Sortierung und Urkundenaufdruck ab. „Verbindung testen" zeigt deshalb eine
+  **Beispielzeile** mit der aufgelösten Zuordnung; sonst fällt ein vertauschtes Feld erst
+  auf der gedruckten Urkunde auf.
+
+### 2. Ein echtes Zugriffsgate (eigene PIN)
+
+Anders als bei den Vorgängen, wo die Rollen-Umschaltung erst im Browser filtert, entscheidet
+hier der **Server**:
+
+- Einwohner stehen **nicht** in `/api/snapshot`. Der Snapshot geht ungefiltert an jeden
+  Browser im Netz; ein vollständiges Melderegister gehört dort nicht hinein.
+- Der **PIN-Hash liegt serverseitig** unter dem DB-Key `einwohner`, gesalzen und mit 120.000
+  PBKDF2-Runden. (Die Leitungs-PIN der Vorgänge steht als SHA-256 im Settings-Blob und fährt
+  im Snapshot mit — eine kurze PIN ist daraus zurückrechenbar. Genau das wird hier vermieden.)
+- Wer die PIN kennt, erhält einen **zeitlich begrenzten Token** (8 Stunden, im
+  `sessionStorage`). Ohne gültigen Token antworten alle Datenrouten mit **401** — egal, was
+  der Browser behauptet. Der Knopf „🔒 Sperren" beendet den Zugriff sofort.
+- Offen bleiben nur `GET /config` und `GET /status` (enthalten keine Personendaten) sowie
+  `PUT /config` und `POST /pin`, **solange keine PIN vergeben ist** — sonst ließe sich das
+  Modul nie einrichten. Ab der ersten PIN sind beide zu. Ist **keine** PIN gesetzt, warnt die
+  Oberfläche sichtbar.
+
+Das ist keine Benutzerverwaltung und ersetzt keine — aber die Grenze, ab der „im internen
+Netz" nicht mehr als Begründung reicht.
+
+> **PIN vergessen?** Über `/etc/gemeindeverwaltung.env` (`EINWOHNER_NOCODB_*`) wieder
+> hineinkommen oder den Eintrag zurücksetzen:
+> `sqlite3 <datadir>/gemeinde.db "DELETE FROM settings WHERE key='einwohner';"`
+> Danach ist das Modul unkonfiguriert und die PIN neu vergebbar.
+
+### Abgleich mit der Papierliste
+
+Die Verbandsgemeinde schickt die Einwohnerliste einmal jährlich auf **Papier**, sortiert nach
+Straße, dann Nachname, dann Vorname. Deshalb gibt es keinen Datei-Import, sondern eine
+**Prüfliste** (`app/src/export/einwohner-pdf.js`) in **exakt derselben Sortierung** — bewusst
+**nicht** nach Hausnummer, sonst ließen sich die beiden Listen nicht Zeile für Zeile
+nebeneinander durchgehen.
+
+- Spalten: Ankreuzfeld, Name, Vorname, Anschrift, Geburtsdatum. Straßen als
+  Zwischenüberschrift, Tabellenkopf auf jeder Seite, Fußzeile mit Seitenzahl und dem Vermerk
+  „vertraulich".
+- Das **Geburtsdatum** steht mit drauf, obwohl die Amtsliste keines führt: beim Durchgehen
+  fällt ohnehin auf, wenn ein Jahrgang nicht stimmen kann — und die Ehrungen hängen daran.
+- Abweichungen anschließend im Reiter *Abgleich* eintragen: Zugezogene anlegen, Weggezogene
+  löschen, Umzüge und Schreibfehler in der Zeile ändern. Alles wird sofort nach NocoDB
+  geschrieben. „Abgleich als erledigt vermerken" hält Datum und Anzahl fest.
+
+Weggezogene werden **gelöscht** (Datensparsamkeit). Bereits vergebene Ehrungen bleiben
+trotzdem vollständig in der Historie — siehe unten.
+
+### Altersjubiläen und Ehrungen
+
+Geehrt wird zur **Vollendung des 80., 90., 95. und 100.** Lebensjahres. Wer wann dran ist,
+wird aus dem Geburtsdatum **gerechnet** (`backend/ehrungen.js`) und nirgends gespeichert —
+sonst müsste die Liste jedes Jahr gepflegt werden.
+
+Gespeichert wird nur, was die Rechnung nicht weiß: **Status** (offen / Urkunde erstellt /
+überreicht), eine **Notiz** und die angelegte **Aufgabe**. Dafür gibt es die Tabelle
+`ehrungen` — dasselbe Muster wie die Inventar-Wartungen: die führende Quelle bleibt außerhalb,
+hier steht nur die Ergänzung.
+
+- Die **id einer Ehrung ist `einwohnerId-alter`** und damit vorhersagbar. Das ist der einzige
+  Schutz davor, dass der Tageslauf morgen dieselbe Ehrung noch einmal anlegt.
+- Ein **Namensschnappschuss** liegt mit im Datensatz. Zieht die Person später weg und wird
+  gelöscht, stünde in der Historie sonst eine nackte Kennung — und niemand wüsste mehr, wer
+  2027 geehrt wurde.
+- **29. Februar:** Wer an diesem Tag geboren ist, hat in drei von vier Jahren keinen
+  Geburtstag und fiele ohne Behandlung durchs Raster. Gefeiert wird dann am 28.02.
+
+**Täglicher Lauf** (`backend/jubilaeumslauf.js`, Vorbild `wartungslauf.js`) — im Backend, nicht
+im Browser: ein 90. Geburtstag rückt näher, ob jemand die App öffnet oder nicht.
+
+1. Jubiläum rückt in die Vorlauffrist (Standard: **ein Kalendermonat**) → **Vikunja-Aufgabe**.
+2. Aufgabe abgehakt → Ehrung gilt als **überreicht**. Und umgekehrt: in der App auf
+   „überreicht" gesetzt → Aufgabe schließt sich.
+
+Von Hand anstoßbar über *Einstellungen → Einwohner → „Jetzt prüfen"* oder den gleichnamigen
+Knopf im Reiter *Ehrungen*.
+
+> **Zu bedenken:** Die Aufgabe enthält standardmäßig **Namen und Anlass** — und Aufgaben sind
+> im Aufgabenmodul und im Kalender für **jeden im Netz** sichtbar, auch ohne die PIN dieses
+> Moduls. Das ist eine bewusste Entscheidung für Bequemlichkeit. Wer das nicht will, nimmt
+> unter *Einstellungen → Einwohner* den Haken „Namen in die Aufgabe schreiben" heraus; dann
+> steht dort nur Anlass und Datum, den Namen findet man im Modul.
+
+### Ehrenurkunde
+
+`app/src/export/urkunde-pdf.js` baut die Urkunde nach der ODT-Vorlage der Gemeinde: goldener
+**Lorbeerkranz** mit der Jubiläumszahl darin (`app/assets/lorbeerkranz.png`, eingebunden wie
+das Wappen über ein verstecktes `<img>` und Canvas), rechts das **Wappen**, darunter mittig
+der Glückwunschtext mit dem Namen als größtem Element.
+
+- **Du- und Sie-Fassung** liegen als Textvorlagen unter *Einstellungen → Einwohner*
+  (Platzhalter `{name}`, `{alter}`, `{datum}`, `{ortsgemeinde}`). Beim Erzeugen wird gewählt —
+  im Dorf duzt man den einen und siezt den anderen.
+- **Die Unterschriften bleiben leer.** Das ist keine Auslassung: Ehrungen werden persönlich
+  unterschrieben, das hinterlegte Bürgermeisterbild hat hier nichts zu suchen. Gedruckt werden
+  nur Linie, Name und Funktion (beides konfigurierbar).
+- Das Drucken setzt den Status automatisch auf **„Urkunde erstellt"**, sofern er noch offen war.
+- Zwei bewusste Abweichungen von der Vorlage: **Serifenschrift** (Times) statt der
+  Fließschrift des Textprogramms, und der Tippfehler „im **Nahmen** des Gemeinderates" ist
+  berichtigt.
+
+> **Namen mit Sonderzeichen:** Die PDF-Standardschriften können nur WinAnsi/CP1252. Ein
+> Zeichen außerhalb (etwa `ł`, `ş`, `č`) würde die **ganze Zeile** zu Buchstabensalat machen.
+> Deshalb wird **umgeschrieben** statt ersetzt: aus `ł` wird `l`, aus `ş` ein `s`. Umlaute und
+> `ß` sind in WinAnsi enthalten und unproblematisch. Ein „?" mitten im Namen auf einer
+> Ehrenurkunde wäre schlimmer als ein fehlender Akzent — perfekt ist es trotzdem nicht.
+
+> **Migration:** Neue Tabelle `ehrungen` (wird beim Start automatisch angelegt) und der neue
+> DB-Key `einwohner`. Keine neuen npm-Abhängigkeiten. Frontend nach dem Update mit
+> **Strg+F5** neu laden. Danach *Einstellungen → Einwohner*: Verbindung eintragen, Verbindung
+> testen (Beispielzeile prüfen!), **PIN vergeben**.
 
 ## Lizenz
 

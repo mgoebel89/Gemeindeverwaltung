@@ -125,8 +125,16 @@
     return Math.max(jetzt, unten);
   }
 
+  // Beliebiges Bild aus der Seite als Data-URL (für PDF-Bauer, die noch andere
+  // Grafiken brauchen — die Urkunde etwa ihren Lorbeerkranz). Derselbe
+  // Canvas-Weg wie beim Wappen, damit kein fetch nötig ist.
+  function bildDataUrl(elementId) {
+    return imageElementToDataUrl(document.getElementById(elementId));
+  }
+
   GR.pdfKopf = {
     wappenDataUrl,
+    bildDataUrl,
     fitBox,
     platziere,
     unterhalb,

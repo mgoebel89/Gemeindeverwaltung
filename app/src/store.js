@@ -191,6 +191,42 @@
       arbeitszeiten: defaultArbeitszeitenSettings(),
       personen: defaultPersonenSettings(),
       inventar: defaultInventarSettings(),
+      einwohner: defaultEinwohnerSettings(),
+    };
+  }
+  // Modul Einwohner: die Einwohner selbst liegen in einer eigenen NocoDB-Base,
+  // ihr Zugang und die PIN des Moduls serverseitig unter eigenem DB-Key. Was
+  // hier steht, enthält KEINE Personendaten und darf deshalb im Snapshot und im
+  // NocoDB-Backup mitlaufen: Fristen, Schalter und die Urkundentexte.
+  //
+  // `aufgabeMitNamen` ist bewusst ein Schalter: mit Namen ist die Erinnerung
+  // bequemer, aber die Vikunja-Aufgabe ist im Aufgabenmodul und im Kalender für
+  // jeden im Netz sichtbar — auch ohne die PIN des Einwohnermoduls. Matthias hat
+  // sich am 2026-07-30 in Kenntnis dessen für Namen entschieden; umstellen geht
+  // hier, ohne dass am Code etwas geändert werden muss.
+  function defaultEinwohnerSettings() {
+    return {
+      vorlaufMonate: 1,
+      jubilaeumsaufgaben: true,
+      aufgabeMitNamen: true,
+      letzterAbgleich: '',
+      letzterAbgleichAnzahl: 0,
+      // Urkundentexte. Platzhalter: {name} {alter} {datum} {ortsgemeinde}
+      // Wortlaut aus der ODT-Vorlage der Gemeinde („Nahmen" darin ist ein
+      // Tippfehler und hier berichtigt).
+      urkundeTextDu: 'Wir verbinden damit die Hoffnung, dass dir noch viele weitere Jahre in '
+        + 'Gesundheit verbleiben und du glückliche Stunden im Kreise deiner Lieben erlebst. '
+        + 'Dies wünschen wir dir im Namen des Gemeinderates der Ortsgemeinde {ortsgemeinde}.',
+      urkundeTextSie: 'Wir verbinden damit die Hoffnung, dass Ihnen noch viele weitere Jahre in '
+        + 'Gesundheit verbleiben und Sie glückliche Stunden im Kreise Ihrer Lieben erleben. '
+        + 'Dies wünschen wir Ihnen im Namen des Gemeinderates der Ortsgemeinde {ortsgemeinde}.',
+      urkundeAnrede: 'du',          // Vorbelegung des Umschalters beim Erzeugen
+      // Unterschriftszeilen. Es wird bewusst KEIN gespeichertes
+      // Unterschriftsbild eingesetzt — Ehrungen unterschreibt man persönlich.
+      urkundeUnterschrift1: 'Matthias Göbel',
+      urkundeFunktion1: 'Bürgermeister',
+      urkundeUnterschrift2: 'Christian Arenz',
+      urkundeFunktion2: 'Beigeordneter',
     };
   }
   // Modul Inventar: die Gegenstände selbst liegen in Homebox. Hier steht nur,
@@ -382,6 +418,11 @@
     else {
       const di = defaultInventarSettings();
       for (const k of Object.keys(di)) if (cache.settings.inventar[k] === undefined) cache.settings.inventar[k] = di[k];
+    }
+    if (!cache.settings.einwohner) cache.settings.einwohner = defaultEinwohnerSettings();
+    else {
+      const de = defaultEinwohnerSettings();
+      for (const k of Object.keys(de)) if (cache.settings.einwohner[k] === undefined) cache.settings.einwohner[k] = de[k];
     }
     if (!cache.settings.personen) cache.settings.personen = defaultPersonenSettings();
     else if (!Array.isArray(cache.settings.personen.ignorierteDubletten)) {

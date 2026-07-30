@@ -40,6 +40,9 @@
   <!-- Verstecktes Wappen-Bild für PDF-Export (wird per Canvas in Data-URL konvertiert, kein fetch). -->
   <img id="wappenImg" src="assets/wappen.png" alt="" style="display:none;" onerror="this.dataset.failed='1'" />
 
+  <!-- Lorbeerkranz der Ehrenurkunde — gleicher Weg wie das Wappen (Canvas statt fetch). -->
+  <img id="lorbeerImg" src="assets/lorbeerkranz.png" alt="" style="display:none;" onerror="this.dataset.failed='1'" />
+
   <!-- Vendor: jsPDF (offline, eine Datei in vendor/) -->
   <script src="vendor/jspdf.inline.js"></script>
   <!-- Vendor: marked (Markdown-Vorschau in der Aufgaben-Detailkarte) -->
@@ -69,6 +72,8 @@
   <script src="src/export/vertraege-pdf.js"></script>
   <script src="src/export/vorgaenge-pdf.js"></script>
   <script src="src/export/arbeitszeiten-pdf.js"></script>
+  <script src="src/export/einwohner-pdf.js"></script>
+  <script src="src/export/urkunde-pdf.js"></script>
   <script src="src/views/uebersicht.js"></script>
   <script src="src/views/dashboard.js"></script>
   <script src="src/views/dokumente.js"></script>
@@ -84,6 +89,7 @@
   <script src="src/views/haushalt.js"></script>
   <script src="src/views/vorgaenge.js"></script>
   <script src="src/views/inventar.js"></script>
+  <script src="src/views/einwohner.js"></script>
   <script src="src/views/arbeiter.js"></script>
   <script src="src/views/arbeitszeiten.js"></script>
   <script src="src/views/arbeitsabrechnungen.js"></script>

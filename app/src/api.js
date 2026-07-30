@@ -264,6 +264,93 @@
   async function loeschenWartung(wid) { return jsonFetch(inv(`/wartung/${encodeURIComponent(wid)}`), { method: 'DELETE' }); }
   async function wartungslaufJetzt() { return jsonFetch(inv('/wartungslauf'), { method: 'POST' }); }
 
+  // --- Modul Einwohner (zweite NocoDB-Base, hinter eigener PIN) ---
+  //
+  // Anders als überall sonst gibt es hier einen Sitzungs-Token. Er kommt aus
+  // dem Backend, sobald die PIN stimmt, und muss an JEDER Datenanfrage hängen —
+  // ohne ihn antwortet der Server mit 401. Er liegt im sessionStorage und ist
+  // damit beim Schließen des Tabs wieder weg; das ist Absicht, ein
+  // Melderegister soll nicht dauerhaft offenstehen.
+  const EW_TOKEN_KEY = 'gr.einwohnerToken';
+  function ewToken() {
+    try { return sessionStorage.getItem(EW_TOKEN_KEY) || ''; } catch (_) { return ''; }
+  }
+  function setEwToken(t) {
+    try {
+      if (t) sessionStorage.setItem(EW_TOKEN_KEY, t);
+      else sessionStorage.removeItem(EW_TOKEN_KEY);
+    } catch (_) {}
+  }
+
+  const ew = (p) => '/api/einwohner' + p;
+  // Eigener Helfer statt jsonFetch: die 401 des Gates ist kein Fehler, den man
+  // dem Nutzer als „Backend 401" hinwirft, sondern die Aufforderung, die PIN
+  // einzugeben. Sie kommt deshalb als erkennbarer Fehler mit `gesperrt` zurück.
+  async function ewFetch(path, opts = {}) {
+    const res = await fetch(path, {
+      method: opts.method || 'GET',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Client-Id': CLIENT_ID,
+        'X-Einwohner-Token': ewToken(),
+      },
+      body: opts.body ? JSON.stringify(opts.body) : undefined,
+    });
+    if (res.status === 401) {
+      const daten = await res.json().catch(() => ({}));
+      const fehler = new Error(daten.error || 'Gesperrt.');
+      fehler.gesperrt = true;
+      // Ein abgelaufener Token ist wertlos — gleich wegräumen, damit die
+      // Oberfläche nicht in einer Schleife aus 401ern hängt.
+      if (daten.gesperrt) setEwToken('');
+      throw fehler;
+    }
+    if (!res.ok) {
+      const txt = await res.text().catch(() => '');
+      throw new Error(`Backend ${res.status}: ${txt.slice(0, 200)}`);
+    }
+    if (res.status === 204) return null;
+    return res.json().catch(() => null);
+  }
+
+  async function einwohnerStatus() { return ewFetch(ew('/status')); }
+  async function einwohnerAnmelden(pin) {
+    const r = await ewFetch(ew('/anmelden'), { method: 'POST', body: { pin } });
+    if (r && r.token) setEwToken(r.token);
+    return r;
+  }
+  async function einwohnerAbmelden() {
+    try { await ewFetch(ew('/abmelden'), { method: 'POST' }); } catch (_) {}
+    setEwToken('');
+  }
+  async function einwohnerPin(neu, alt) { return ewFetch(ew('/pin'), { method: 'POST', body: { neu, alt } }); }
+  async function getEinwohnerConfig() { return ewFetch(ew('/config')); }
+  async function putEinwohnerConfig(cfg) { return ewFetch(ew('/config'), { method: 'PUT', body: cfg }); }
+  async function einwohnerTabellen() { return ewFetch(ew('/tabellen')); }
+  async function einwohnerHealth() { return ewFetch(ew('/health')); }
+  async function listEinwohner({ q = '', frisch = false } = {}) {
+    const p = new URLSearchParams();
+    if (q) p.set('q', q);
+    if (frisch) p.set('frisch', '1');
+    const qs = p.toString();
+    return ewFetch(ew('/' + (qs ? '?' + qs : '')));
+  }
+  async function getEinwohner(id) { return ewFetch(ew(`/${encodeURIComponent(id)}`)); }
+  async function anlegenEinwohner(e) { return ewFetch(ew('/'), { method: 'POST', body: e }); }
+  async function speichernEinwohner(id, e) { return ewFetch(ew(`/${encodeURIComponent(id)}`), { method: 'PUT', body: e }); }
+  async function loeschenEinwohner(id) { return ewFetch(ew(`/${encodeURIComponent(id)}`), { method: 'DELETE' }); }
+  async function listEhrungen({ von = '', bis = '' } = {}) {
+    const p = new URLSearchParams();
+    if (von) p.set('von', von);
+    if (bis) p.set('bis', bis);
+    const qs = p.toString();
+    return ewFetch(ew('/ehrungen' + (qs ? '?' + qs : '')));
+  }
+  async function listEhrungsHistorie() { return ewFetch(ew('/ehrungen/historie')); }
+  async function speichernEhrung(id, e) { return ewFetch(ew(`/ehrungen/${encodeURIComponent(id)}`), { method: 'PUT', body: e }); }
+  async function jubilaeumslaufJetzt() { return ewFetch(ew('/jubilaeumslauf'), { method: 'POST' }); }
+  async function abgleichGebucht(anzahl) { return ewFetch(ew('/abgleich'), { method: 'POST', body: { anzahl } }); }
+
   async function listDocNotes(id) { return jsonFetch(`/api/dokumente/${encodeURIComponent(id)}/notes`); }
   async function addDocNote(id, note) { return jsonFetch(`/api/dokumente/${encodeURIComponent(id)}/notes`, { method: 'POST', body: { note } }); }
   async function deleteDocNote(id, noteId) { return jsonFetch(`/api/dokumente/${encodeURIComponent(id)}/notes/${encodeURIComponent(noteId)}`, { method: 'DELETE' }); }
@@ -323,6 +410,10 @@
     speichernInventarArtikel, loeschenInventarArtikel, buchenInventarBestand,
     listInventarWartungen, listOffeneWartungen, anlegenWartung, speichernWartung, loeschenWartung,
     wartungslaufJetzt,
+    einwohnerStatus, einwohnerAnmelden, einwohnerAbmelden, einwohnerPin,
+    getEinwohnerConfig, putEinwohnerConfig, einwohnerTabellen, einwohnerHealth,
+    listEinwohner, getEinwohner, anlegenEinwohner, speichernEinwohner, loeschenEinwohner,
+    listEhrungen, listEhrungsHistorie, speichernEhrung, jubilaeumslaufJetzt, abgleichGebucht,
     getTask, updateTask, listTaskLabels, addTaskLabel, removeTaskLabel,
     listDocNotes, addDocNote, deleteDocNote,
     putMieter, deleteMieterRemote,

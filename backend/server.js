@@ -20,7 +20,9 @@ const createVertraegeRouter = require('./routes/vertraege');
 const createVorgaengeRouter = require('./routes/vorgaenge');
 const createArbeitszeitenRouter = require('./routes/arbeitszeiten');
 const createInventarRouter = require('./routes/inventar');
+const createEinwohnerRouter = require('./routes/einwohner');
 const { starteWartungslauf } = require('./wartungslauf');
+const { starteJubilaeumslauf } = require('./jubilaeumslauf');
 
 const PORT = parseInt(process.env.PORT || '3000', 10);
 const HOST = process.env.HOST || '127.0.0.1';
@@ -73,6 +75,13 @@ app.use('/api', createArbeitszeitenRouter(broadcast));
 
 // --- Modul: Inventar (Homebox-Proxy + Wartungen) ---
 app.use('/api/inventar', createInventarRouter());
+
+// --- Modul: Einwohner (zweite NocoDB-Base, hinter eigener PIN) ---
+// ACHTUNG: Dieses Modul taucht bewusst NICHT im Snapshot weiter unten auf. Der
+// Snapshot geht ungefiltert an jeden Browser im Netz; das Melderegister hat
+// dort nichts verloren und wird ausschließlich über diese Routen ausgeliefert,
+// die den PIN-Token prüfen.
+app.use('/api/einwohner', createEinwohnerRouter());
 
 // --- Snapshot (Bootstrap) ---
 app.get('/api/snapshot', (_req, res) => {
@@ -296,4 +305,7 @@ server.listen(PORT, HOST, () => {
   // prüft der Server einmal täglich selbst und legt die fälligen Aufgaben an.
   // Ohne eingerichtete Homebox steigt der Lauf sofort wieder aus.
   starteWartungslauf();
+  // Dasselbe für die Altersjubiläen: ein 90. Geburtstag rückt näher, ob jemand
+  // die App öffnet oder nicht.
+  starteJubilaeumslauf();
 });

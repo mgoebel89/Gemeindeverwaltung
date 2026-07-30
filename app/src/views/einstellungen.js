@@ -91,7 +91,7 @@
       allgemein: el('div'), darstellung: el('div'), dokumente: el('div'), kalender: el('div'), aufgaben: el('div'),
       mail: el('div'),
       vorgaenge: el('div'), vermietung: el('div'), vertraege: el('div'), auslagen: el('div'),
-      arbeitszeiten: el('div'), inventar: el('div'), daten: el('div'),
+      arbeitszeiten: el('div'), inventar: el('div'), einwohner: el('div'), daten: el('div'),
     };
 
     C.allgemein.appendChild(el('div', { class: 'card' }, [
@@ -1005,6 +1005,292 @@
     ]));
     ladeHbConfig();
 
+    // ===== Einwohner =========================================================
+    // Zwei Besonderheiten gegenüber allen anderen Modulen:
+    //  * Die Verbindungsdaten gehören zu einer ZWEITEN NocoDB-Base, nicht zu
+    //    der aus der Datensicherung. Beides bleibt bewusst getrennt.
+    //  * Das Modul hat eine eigene PIN, die der Server prüft. Ohne sie liefert
+    //    er die Einwohner nicht aus — auch nicht an diese Seite.
+    const ewUrl = el('input', { type: 'text', placeholder: 'https://nocodb.example.de' });
+    const ewToken = el('input', { type: 'password', placeholder: 'API-Token' });
+    const ewBase = el('input', { type: 'text', placeholder: 'Base-ID (z. B. p1a2b3c4d5)' });
+    const ewTabelle = el('select', {});
+    const ewTabelleId = el('input', { type: 'text', placeholder: 'Tabellen-ID' });
+    const ewStatus = el('p', { class: 'help' });
+
+    const ewFeld = {};
+    for (const k of ['nachname', 'vorname', 'geburtsdatum', 'wohnungsart', 'wohnort', 'strasse', 'hausnummer', 'zusatz']) {
+      ewFeld[k] = el('input', { type: 'text' });
+    }
+
+    async function ladeEwConfig() {
+      try {
+        const c = await GR.api.getEinwohnerConfig();
+        ewUrl.value = c.url || '';
+        ewBase.value = c.baseId || '';
+        ewTabelleId.value = c.tableId || '';
+        ewToken.placeholder = c.hasToken ? 'gesetzt — leer lassen, um ihn zu behalten' : 'API-Token';
+        for (const k of Object.keys(ewFeld)) {
+          ewFeld[k].value = (c.felder && c.felder[k]) || (c.standardFelder && c.standardFelder[k]) || '';
+        }
+        ewStatus.textContent = c.hasPin
+          ? 'PIN ist gesetzt.'
+          : 'Achtung: Es ist keine PIN vergeben — die Einwohnerdaten sind derzeit ungeschützt.';
+        ewStatus.className = c.hasPin ? 'help' : 'warn';
+      } catch (e) {
+        ewStatus.textContent = e && e.gesperrt
+          ? 'Gesperrt — zum Ändern der Verbindung erst im Modul „Einwohner" die PIN eingeben.'
+          : 'Konnte nicht geladen werden: ' + e.message;
+        ewStatus.className = 'warn';
+      }
+    }
+
+    const onEwSave = async () => {
+      try {
+        const felder = {};
+        for (const k of Object.keys(ewFeld)) felder[k] = ewFeld[k].value.trim();
+        await GR.api.putEinwohnerConfig({
+          url: ewUrl.value.trim(),
+          token: ewToken.value,          // leer = bestehenden behalten
+          baseId: ewBase.value.trim(),
+          tableId: ewTabelleId.value.trim(),
+          felder,
+        });
+        ewToken.value = '';
+        toast('Gespeichert.');
+        ladeEwConfig();
+      } catch (e) {
+        toast(e && e.gesperrt ? 'Gesperrt — erst im Modul „Einwohner" die PIN eingeben.' : 'Fehler: ' + e.message);
+      }
+    };
+
+    const onEwTabellen = async () => {
+      ewTabelle.innerHTML = '';
+      try {
+        const liste = await GR.api.einwohnerTabellen();
+        ewTabelle.appendChild(el('option', { value: '' }, '— Tabelle wählen —'));
+        for (const t of liste) {
+          ewTabelle.appendChild(el('option', { value: t.id }, `${t.title} (${t.id})`));
+        }
+        ewStatus.textContent = `${liste.length} Tabellen gefunden.`;
+        ewStatus.className = 'help';
+      } catch (e) {
+        ewStatus.textContent = 'Tabellen konnten nicht geladen werden: ' + e.message;
+        ewStatus.className = 'warn';
+      }
+    };
+    ewTabelle.addEventListener('change', () => { if (ewTabelle.value) ewTabelleId.value = ewTabelle.value; });
+
+    const onEwTest = async () => {
+      ewStatus.textContent = 'Prüfe …';
+      ewStatus.className = 'help';
+      try {
+        const h = await GR.api.einwohnerHealth();
+        if (!h.ok) { ewStatus.textContent = 'Fehler: ' + (h.error || 'unbekannt'); ewStatus.className = 'warn'; return; }
+        // Die Beispielzeile ist der einzige verlässliche Weg zu prüfen, ob
+        // „Name" wirklich der Nachname ist — auf der Urkunde fiele es erst auf,
+        // wenn sie gedruckt ist.
+        const b = h.beispiel;
+        ewStatus.innerHTML = '';
+        ewStatus.className = 'help';
+        ewStatus.appendChild(el('span', {}, `Verbindung steht — ${h.anzahl} Datensätze. `));
+        if (b) {
+          ewStatus.appendChild(el('br'));
+          ewStatus.appendChild(el('span', {}, `Erste Zeile: Nachname „${b.nachname}", Vorname „${b.vorname}", geboren ${b.geburtsdatum || '—'}, ${b.strasse || ''} ${b.hausnummer || ''}${b.zusatz || ''}.`));
+          ewStatus.appendChild(el('br'));
+          ewStatus.appendChild(el('em', {}, 'Stimmt die Zuordnung von Nachname und Vorname? Sonst unten die Spaltennamen tauschen.'));
+        }
+      } catch (e) {
+        ewStatus.textContent = e && e.gesperrt
+          ? 'Gesperrt — erst im Modul „Einwohner" die PIN eingeben.'
+          : 'Fehler: ' + e.message;
+        ewStatus.className = 'warn';
+      }
+    };
+
+    C.einwohner.appendChild(el('div', { class: 'card' }, [
+      el('h3', {}, 'Verbindung zur Einwohnerliste'),
+      el('p', { class: 'help' }, 'Die Einwohner liegen in einer eigenen NocoDB-Base — nicht in der, in die unter „Datensicherung" gesichert wird. Beide bleiben getrennt: ein Melderegister hat in der Sicherung von Sitzungen und Rechnungen nichts verloren. Token und PIN werden serverseitig im Container gespeichert und nie an den Browser zurückgegeben.'),
+      el('div', { class: 'grid-2' }, [
+        el('div', {}, [el('label', {}, 'NocoDB-URL'), ewUrl]),
+        el('div', {}, [el('label', {}, 'API-Token'), ewToken]),
+      ]),
+      el('div', { class: 'grid-2' }, [
+        el('div', {}, [el('label', {}, 'Base-ID'), ewBase]),
+        el('div', {}, [
+          el('label', {}, 'Tabelle'),
+          ewTabelle,
+          ewTabelleId,
+          el('p', { class: 'help', style: 'margin:2px 0 0;' }, 'Erst speichern, dann „Tabellen laden" — die Liste kommt über den gespeicherten Token.'),
+        ]),
+      ]),
+      el('div', { class: 'toolbar', style: 'margin-top:10px;' }, [
+        el('button', { class: 'btn-primary', onClick: onEwSave }, 'Speichern'),
+        el('button', { onClick: onEwTabellen }, 'Tabellen laden'),
+        el('button', { onClick: onEwTest }, 'Verbindung testen'),
+      ]),
+      ewStatus,
+    ]));
+
+    C.einwohner.appendChild(el('div', { class: 'card' }, [
+      el('h3', {}, 'Spaltenzuordnung'),
+      el('p', { class: 'help' }, 'Welche Spalte der Base welches Feld ist. Vorbelegt mit den Namen der bestehenden Liste. Wichtig: „Name" ist im Melderegister der NACHNAME, „Rufname" der Vorname — davon hängen Sortierung und Urkundenaufdruck ab.'),
+      el('div', { class: 'grid-2' }, [
+        el('div', {}, [el('label', {}, 'Nachname'), ewFeld.nachname]),
+        el('div', {}, [el('label', {}, 'Vorname'), ewFeld.vorname]),
+        el('div', {}, [el('label', {}, 'Geburtsdatum'), ewFeld.geburtsdatum]),
+        el('div', {}, [el('label', {}, 'Wohnungsart'), ewFeld.wohnungsart]),
+        el('div', {}, [el('label', {}, 'Straße'), ewFeld.strasse]),
+        el('div', {}, [el('label', {}, 'Hausnummer'), ewFeld.hausnummer]),
+        el('div', {}, [el('label', {}, 'Zusatz'), ewFeld.zusatz]),
+        el('div', {}, [el('label', {}, 'Wohnort'), ewFeld.wohnort]),
+      ]),
+      el('p', { class: 'help', style: 'margin-top:8px;' }, 'Änderungen mit „Speichern" oben übernehmen.'),
+    ]));
+
+    // --- PIN ---
+    const ewPinAlt = el('input', { type: 'password', placeholder: 'Bisherige PIN (falls gesetzt)' });
+    const ewPinNeu = el('input', { type: 'password', placeholder: 'Neue PIN (mind. 4 Zeichen)' });
+    const ewPinStatus = el('p', { class: 'help' });
+
+    const onPinSetzen = async () => {
+      try {
+        const r = await GR.api.einwohnerPin(ewPinNeu.value, ewPinAlt.value);
+        ewPinAlt.value = ''; ewPinNeu.value = '';
+        ewPinStatus.textContent = r.hasPin ? 'PIN gesetzt. Bestehende Freigaben wurden beendet.' : 'PIN entfernt.';
+        ewPinStatus.className = r.hasPin ? 'help' : 'warn';
+        ladeEwConfig();
+      } catch (e) {
+        ewPinStatus.textContent = 'Fehler: ' + e.message;
+        ewPinStatus.className = 'warn';
+      }
+    };
+    const onPinEntfernen = async () => {
+      const ok = confirmDialog(
+        'PIN wirklich entfernen?\n\n'
+        + 'Danach kann jeder im Netz die Einwohnerdaten abrufen. Das ist bei einem Melderegister nicht zu empfehlen.',
+      );
+      if (!ok) return;
+      try {
+        await GR.api.einwohnerPin('', ewPinAlt.value);
+        ewPinAlt.value = '';
+        ewPinStatus.textContent = 'PIN entfernt — die Daten sind jetzt ungeschützt.';
+        ewPinStatus.className = 'warn';
+        ladeEwConfig();
+      } catch (e) {
+        ewPinStatus.textContent = 'Fehler: ' + e.message;
+        ewPinStatus.className = 'warn';
+      }
+    };
+
+    C.einwohner.appendChild(el('div', { class: 'card' }, [
+      el('h3', {}, 'PIN des Moduls'),
+      el('p', { class: 'help' }, 'Die Einwohnerdaten liegen bewusst nicht im allgemeinen Datenbestand, den jeder Browser im Netz bekommt. Der Server gibt sie erst nach Eingabe dieser PIN heraus; die Freigabe gilt für ein Browserfenster und endet nach acht Stunden. Sie wird gesalzen und mit 120.000 Runden gespeichert und verlässt den Server nie.'),
+      el('div', { class: 'grid-2' }, [
+        el('div', {}, [el('label', {}, 'Bisherige PIN'), ewPinAlt]),
+        el('div', {}, [el('label', {}, 'Neue PIN'), ewPinNeu]),
+      ]),
+      el('div', { class: 'toolbar', style: 'margin-top:10px;' }, [
+        el('button', { class: 'btn-primary', onClick: onPinSetzen }, 'PIN setzen'),
+        el('button', { class: 'btn-danger', onClick: onPinEntfernen }, 'PIN entfernen'),
+      ]),
+      ewPinStatus,
+      el('p', { class: 'help', style: 'margin-top:8px;' }, 'PIN vergessen? Dann in /etc/gemeindeverwaltung.env die EINWOHNER_NOCODB_*-Variablen setzen oder den Datenbank-Eintrag zurücksetzen (siehe README).'),
+    ]));
+
+    // --- Jubiläen und Urkunde ---
+    const s0 = store.getSettings();
+    const ewEinst = s0.einwohner || {};
+    const jubVorlauf = el('input', { type: 'number', min: '0', max: '12', value: String(ewEinst.vorlaufMonate == null ? 1 : ewEinst.vorlaufMonate) });
+    const jubAktiv = el('input', { type: 'checkbox' });
+    jubAktiv.checked = ewEinst.jubilaeumsaufgaben !== false;
+    const jubNamen = el('input', { type: 'checkbox' });
+    jubNamen.checked = ewEinst.aufgabeMitNamen !== false;
+    const jubStatus = el('p', { class: 'help' });
+
+    const urkDu = el('textarea', { rows: '4' }, ewEinst.urkundeTextDu || '');
+    const urkSie = el('textarea', { rows: '4' }, ewEinst.urkundeTextSie || '');
+    const urkAnrede = el('select', {}, [
+      el('option', { value: 'du', selected: ewEinst.urkundeAnrede !== 'sie' }, 'Du-Form'),
+      el('option', { value: 'sie', selected: ewEinst.urkundeAnrede === 'sie' }, 'Sie-Form'),
+    ]);
+    const urkU1 = el('input', { type: 'text', value: ewEinst.urkundeUnterschrift1 || '' });
+    const urkF1 = el('input', { type: 'text', value: ewEinst.urkundeFunktion1 || '' });
+    const urkU2 = el('input', { type: 'text', value: ewEinst.urkundeUnterschrift2 || '' });
+    const urkF2 = el('input', { type: 'text', value: ewEinst.urkundeFunktion2 || '' });
+
+    const onEwEinstSave = () => {
+      const s = store.getSettings();
+      s.einwohner = Object.assign({}, s.einwohner, {
+        vorlaufMonate: Math.max(0, Number(jubVorlauf.value) || 0),
+        jubilaeumsaufgaben: jubAktiv.checked,
+        aufgabeMitNamen: jubNamen.checked,
+        urkundeTextDu: urkDu.value,
+        urkundeTextSie: urkSie.value,
+        urkundeAnrede: urkAnrede.value,
+        urkundeUnterschrift1: urkU1.value,
+        urkundeFunktion1: urkF1.value,
+        urkundeUnterschrift2: urkU2.value,
+        urkundeFunktion2: urkF2.value,
+      });
+      store.saveSettings(s);
+      toast('Gespeichert.');
+    };
+
+    const onJubLauf = async () => {
+      jubStatus.textContent = 'Prüfe …';
+      jubStatus.className = 'help';
+      try {
+        const b = await GR.api.jubilaeumslaufJetzt();
+        if (b.uebersprungen) { jubStatus.textContent = b.uebersprungen; return; }
+        jubStatus.textContent = `${b.geprueft} Jubiläen geprüft · ${b.aufgabenAngelegt} Aufgaben angelegt · `
+          + `${b.ehrungenErledigt} als überreicht gebucht · ${b.aufgabenGeschlossen} Aufgaben geschlossen`
+          + (b.fehler && b.fehler.length ? ` · Fehler: ${b.fehler.join('; ')}` : '');
+      } catch (e) {
+        jubStatus.textContent = e && e.gesperrt
+          ? 'Gesperrt — erst im Modul „Einwohner" die PIN eingeben.'
+          : 'Fehler: ' + e.message;
+        jubStatus.className = 'warn';
+      }
+    };
+
+    C.einwohner.appendChild(el('div', { class: 'card' }, [
+      el('h3', {}, 'Altersjubiläen'),
+      el('p', { class: 'help' }, 'Geehrt wird zur Vollendung des 80., 90., 95. und 100. Lebensjahres. Der Server prüft das einmal täglich selbst und legt rechtzeitig eine Aufgabe an — auch wenn wochenlang niemand die App öffnet.'),
+      el('div', {}, [
+        el('label', {}, 'Vorlauf in Monaten'),
+        jubVorlauf,
+      ]),
+      el('label', { class: 'pers-check', style: 'margin-top:10px;' }, [jubAktiv, ' Aufgaben automatisch anlegen']),
+      el('label', { class: 'pers-check' }, [jubNamen, ' Namen in die Aufgabe schreiben']),
+      el('p', { class: 'help' }, 'Zu bedenken: Aufgaben sind im Aufgabenmodul und im Kalender für jeden im Netz sichtbar — ohne die PIN dieses Moduls. Ohne Haken steht in der Aufgabe nur Anlass und Datum, den Namen findet man dann hier.'),
+      el('div', { class: 'toolbar', style: 'margin-top:10px;' }, [
+        el('button', { class: 'btn-primary', onClick: onEwEinstSave }, 'Speichern'),
+        el('button', { onClick: onJubLauf }, 'Jetzt prüfen'),
+      ]),
+      jubStatus,
+    ]));
+
+    C.einwohner.appendChild(el('div', { class: 'card' }, [
+      el('h3', {}, 'Urkunde'),
+      el('p', { class: 'help' }, 'Der Glückwunschtext der Ehrenurkunde. Platzhalter: {name}, {alter}, {datum}, {ortsgemeinde}. Beim Erzeugen wird zwischen beiden Fassungen gewählt.'),
+      el('div', {}, [el('label', {}, 'Du-Fassung'), urkDu]),
+      el('div', { style: 'margin-top:8px;' }, [el('label', {}, 'Sie-Fassung'), urkSie]),
+      el('div', { style: 'margin-top:8px;' }, [el('label', {}, 'Vorbelegung beim Erzeugen'), urkAnrede]),
+      el('h4', { style: 'margin-top:14px;' }, 'Unterschriftszeilen'),
+      el('p', { class: 'help' }, 'Es wird bewusst KEIN hinterlegtes Unterschriftsbild eingesetzt — Ehrungen werden persönlich unterschrieben. Gedruckt werden nur Linie, Name und Funktion.'),
+      el('div', { class: 'grid-2' }, [
+        el('div', {}, [el('label', {}, 'Name links'), urkU1]),
+        el('div', {}, [el('label', {}, 'Funktion links'), urkF1]),
+        el('div', {}, [el('label', {}, 'Name rechts'), urkU2]),
+        el('div', {}, [el('label', {}, 'Funktion rechts'), urkF2]),
+      ]),
+      el('div', { class: 'toolbar', style: 'margin-top:10px;' }, [
+        el('button', { class: 'btn-primary', onClick: onEwEinstSave }, 'Speichern'),
+      ]),
+    ]));
+    ladeEwConfig();
+
     // --- Kategorie-Unternavigation zusammenbauen ---
     const catDefs = [
       ['allgemein', 'Allgemein'],
@@ -1019,6 +1305,7 @@
       ['auslagen', 'Bargeldauslagen'],
       ['arbeitszeiten', 'Arbeitszeiten'],
       ['inventar', 'Inventar (Homebox)'],
+      ['einwohner', 'Einwohner'],
       ['daten', 'Datensicherung'],
     ];
     const content = el('div', { class: 'settings-content' });

@@ -3,7 +3,7 @@
   // Die früheren Einzellisten (Mieter, Empfänger, Arbeiter, Vertragspartner)
   // sind in den Stammdaten aufgegangen; ihre Anlege-Dialoge leben in den
   // jeweiligen View-Dateien weiter und werden aus den Modulen heraus benutzt.
-  const { renderDashboard, renderSitzungen, renderDokumente, renderTermine, renderAufgaben, renderStammdaten, renderEinstellungen, renderVorbereitung, renderLive, renderVermietung, renderProtokolle, renderAuslagen, renderVertraege, renderVorgaenge, renderHaushalt, renderMail, renderArbeitszeiten, renderArbeitsabrechnungen, renderInventar } = GR.views;
+  const { renderDashboard, renderSitzungen, renderDokumente, renderTermine, renderAufgaben, renderStammdaten, renderEinstellungen, renderVorbereitung, renderLive, renderVermietung, renderProtokolle, renderAuslagen, renderVertraege, renderVorgaenge, renderHaushalt, renderMail, renderArbeitszeiten, renderArbeitsabrechnungen, renderInventar, renderEinwohner } = GR.views;
 
   const mount = document.getElementById('app');
   const shell = document.getElementById('appShell');
@@ -32,6 +32,9 @@
       { path: '/auslagen', label: 'Bargeldauslagen', icon: 'euro' },
       { path: '/arbeitszeiten', label: 'Arbeitszeiten', icon: 'clock' },
     ] },
+    { label: 'Bürger', items: [
+      { path: '/einwohner', label: 'Einwohner', icon: 'id' },
+    ] },
     { footer: true, items: [
       { path: '/stammdaten', label: 'Stammdaten', icon: 'users' },
       { path: '/einstellungen', label: 'Einstellungen', icon: 'gear' },
@@ -52,6 +55,7 @@
     bank: '<path d="M3 10l9-6 9 6"/><path d="M5 10v9M19 10v9M9 10v9M15 10v9"/><path d="M3 21h18"/>',
     box: '<path d="M3 7l9-4 9 4v10l-9 4-9-4z"/><path d="M3 7l9 4 9-4M12 11v10"/>',
     clock: '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 3"/>',
+    id: '<rect x="3" y="5" width="18" height="14" rx="2"/><circle cx="9" cy="11" r="2.2"/><path d="M5.5 16.2c.6-1.4 2-2.1 3.5-2.1s2.9.7 3.5 2.1"/><path d="M15 10h4M15 13.5h4"/>',
     users: '<circle cx="9" cy="8" r="3"/><path d="M3 20c0-3 3-5 6-5s6 2 6 5"/><path d="M16 6a3 3 0 010 6"/><path d="M17 15c2 .5 4 2 4 5"/>',
     gear: '<circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M5 5l2 2M17 17l2 2M19 5l-2 2M7 17l-2 2"/>',
   };
@@ -143,6 +147,7 @@
     if (path === '/vertraege') return renderVertraege(mount, params);
     if (path === '/haushalt') return renderHaushalt(mount);
     if (path === '/inventar') return renderInventar(mount, params);
+    if (path === '/einwohner') return renderEinwohner(mount, params);
     if (path === '/auslagen') return renderAuslagen(mount, params);
     if (path === '/arbeitszeiten') return renderArbeitszeiten(mount, params);
     if (path === '/arbeitsabrechnungen') return renderArbeitsabrechnungen(mount, params);

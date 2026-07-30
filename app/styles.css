@@ -1307,3 +1307,84 @@ tr:hover td { background: #fafbfc; }
   border-radius: 4px; cursor: pointer; font-size: 0.92rem; width: 100%;
 }
 .kontext-eintrag:hover { background: #f0f4fa; }
+
+/* ===================== Modul Einwohner ===================== */
+/* PIN-Karte: das Modul liegt hinter einem serverseitigen Gate, deshalb ist die
+   Abfrage das Erste, was man sieht. */
+.ew-pin { max-width: 460px; }
+.ew-pin-row { display: flex; gap: 8px; align-items: center; margin: 10px 0 6px; }
+.ew-pin-row input { flex: 1; min-width: 0; }
+.ew-warnung {
+  border-left: 4px solid var(--warn, #c62828);
+  background: #fff6f6;
+}
+
+.ew-tabs { margin-bottom: 14px; }
+
+/* Liste */
+.ew-tabelle-wrap { overflow-x: auto; }
+.ew-tabelle { width: 100%; border-collapse: collapse; font-size: 0.93rem; }
+.ew-tabelle th {
+  text-align: left; font-weight: 600; font-size: 0.82rem; color: #5a6b80;
+  border-bottom: 1px solid var(--border); padding: 6px 8px; white-space: nowrap;
+}
+.ew-tabelle td { padding: 6px 8px; border-bottom: 1px solid #eef2f7; }
+.ew-row { cursor: pointer; }
+.ew-row:hover td { background: #f4f8ff; }
+.ew-wohnungsart { color: #6b7a8d; font-size: 0.86rem; }
+
+/* Formular im Bearbeiten-Fenster */
+.ew-form { display: grid; grid-template-columns: 1fr 1fr; gap: 10px 14px; margin-top: 6px; }
+.ew-feld { display: flex; flex-direction: column; gap: 3px; }
+.ew-feld label { font-size: 0.82rem; color: #5a6b80; }
+.ew-feld input { width: 100%; }
+
+/* Ehrungen */
+.ew-ehrungen { display: flex; flex-direction: column; gap: 10px; }
+.ew-ehrung { padding: 14px 16px; }
+.ew-ehrung-kopf { display: flex; align-items: center; gap: 12px; }
+/* Die Jubiläumszahl greift die goldene Zahl der Urkunde auf. */
+.ew-alter {
+  flex: 0 0 auto; width: 46px; height: 46px; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 1.15rem; font-weight: 700; color: #8a6100;
+  background: linear-gradient(145deg, #ffe9ad, #f7c85c);
+}
+.ew-ehrung-zeile {
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin: 10px 0 8px;
+}
+.ew-ehrung-zeile label { font-size: 0.82rem; color: #5a6b80; }
+/* Ohne das zieht sich die Auswahl über die volle Breite (globale select-Regel)
+   und drängt den Urkunden-Knopf in die nächste Zeile. */
+.ew-ehrung-zeile select { width: auto; min-width: 170px; }
+.ew-ehrung input[type="text"] { width: 100%; }
+
+.ew-klapp {
+  margin-top: 14px; background: none; border: none; cursor: pointer;
+  font-weight: 600; color: #33506f; padding: 4px 0;
+}
+.ew-historie { display: flex; flex-direction: column; gap: 6px; margin-top: 6px; }
+.ew-hist-zeile {
+  display: flex; gap: 12px; flex-wrap: wrap; align-items: baseline;
+  padding: 6px 10px; border-left: 3px solid #d8e0ea; background: #fafcff;
+}
+.ew-hist-notiz { color: #5a6b80; font-style: italic; }
+
+/* Urkunden-Fenster */
+.ew-anrede { display: inline-flex; gap: 6px; margin: 4px 0 10px; }
+.ew-anrede button {
+  padding: 6px 14px; border: 1px solid var(--border); background: white;
+  border-radius: var(--radius); cursor: pointer;
+}
+.ew-anrede button.is-active { background: #33506f; color: white; border-color: #33506f; }
+.ew-vorschau {
+  background: #f7f9fc; border: 1px solid var(--border); border-radius: var(--radius);
+  padding: 12px 14px; font-size: 0.92rem; line-height: 1.5; color: #33465c;
+}
+
+@media (max-width: 760px) {
+  .ew-form { grid-template-columns: 1fr; }
+  .ew-tabelle { font-size: 0.86rem; }
+  /* Auf dem Handy zählt, wer wann dran ist — die Wohnungsart kann weg. */
+  .ew-tabelle th:nth-child(7), .ew-tabelle td:nth-child(7) { display: none; }
+}
