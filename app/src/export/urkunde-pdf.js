@@ -104,6 +104,33 @@
     }
   }
 
+  // Punkt → mm. Und die Versalhöhe einer Schriftgröße, die für das optische
+  // Ausrichten gebraucht wird: eine Grundlinie sagt nichts darüber, wo der Text
+  // MITTIG sitzt — dafür muss man wissen, wie hoch die Großbuchstaben sind.
+  const PT_MM = 0.352778;
+  const VERSAL_ANTEIL = 0.662;          // Times: Versalhöhe je Schriftgrad
+  const versalHoehe = (groesse) => groesse * PT_MM * VERSAL_ANTEIL;
+
+  // Wie viele Zeilen braucht ein Text — ohne ihn zu zeichnen. Für die
+  // Höhenverteilung nötig.
+  function zeilenZahl(doc, text, groesse, bold, breite) {
+    setFont(doc, groesse, bold);
+    return doc.splitTextToSize(winAnsi(text), breite).length;
+  }
+
+  // Zierrahmen. Eine leere A4-Seite mit etwas Text in der Mitte wirkt wie ein
+  // Entwurf; der doppelte Rahmen macht daraus eine Urkunde und füllt das Blatt,
+  // ohne inhaltlich etwas zu erfinden.
+  function rahmen(doc) {
+    doc.setDrawColor(C_GOLD[0], C_GOLD[1], C_GOLD[2]);
+    doc.setLineWidth(1.4);
+    doc.rect(11, 11, PAGE_W - 22, PAGE_H - 22);
+    doc.setLineWidth(0.4);
+    doc.rect(14.5, 14.5, PAGE_W - 29, PAGE_H - 29);
+    doc.setLineWidth(0.2);
+    doc.setDrawColor(0);
+  }
+
   const zwei = (n) => String(n).padStart(2, '0');
 
   function datumLang(iso) {
@@ -138,8 +165,28 @@
   // Lorbeerkranz links, Wappen rechts, die Jubiläumszahl mittig IM Kranz.
   // Rückgabe: Unterkante beider Grafiken, damit der Text nicht hineinläuft
   // (genau der Fehler, der im Juli in der Jahresübersicht steckte).
+  // Wo in der Kranzhöhe die Öffnung optisch ihre Mitte hat. Der Kranz ist oben
+  // offen und schließt sich unten, deshalb liegt sie etwas über der geometrischen
+  // Mitte.
+  const OEFFNUNG_MITTE = 0.46;
+  const ZAHL_GROESSE = 68;
+
+  // Die Jubiläumszahl optisch mittig in den Kranz setzen.
+  //
+  // NICHT über eine geratene Quote der Grundlinie: eine Grundlinie sagt nichts
+  // darüber, wo der Text mittig sitzt — die Zahl hängt darunter, nicht darum
+  // herum. Vorher stand die Grundlinie bei 78 % der Kranzhöhe, wodurch die Zahl
+  // rund 6 mm zu tief saß und in die unteren Blätter lief. Jetzt wird von der
+  // gewünschten MITTE aus zurückgerechnet: Grundlinie = Mitte + halbe Versalhöhe.
+  function zahlInKranz(doc, alter, kranzX, kranzY, breite, hoehe) {
+    setFont(doc, ZAHL_GROESSE, true, C_GOLD);
+    const grundlinie = kranzY + hoehe * OEFFNUNG_MITTE + versalHoehe(ZAHL_GROESSE) / 2;
+    doc.text(String(alter), kranzX + breite / 2, grundlinie, { align: 'center' });
+  }
+
   function kopfGrafiken(doc, alter) {
-    const kranzBox = { w: 60, h: 46 };
+    // Größer als in der Vorlage: auf A4 wirkt ein 60-mm-Kranz verloren.
+    const kranzBox = { w: 74, h: 58 };
     const kranzX = MARGIN_X;
     const kranzY = MARGIN_TOP;
     let unten = kranzY;
@@ -158,24 +205,20 @@
         console.warn('Lorbeerkranz konnte nicht eingefügt werden', e);
         masse = { w: kranzBox.w, h: 0 };
       }
-      // Die Zahl sitzt in der Öffnung des Kranzes: waagerecht mittig, senkrecht
-      // bei gut drei Vierteln — darüber ist der Kranz offen, darunter schließt
-      // er sich.
-      if (masse.h) {
-        setFont(doc, 60, true, C_GOLD);
-        doc.text(String(alter), kranzX + masse.w / 2, kranzY + masse.h * 0.78, { align: 'center' });
-      }
+      if (masse.h) zahlInKranz(doc, alter, kranzX, kranzY, masse.w, masse.h);
     } else {
       // Ohne Kranzbild trotzdem eine Zahl setzen — die Urkunde soll nicht an
       // einer fehlenden Grafik scheitern.
-      setFont(doc, 60, true, C_GOLD);
-      doc.text(String(alter), kranzX + kranzBox.w / 2, kranzY + kranzBox.h * 0.78, { align: 'center' });
+      zahlInKranz(doc, alter, kranzX, kranzY, kranzBox.w, kranzBox.h);
       unten = kranzY + kranzBox.h;
     }
 
+    // Das Wappen mittig zur Kranzhöhe, sonst klebt es oben in der Ecke.
+    const wappenBox = { w: 36, h: 43 };
+    const kranzHoehe = unten - kranzY;
+    const wappenY = kranzY + Math.max(0, (kranzHoehe - wappenBox.h) / 2);
     const wappen = GR.pdfKopf.platziere(doc, {
-      seite: 'rechts', x: RIGHT_X, y: MARGIN_TOP + 2,
-      box: { w: 30, h: 36 },
+      seite: 'rechts', x: RIGHT_X, y: wappenY, box: wappenBox,
     });
     unten = Math.max(unten, wappen.unterkante);
     return unten;
@@ -192,17 +235,17 @@
     if (!bloecke.length) return y;
 
     const spalte = CONTENT_W / bloecke.length;
-    const linienBreite = Math.min(62, spalte - 8);
+    const linienBreite = Math.min(70, spalte - 6);
     for (let i = 0; i < bloecke.length; i++) {
       const mitteX = MARGIN_X + spalte * i + spalte / 2;
       doc.setDrawColor(60); doc.setLineWidth(0.3);
       doc.line(mitteX - linienBreite / 2, y, mitteX + linienBreite / 2, y);
-      setFont(doc, 11, false);
-      doc.text(winAnsi(bloecke[i].name), mitteX, y + 5, { align: 'center' });
-      setFont(doc, 10, false, [90, 90, 90]);
-      doc.text(winAnsi(bloecke[i].funktion), mitteX, y + 10, { align: 'center' });
+      setFont(doc, 12, false);
+      doc.text(winAnsi(bloecke[i].name), mitteX, y + 5.5, { align: 'center' });
+      setFont(doc, 10.5, false, [90, 90, 90]);
+      doc.text(winAnsi(bloecke[i].funktion), mitteX, y + 11, { align: 'center' });
     }
-    return y + 12;
+    return y + 13;
   }
 
   function openPdf(doc, filename) {
@@ -237,30 +280,61 @@
     const ort = (s.vermietung && s.vermietung.ortsgemeinde) || s.ortsname || 'Hörschhausen';
     const anrede = opts.anrede === 'sie' ? 'sie' : 'du';
 
+    rahmen(doc);
     const unten = kopfGrafiken(doc, eh.alter);
-    const state = { y: Math.max(unten + 16, 82) };
 
-    mittig(doc, state, `Zum ${eh.alter}. Geburtstag`, { size: 17, bold: true, gap: 10 });
-    mittig(doc, state, `am ${datumLang(eh.datum)} übermitteln wir dem Geburtstagskind`, { size: 12.5, gap: 7 });
-    state.y += 8;
-    // Der Name ist das größte Element der Urkunde. Bei sehr langen Namen bricht
-    // splitTextToSize um — deshalb bleibt darunter Luft.
-    mittig(doc, state, vollerName(eh), { size: 30, bold: true, gap: 13 });
-    state.y += 4;
-    mittig(doc, state, 'die herzlichsten Glückwünsche.', { size: 12.5, gap: 7 });
-    state.y += 9;
-
+    // Die Blöcke des Textkörpers. `vorher` ist der Mindestabstand darüber, der
+    // beim Verteilen zusätzlich aufgefüllt wird.
+    const textBreite = CONTENT_W - 12;
     const vorlage = anrede === 'sie' ? ein.urkundeTextSie : ein.urkundeTextDu;
-    mittig(doc, state, fuelle(vorlage, eh, s), { size: 12, gap: 6.4, breite: CONTENT_W - 10 });
+    // `dehnbar` entscheidet, wo zusätzliche Luft hinkommt. Das ist keine
+    // Feinheit: die drei mittleren Blöcke bilden EINEN Satz
+    // („… übermitteln wir dem Geburtstagskind / NAME / die herzlichsten
+    // Glückwünsche."). Verteilt man die Luft gleichmäßig, klafft mitten im Satz
+    // ein Loch und die Urkunde liest sich zerrissen. Gedehnt wird deshalb nur
+    // vor der Überschrift und vor dem Schlussabsatz.
+    const bloecke = [
+      { text: `Zum ${eh.alter}. Geburtstag`, size: 19, bold: true, zeile: 9.5, vorher: 2, dehnbar: true },
+      { text: `am ${datumLang(eh.datum)} übermitteln wir dem Geburtstagskind`, size: 13.5, zeile: 7.5, vorher: 9 },
+      { text: vollerName(eh), size: 36, bold: true, zeile: 15, vorher: 8 },
+      { text: 'die herzlichsten Glückwünsche.', size: 13.5, zeile: 7.5, vorher: 6 },
+      { text: fuelle(vorlage, eh, s), size: 13, zeile: 7.6, vorher: 10, dehnbar: true, breite: textBreite },
+    ];
 
-    // Ort/Datum und Unterschriften stehen unten auf der Seite, nicht direkt
-    // unter dem Text — sonst wandern sie je nach Textlänge.
-    const fussY = Math.max(state.y + 22, PAGE_H - 78);
-    setFont(doc, 11, false);
+    // Höhe messen, BEVOR gezeichnet wird — nur so lässt sich der Rest gleichmäßig
+    // verteilen, statt den Text oben zusammenzudrängen und die untere Hälfte des
+    // Blattes leer zu lassen.
+    let natuerlich = 0;
+    for (const b of bloecke) {
+      b.zeilen = zeilenZahl(doc, b.text, b.size, b.bold, b.breite || CONTENT_W);
+      b.hoehe = b.zeilen * b.zeile;
+      natuerlich += b.hoehe + b.vorher;
+    }
+
+    const startY = Math.max(unten + 14, 88);
+    const fussY = PAGE_H - 74;               // ab hier Ort/Datum + Unterschriften
+    // Luft nur auf die dehnbaren Stellen verteilen, und gedeckelt: bei einem
+    // sehr kurzen Text sollen die Blöcke nicht über die Seite auseinanderfliegen.
+    const dehnbare = bloecke.filter(b => b.dehnbar).length || 1;
+    const luft = Math.max(0, (fussY - 14) - startY - natuerlich);
+    const zusatz = Math.min(luft / dehnbare, 22);
+
+    const state = { y: startY };
+    for (const b of bloecke) {
+      state.y += b.vorher + (b.dehnbar ? zusatz : 0);
+      mittig(doc, state, b.text, {
+        size: b.size, bold: b.bold, gap: b.zeile, breite: b.breite || CONTENT_W,
+      });
+    }
+
+    // Ort/Datum und Unterschriften stehen fest unten, nicht direkt unter dem
+    // Text — sonst wandern sie je nach Textlänge.
+    const ortY = Math.max(state.y + 16, fussY);
+    setFont(doc, 11.5, false);
     doc.text(winAnsi(`Ortsgemeinde ${ort}, den ${datumKurz(opts.ausstellungsdatum || heuteIso())}`),
-      MARGIN_X, fussY);
+      MARGIN_X, ortY);
 
-    unterschriften(doc, fussY + 30, s);
+    unterschriften(doc, ortY + 32, s);
 
     const dateiName = `Urkunde_${eh.alter}_${(vollerName(eh) || 'Ehrung').replace(/[^\wÄÖÜäöüß]+/g, '_')}.pdf`;
     if (opts.target === 'blob') return doc.output('blob');
