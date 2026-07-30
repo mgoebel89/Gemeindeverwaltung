@@ -134,12 +134,26 @@ function publicConfig() {
     standardFelder: Object.assign({}, STANDARD_FELDER),
     hasToken: !!cfg.token,
     hasPin: !!cfg.pinHash,
+    // Damit die Einstellungen schon beim Öffnen sagen können, was noch fehlt —
+    // ohne dass man erst „Verbindung testen" drücken muss.
+    fehlt: fehlendeAngaben(),
     source,
   };
 }
 
 function isConfigured() {
   return !!(cfg.url && cfg.token && cfg.tableId);
+}
+
+// Was genau fehlt noch? „Nicht eingerichtet" allein hilft niemandem beim
+// Einrichten — die Meldung muss das fehlende Feld benennen.
+function fehlendeAngaben() {
+  const fehlt = [];
+  if (!cfg.url) fehlt.push('NocoDB-URL');
+  if (!cfg.token) fehlt.push('API-Token');
+  if (!cfg.baseId) fehlt.push('Base-ID');
+  if (!cfg.tableId) fehlt.push('Tabelle');
+  return fehlt;
 }
 
 // --- PIN und Sitzungen ----------------------------------------------------
@@ -255,7 +269,15 @@ async function api(pfad, opts = {}) {
 }
 
 async function tabellen() {
-  if (!cfg.baseId) throw new EinwohnerError('Keine Base-ID angegeben.', 400);
+  if (!cfg.url || !cfg.token || !cfg.baseId) {
+    throw new EinwohnerError(
+      'Zum Laden der Tabellen fehlen noch: '
+      + [!cfg.url && 'NocoDB-URL', !cfg.token && 'API-Token', !cfg.baseId && 'Base-ID']
+        .filter(Boolean).join(', ')
+      + '. Erst „Speichern" drücken — die Liste kommt über den gespeicherten Zugang.',
+      400,
+    );
+  }
   const data = await api(`/api/v2/meta/bases/${encodeURIComponent(cfg.baseId)}/tables`);
   const list = (data && (data.list || data.tables)) || [];
   return list.map(t => ({ id: t.id, title: t.title || t.table_name || t.id }));
@@ -398,7 +420,15 @@ async function loeschen(id) {
 
 // --- Verbindungsprobe -----------------------------------------------------
 async function health() {
-  if (!isConfigured()) return { ok: false, error: 'Nicht eingerichtet.' };
+  if (!isConfigured()) {
+    const fehlt = fehlendeAngaben();
+    return {
+      ok: false,
+      fehlt,
+      error: `Es fehlt noch: ${fehlt.join(', ')}. Angaben eintragen und erst „Speichern" drücken — `
+        + 'die Prüfung läuft über den gespeicherten Zugang, nicht über die Eingabefelder.',
+    };
+  }
   try {
     const data = await api(`/api/v2/tables/${encodeURIComponent(cfg.tableId)}/records?limit=1`);
     const list = (data && (data.list || data.records)) || [];
@@ -421,7 +451,7 @@ async function health() {
 module.exports = {
   EinwohnerError,
   STANDARD_FELDER,
-  isConfigured, publicConfig, setConfig,
+  isConfigured, fehlendeAngaben, publicConfig, setConfig,
   hasPin, setPin, anmelden, abmelden, tokenGueltig,
   tabellen, health,
   alle, suchen, holen, anlegen, aktualisieren, loeschen,

@@ -1033,10 +1033,17 @@
         for (const k of Object.keys(ewFeld)) {
           ewFeld[k].value = (c.felder && c.felder[k]) || (c.standardFelder && c.standardFelder[k]) || '';
         }
-        ewStatus.textContent = c.hasPin
-          ? 'PIN ist gesetzt.'
-          : 'Achtung: Es ist keine PIN vergeben — die Einwohnerdaten sind derzeit ungeschützt.';
-        ewStatus.className = c.hasPin ? 'help' : 'warn';
+        // Was noch fehlt, steht sofort da — nicht erst nach „Verbindung testen".
+        if (c.fehlt && c.fehlt.length) {
+          ewStatus.textContent = `Noch nicht vollständig — es fehlt: ${c.fehlt.join(', ')}.`;
+          ewStatus.className = 'warn';
+        } else if (!c.hasPin) {
+          ewStatus.textContent = 'Zugang vollständig. Achtung: Es ist keine PIN vergeben — die Einwohnerdaten sind derzeit ungeschützt.';
+          ewStatus.className = 'warn';
+        } else {
+          ewStatus.textContent = 'Zugang vollständig, PIN ist gesetzt.';
+          ewStatus.className = 'help';
+        }
       } catch (e) {
         ewStatus.textContent = e && e.gesperrt
           ? 'Gesperrt — zum Ändern der Verbindung erst im Modul „Einwohner" die PIN eingeben.'
@@ -1070,16 +1077,25 @@
         const liste = await GR.api.einwohnerTabellen();
         ewTabelle.appendChild(el('option', { value: '' }, '— Tabelle wählen —'));
         for (const t of liste) {
-          ewTabelle.appendChild(el('option', { value: t.id }, `${t.title} (${t.id})`));
+          ewTabelle.appendChild(el('option', {
+            value: t.id, selected: t.id === ewTabelleId.value,
+          }, `${t.title} (${t.id})`));
         }
-        ewStatus.textContent = `${liste.length} Tabellen gefunden.`;
+        ewStatus.textContent = `${liste.length} Tabellen gefunden — die richtige auswählen.`;
         ewStatus.className = 'help';
       } catch (e) {
         ewStatus.textContent = 'Tabellen konnten nicht geladen werden: ' + e.message;
         ewStatus.className = 'warn';
       }
     };
-    ewTabelle.addEventListener('change', () => { if (ewTabelle.value) ewTabelleId.value = ewTabelle.value; });
+    // Die Auswahl speichert sich selbst. Sonst wählt man die Tabelle, drückt
+    // „Verbindung testen" und bekommt zu hören, sie fehle noch — weil die
+    // Prüfung über den gespeicherten Zugang läuft, nicht über das Formular.
+    ewTabelle.addEventListener('change', async () => {
+      if (!ewTabelle.value) return;
+      ewTabelleId.value = ewTabelle.value;
+      await onEwSave();
+    });
 
     const onEwTest = async () => {
       ewStatus.textContent = 'Prüfe …';
@@ -1111,17 +1127,22 @@
     C.einwohner.appendChild(el('div', { class: 'card' }, [
       el('h3', {}, 'Verbindung zur Einwohnerliste'),
       el('p', { class: 'help' }, 'Die Einwohner liegen in einer eigenen NocoDB-Base — nicht in der, in die unter „Datensicherung" gesichert wird. Beide bleiben getrennt: ein Melderegister hat in der Sicherung von Sitzungen und Rechnungen nichts verloren. Token und PIN werden serverseitig im Container gespeichert und nie an den Browser zurückgegeben.'),
+      // Die Reihenfolge ist nicht beliebig: „Tabellen laden" und „Verbindung
+      // testen" laufen über den GESPEICHERTEN Zugang, nicht über die
+      // Eingabefelder. Ohne diesen Hinweis drückt man testen, bevor gespeichert
+      // ist, und bekommt nur „es fehlt noch …".
+      el('p', { class: 'help' }, 'Reihenfolge: 1. URL, Token und Base-ID eintragen → Speichern. 2. Tabellen laden und die richtige wählen → Speichern. 3. Verbindung testen.'),
       el('div', { class: 'grid-2' }, [
-        el('div', {}, [el('label', {}, 'NocoDB-URL'), ewUrl]),
-        el('div', {}, [el('label', {}, 'API-Token'), ewToken]),
+        el('div', {}, [el('label', {}, '1 · NocoDB-URL'), ewUrl]),
+        el('div', {}, [el('label', {}, '1 · API-Token'), ewToken]),
       ]),
       el('div', { class: 'grid-2' }, [
-        el('div', {}, [el('label', {}, 'Base-ID'), ewBase]),
+        el('div', {}, [el('label', {}, '1 · Base-ID'), ewBase]),
         el('div', {}, [
-          el('label', {}, 'Tabelle'),
+          el('label', {}, '2 · Tabelle'),
           ewTabelle,
           ewTabelleId,
-          el('p', { class: 'help', style: 'margin:2px 0 0;' }, 'Erst speichern, dann „Tabellen laden" — die Liste kommt über den gespeicherten Token.'),
+          el('p', { class: 'help', style: 'margin:2px 0 0;' }, 'Die Liste kommt über den gespeicherten Zugang — vorher einmal speichern.'),
         ]),
       ]),
       el('div', { class: 'toolbar', style: 'margin-top:10px;' }, [
