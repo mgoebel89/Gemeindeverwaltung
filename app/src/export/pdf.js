@@ -59,10 +59,18 @@
     }
   }
 
-  // Sehr leichter Markdown-Renderer für Aufzählungen.
+  // Sehr leichter Markdown-Renderer.
+  // - Überschriften: Zeilen, die mit "# ", "## " oder "### " beginnen — fett,
+  //   die oberste Ebene etwas größer
   // - Listenelemente: Zeilen, die mit "- ", "* " oder "1. " beginnen
-  // - **fett** und *kursiv* werden NICHT geparst (zu viel Aufwand für jsPDF)
+  // - **fett** und *kursiv* werden NICHT geparst (zu viel Aufwand für jsPDF:
+  //   ein Schriftwechsel mitten in der Zeile hieße, die Zeile in Stücke zu
+  //   zerlegen und jedes einzeln zu positionieren — samt eigener Umbruchlogik)
   // - Leerzeilen werden als halber Zeilenabstand übernommen
+  //
+  // Die Vorschau in ui/unterpunkte.js kann bewusst GENAU dasselbe und nicht
+  // mehr. Eine Vorschau, die Fettdruck zeigt, den das Protokoll nicht hat,
+  // wäre schlimmer als gar keine.
   function drawMarkdown(doc, state, text, opts = {}) {
     const {
       size = 10.5,
@@ -80,8 +88,28 @@
         state.y += lineGap * 0.5;
         continue;
       }
+      const heading = raw.match(/^\s*(#{1,3})\s+(.*)$/);
       const bullet = raw.match(/^\s*[-*]\s+(.*)$/);
       const numbered = raw.match(/^\s*(\d+)\.\s+(.*)$/);
+      if (heading) {
+        const stufe = heading[1].length;
+        const hSize = stufe === 1 ? size + 1.5 : stufe === 2 ? size + 0.5 : size;
+        // Eine Überschrift allein am Seitenfuß ist wertlos — sie braucht
+        // mindestens ihre erste Textzeile bei sich.
+        ensureSpace(doc, state, lineGap * 2);
+        state.y += 1.5;
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(hSize);
+        for (const ln of doc.splitTextToSize(heading[2], maxWidth)) {
+          ensureSpace(doc, state, lineGap);
+          doc.text(ln, MARGIN_X + indent, state.y);
+          state.y += lineGap;
+        }
+        // Zurücksetzen, sonst liefe der Rest des Blocks fett weiter.
+        doc.setFont('helvetica', 'normal');
+        doc.setFontSize(size);
+        continue;
+      }
       if (bullet) {
         const t = bullet[1];
         const bIndent = 6;
@@ -350,6 +378,30 @@
     state.y += 4;
   }
 
+  // Unterpunkte eines TOPs (siehe ui/unterpunkte.js) — gedacht für
+  // „Verschiedenes", wo mehrere Themen besprochen werden, die im Protokoll
+  // auseinandergehalten werden müssen.
+  //
+  // Die Nummer (7.1, 7.2) wird HIER aus der Reihenfolge gerechnet und steckt
+  // nicht in den Daten. Gespeichert stünde sie nach dem ersten Umsortieren
+  // falsch da.
+  function drawUnterpunkte(doc, state, top) {
+    const liste = GR.models.unterpunkteVon(top);
+    if (!liste.length) return;
+    liste.forEach((up, i) => {
+      const titel = (up.titel || '').trim();
+      const kopf = titel
+        ? `${GR.models.unterpunktNummer(top, i)} ${titel}`
+        : GR.models.unterpunktNummer(top, i);
+      // Überschrift und erste Textzeile gehören zusammen auf eine Seite.
+      ensureSpace(doc, state, GAP_LABEL + GAP_BLOCK);
+      state.y += 2;
+      drawText(doc, state, kopf, { bold: true, lineGap: GAP_LABEL });
+      const t = (up.text || '').trim();
+      if (t) drawMarkdown(doc, state, t, { lineGap: GAP_BLOCK, indent: 4 });
+    });
+  }
+
   function drawTopTitle(doc, state, top) {
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(11);
@@ -400,8 +452,20 @@
       drawText(doc, state, '—', { lineGap: GAP_BLOCK });
     }
 
+    drawUnterpunkte(doc, state, top);
+
     if (abgestimmt) {
       drawAbstimmungBox(doc, state, top, mitglieder);
+    } else {
+      // Ohne Abstimmung gibt es keine Abstimmungsbox — und damit früher auch
+      // keinen Platz für die Bemerkungen. Sie fielen stillschweigend aus dem
+      // Protokoll. Steht etwas darin, bekommt es jetzt einen eigenen Absatz.
+      const bem = (top.bemerkungen || '').trim();
+      if (bem) {
+        state.y += 1.5;
+        drawText(doc, state, 'Bemerkungen:', { bold: true, lineGap: GAP_LABEL });
+        drawMarkdown(doc, state, bem, { lineGap: GAP_BLOCK });
+      }
     }
 
     if (wechselNach) {

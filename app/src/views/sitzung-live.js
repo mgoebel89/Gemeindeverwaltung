@@ -533,14 +533,19 @@
           ]),
           el('label', {}, 'Titel'),
           titel,
-          el('label', { style: 'margin-top:10px' }, 'Beschlussvorlage'),
+          el('label', { style: 'margin-top:10px' }, GR.unterpunkte.textfeldLabel(top)),
           vorlage,
           el('label', { style: 'margin-top:10px' }, 'Sitzungsleitung für diesen TOP (abweichend)'),
           sitzungsleitungSelect(top),
           el('p', { class: 'help' }, 'Leer = Standard-Sitzungsleitung. Auswahl ist auf aktuell Anwesende beschränkt.'),
         ]),
+        GR.unterpunkte.zeigen(top)
+          ? el('div', { class: 'card' }, [
+            GR.unterpunkte.editor(top, { onChange: save, onStruktur: () => { save(); rerender(); } }),
+          ])
+          : null,
         abstimmungCard(top),
-      ];
+      ].filter(Boolean);
 
       if (top.abstimmung && top.abstimmung.durchgefuehrt) {
         children.push(el('div', { class: 'card' }, [
@@ -567,13 +572,33 @@
         ]));
       }
 
+      // Bemerkungen erscheinen im Protokoll ausschließlich in der Abstimmungsbox.
+      // Ohne Abstimmung gibt es die Box nicht — alles, was hier stand, fiel
+      // stillschweigend aus dem PDF. Das Feld wird deshalb nur noch gezeigt,
+      // wenn abgestimmt wurde.
+      //
+      // AUSNAHME, und die ist wichtig: steht bei einem TOP ohne Abstimmung noch
+      // Text darin (aus der Zeit, als das Feld immer sichtbar war), bleibt es
+      // sichtbar — und wird dann auch gedruckt. Ein Feld auszublenden, in dem
+      // etwas steht, wäre derselbe Fehler noch einmal.
+      const bemAlt = (top.bemerkungen || '').trim();
+      const bemZeigen = GR.unterpunkte.abgestimmt(top) || !!bemAlt;
+
       return el('div', {}, [
         ...children,
-        el('div', { class: 'card' }, [
-          el('h3', {}, 'Bemerkungen'),
-          bemerk,
-        ]),
-      ]);
+        bemZeigen
+          ? el('div', { class: 'card' }, [
+            el('h3', {}, 'Bemerkungen'),
+            !GR.unterpunkte.abgestimmt(top)
+              ? el('p', { class: 'help warn-mild' },
+                'Dieser TOP hat keine Abstimmung. Der Text wird trotzdem gedruckt, damit er '
+                + 'nicht verlorengeht — für neue Notizen sind die Unterpunkte oben gedacht.')
+              : null,
+            bemerk,
+          ].filter(Boolean))
+          : null,
+        GR.unterpunkte.vorschau(top),
+      ].filter(Boolean));
     }
 
     function exportToolbar() {

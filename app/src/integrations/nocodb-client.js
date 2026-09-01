@@ -122,6 +122,7 @@
     { title: 'Ergebnis', uidt: 'SingleLineText' },
     { title: 'Befangenheit', uidt: 'LongText' },
     { title: 'Bemerkungen', uidt: 'LongText' },
+    { title: 'Unterpunkte', uidt: 'LongText' },
   ];
   const MITGLIEDER_COLUMNS = [
     { title: 'MitgliedId', uidt: 'SingleLineText' },
@@ -435,7 +436,20 @@
       Ergebnis: ergebnisAbstimmung(a),
       Befangenheit: top.befangenheitsText || '',
       Bemerkungen: top.bemerkungen || '',
+      Unterpunkte: unterpunkteText(top),
     };
+  }
+
+  // Unterpunkte als lesbaren Text — für Sicherung und Tabellenexport, wo eine
+  // verschachtelte Struktur nichts nützt. Nummern wie im Protokoll.
+  function unterpunkteText(top) {
+    const liste = GR.models.unterpunkteVon(top);
+    if (!liste.length) return '';
+    return liste.map((up, i) => {
+      const kopf = `${GR.models.unterpunktNummer(top, i)} ${(up.titel || '').trim()}`.trim();
+      const text = (up.text || '').trim();
+      return text ? `${kopf}\n${text}` : kopf;
+    }).join('\n\n');
   }
 
   function buildMitgliedRow(m) {

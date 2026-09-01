@@ -27,6 +27,18 @@
       Gaeste: sitzung.gaeste,
     };
 
+  // Unterpunkte als lesbaren Text — für Sicherung und Tabellenexport, wo eine
+  // verschachtelte Struktur nichts nützt. Nummern wie im Protokoll.
+  function unterpunkteText(top) {
+    const liste = GR.models.unterpunkteVon(top);
+    if (!liste.length) return '';
+    return liste.map((up, i) => {
+      const kopf = `${GR.models.unterpunktNummer(top, i)} ${(up.titel || '').trim()}`.trim();
+      const text = (up.text || '').trim();
+      return text ? `${kopf}\n${text}` : kopf;
+    }).join('\n\n');
+  }
+
     const beschluesse = sitzung.tops.map(t => ({
       BeschlussId: t.id || uuid(),
       SitzungId: sitzung.id,
@@ -40,6 +52,7 @@
       Ergebnis: ergebnisAbstimmung(t.abstimmung),
       Befangenheit: t.befangenheitsText,
       Bemerkungen: t.bemerkungen,
+      Unterpunkte: unterpunkteText(t),
     }));
 
     return { Sitzungen: [sitzungRow], Beschluesse: beschluesse };

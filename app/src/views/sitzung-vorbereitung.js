@@ -65,7 +65,11 @@
     function topCard(top) {
       const titelI = el('input', { type: 'text', value: top.titel, placeholder: 'TOP-Titel' });
       titelI.oninput = e => { top.titel = e.target.value; save(); };
-      const vorlageT = el('textarea', { placeholder: 'Beschlussvorlage (kann hier vorbereitet werden)' });
+      const vorlageT = el('textarea', {
+        placeholder: GR.unterpunkte.abgestimmt(top)
+          ? 'Beschlussvorlage (kann hier vorbereitet werden)'
+          : 'Beratungstext — bei mehreren Themen die Unterpunkte darunter benutzen',
+      });
       vorlageT.value = top.beschlussvorlage;
       vorlageT.oninput = e => { top.beschlussvorlage = e.target.value; save(); };
 
@@ -93,6 +97,13 @@
         renumber(); save(); rerender();
       };
 
+      // Unterpunkte lassen sich schon in der Vorbereitung anlegen — was unter
+      // „Verschiedenes" ansteht, weiß man oft vorher, und in der Sitzung kommt
+      // dann nur noch das Ergebnis dazu.
+      const unterpunkte = GR.unterpunkte.zeigen(top)
+        ? GR.unterpunkte.editor(top, { onChange: save, onStruktur: () => { save(); rerender(); } })
+        : null;
+
       return el('div', { class: 'card' }, [
         el('div', { class: 'toolbar' }, [
           el('strong', {}, `TOP ${top.nummer}`),
@@ -103,9 +114,10 @@
         ]),
         el('label', {}, 'Titel'),
         titelI,
-        el('label', { style: 'margin-top:10px' }, 'Beschlussvorlage'),
+        el('label', { style: 'margin-top:10px' }, GR.unterpunkte.textfeldLabel(top)),
         vorlageT,
-      ]);
+        unterpunkte,
+      ].filter(Boolean));
     }
 
     function topBereichBlock(bereich, ueberschrift) {

@@ -20,6 +20,12 @@
       bereich,
       titel: '',
       beschlussvorlage: '',
+      // Unterpunkte eines TOPs — gedacht für „Verschiedenes", wo mehrere Themen
+      // nacheinander besprochen werden, die im Protokoll auseinandergehalten
+      // werden müssen. Je Eintrag { id, titel, text }; die Nummer (7.1, 7.2)
+      // ergibt sich aus der Reihenfolge und wird NICHT gespeichert, sonst
+      // stimmte sie nach dem ersten Umsortieren nicht mehr.
+      unterpunkte: [],
       bemerkungen: '',
       befangenheitsText: '',
       befangenheitsIds: [],
@@ -28,6 +34,24 @@
       stimmrechtRuhtIds: [],
       abstimmung: emptyAbstimmung(),
     };
+  }
+
+  function emptyUnterpunkt() {
+    return { id: uuid(), titel: '', text: '' };
+  }
+
+  // Bestandsdaten kennen das Feld nicht. Jeder Zugriff geht deshalb hier
+  // durch, statt sich an zehn Stellen auf `top.unterpunkte || []` zu verlassen.
+  function unterpunkteVon(top) {
+    return Array.isArray(top && top.unterpunkte) ? top.unterpunkte : [];
+  }
+
+  // Anzeigenummer eines Unterpunkts: die TOP-Nummer mit angehängtem Zähler.
+  // Hat der TOP keine Nummer, bleibt es beim bloßen Zähler — „.1" ohne etwas
+  // davor wäre schlimmer als gar keine Nummer.
+  function unterpunktNummer(top, index) {
+    const n = String((top && top.nummer) != null ? top.nummer : '').trim();
+    return n ? `${n}.${index + 1}` : `${index + 1}.`;
   }
 
   function emptySitzung() {
@@ -1356,6 +1380,7 @@
   GR.models = {
     SCHEMA_VERSION, uuid,
     emptyAbstimmung, emptyTop, emptySitzung,
+    emptyUnterpunkt, unterpunkteVon, unterpunktNummer,
     ergebnisAbstimmung, isEinstimmig, einstimmigRichtung,
     MITGLIED_FUNKTIONEN, fullName, emptyMitglied,
     PERSON_ROLLEN, PERSON_ROLLEN_LABEL, PERSON_ROLLEN_MODUL,

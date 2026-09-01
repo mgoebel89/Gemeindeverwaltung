@@ -1493,3 +1493,52 @@ tr:hover td { background: #fafbfc; }
   .ab-wiz { margin: 0; max-height: 100vh; border-radius: 0; }
   .wiz-foot { flex-wrap: wrap; }
 }
+
+/* ===== Sitzung: Unterpunkte eines TOPs ===== */
+/* Der Editor steht in der Vorbereitung INNERHALB einer Karte — deshalb kein
+   eigener Kartenrahmen, sondern ein abgesetzter Block. */
+.up-karte {
+  margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--border);
+}
+.up-karte h3 { font-size: 1rem; }
+.warn-mild { color: #8a6d1f; }
+
+.up-zeile {
+  border: 1px solid var(--border); border-radius: var(--radius);
+  padding: 10px 12px; margin-bottom: 8px; background: #fafbfc;
+}
+.up-kopf { display: flex; align-items: center; gap: 8px; }
+.up-nummer {
+  font-weight: 600; color: #33506f; font-variant-numeric: tabular-nums;
+  white-space: nowrap; min-width: 34px;
+}
+.up-kopf input { flex: 1; min-width: 0; }
+.up-knoepfe { display: flex; gap: 4px; }
+.up-knoepfe button {
+  width: 32px; height: 32px; padding: 0;
+  display: inline-flex; align-items: center; justify-content: center;
+}
+.up-zeile textarea { width: 100%; margin-top: 8px; }
+
+/* Vorschau: bewusst schlicht und nicht wie die App, sondern wie ein Dokument —
+   sie soll die Gliederung zeigen, nicht mit der Oberfläche verschwimmen. */
+.up-vorschau { background: #fcfcfa; border: 1px dashed var(--border); }
+.up-vorschau-fahne {
+  font-size: 0.75rem; letter-spacing: 0.06em; text-transform: uppercase;
+  color: var(--muted); margin-bottom: 10px;
+}
+.up-v-top { margin: 0 0 8px; font-size: 1.02rem; }
+.up-v-label { font-weight: 600; margin-bottom: 2px; }
+.up-v-unterpunkt { margin-top: 12px; }
+.up-v-ueberschrift { font-weight: 600; margin-bottom: 2px; }
+.up-v-text { font-size: 0.94rem; line-height: 1.5; }
+.up-v-text p { margin: 0 0 4px; }
+.up-v-text ul, .up-v-text ol { margin: 2px 0 6px; padding-left: 22px; }
+.up-v-text li { margin: 1px 0; }
+.up-v-leer { color: var(--muted); font-style: italic; font-size: 0.9rem; }
+
+@media (max-width: 760px) {
+  .up-kopf { flex-wrap: wrap; }
+  .up-kopf input { flex: 1 1 100%; order: 3; }
+  .up-knoepfe { margin-left: auto; }
+}

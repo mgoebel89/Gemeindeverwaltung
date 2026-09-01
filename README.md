@@ -376,6 +376,73 @@ bei zwischenzeitlichen Änderungen wäre nicht mehr entscheidbar, was gelten sol
 > Personenverweis dazu, muss es in `M.PERSON_VERWEISE` eingetragen werden** —
 > sonst bleibt sein Verweis beim Zusammenführen auf der gelöschten Kennung stehen.
 
+## Modul „Sitzungsprotokoll"
+
+Das ursprüngliche Modul: Vorbereitung (`#/sitzung/vorbereitung`) und laufende Sitzung
+(`#/sitzung/live`), Ergebnis ist das **Protokoll-PDF** (`app/src/export/pdf.js`).
+
+Ein Tagesordnungspunkt hat einen **Titel**, ein großes **Textfeld** und optional eine
+**Abstimmung**. Das Textfeld heißt in der Oberfläche **„Beschlussvorlage"**, sobald abgestimmt
+wurde, sonst **„Beratung"** — ohne Beschluss wird nichts beschlossen, und ein Feld sollte
+nicht heißen, was es nicht ist. Gespeichert wird beides im selben Feld; alte Protokolle bleiben
+unverändert.
+
+### Unterpunkte (für „Verschiedenes")
+
+Unter „Verschiedenes" werden meist mehrere Themen nacheinander besprochen, die im Protokoll
+auseinandergehalten werden müssen. Dafür gibt es **Unterpunkte**: je Thema eine **Überschrift**
+und ein **Text**, anzulegen über **„+ Unterpunkt"** — in der **Vorbereitung** wie in der
+**laufenden Sitzung** (`app/src/ui/unterpunkte.js`, gemeinsam genutzt, damit sich das Feld an
+beiden Stellen gleich verhält).
+
+- Im PDF erscheinen sie als **fette Überschrift mit Nummer** — `7.1`, `7.2` … — und dem Text
+  darunter, eingerückt. Das große Textfeld bleibt daneben bestehen und eignet sich als
+  **Einleitung**; wer nichts einleitet, lässt es leer.
+- **Die Nummer wird nicht gespeichert**, sondern aus der Reihenfolge gerechnet. Gespeichert
+  stünde sie nach dem ersten Umsortieren falsch da, und niemand denkt daran, sie nachzuziehen.
+- **Reihenfolge** über ↑/↓, Löschen über ×. Ein Unterpunkt mit Inhalt wird nur nach Rückfrage
+  gelöscht, ein leerer sofort.
+- Der **Text eines Unterpunkts** versteht Aufzählungen (`- ` / `* `) und Nummernlisten (`1. `).
+- Unterpunkte gibt es **nur bei TOPs ohne Abstimmung** — bei einem Beschluss-TOP gehört der Text
+  in die Beschlussvorlage. Wird **nachträglich abgestimmt**, bleiben vorhandene Unterpunkte
+  stehen und werden weiter gedruckt; nur neue lassen sich nicht mehr anlegen. Etwas
+  auszublenden, was gespeichert ist, wäre genau der Fehler von unten.
+
+### Live-Vorschau
+
+Unter dem TOP steht in der laufenden Sitzung eine Vorschau **„So steht es im Protokoll"** mit
+Nummern, Überschriften und Aufzählungen. Sie kann **bewusst genauso wenig wie der Druck** — kein
+Fettdruck, keine Kursivschrift. Eine Vorschau, die mehr zeigt, als das PDF nachher kann, führt in
+die Irre.
+
+### Was der PDF-Renderer versteht
+
+`drawMarkdown` in `app/src/export/pdf.js` ist ein sehr kleiner Markdown-Renderer und beherrscht:
+**Überschriften** (`# `, `## `, `### ` — fett, oberste Ebene etwas größer), **Aufzählungen**
+(`- `, `* `), **Nummernlisten** (`1. `) und Leerzeilen als halben Abstand.
+
+> **`**fett**` und `*kursiv*` versteht er nicht** und die Sternchen würden mitgedruckt. Grund:
+> ein Schriftwechsel mitten in der Zeile hieße in jsPDF, die Zeile in Stücke zu zerlegen und
+> jedes einzeln zu positionieren — samt eigener Umbruchlogik.
+
+### Bemerkungen
+
+Das Feld **Bemerkungen** gehört zur Abstimmung und erscheint im PDF in der Abstimmungsbox. Es
+wird deshalb nur noch angezeigt, **wenn abgestimmt wurde**.
+
+> **Behobener Fehler:** Vorher war das Feld immer sichtbar, gedruckt wurde es aber nur innerhalb
+> der Abstimmungsbox — und die gibt es ohne Abstimmung nicht. Alles, was bei einem TOP wie
+> „Verschiedenes" dort eingetippt wurde, fiel **stillschweigend aus dem Protokoll**. Steht in
+> einem Altbestand noch Text darin, bleibt das Feld sichtbar und wird jetzt als eigener Absatz
+> **„Bemerkungen:"** gedruckt, damit nichts verlorengeht.
+
+### Export
+
+TOP-Unterpunkte laufen als lesbarer Text (`7.1 Titel`, Zeilenumbruch, Text) in **CSV**, in den
+**NocoDB-JSON-Export** und in die **Datensicherung** — dort in einer eigenen Spalte
+**`Unterpunkte`** der Beschluss-Tabelle. Die Spalte legt der Sync bei Bedarf selbst an
+(`ensureColumns`), es ist in NocoDB nichts vorzubereiten.
+
 ## Modul „Dokumente" (Paperless-ngx)
 
 Der Container ist als **Multi-Modul-Gemeindeverwaltung** angelegt. Neben dem

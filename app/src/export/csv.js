@@ -9,8 +9,20 @@
     return s;
   }
 
+  // Unterpunkte als lesbaren Text — für Sicherung und Tabellenexport, wo eine
+  // verschachtelte Struktur nichts nützt. Nummern wie im Protokoll.
+  function unterpunkteText(top) {
+    const liste = GR.models.unterpunkteVon(top);
+    if (!liste.length) return '';
+    return liste.map((up, i) => {
+      const kopf = `${GR.models.unterpunktNummer(top, i)} ${(up.titel || '').trim()}`.trim();
+      const text = (up.text || '').trim();
+      return text ? `${kopf}\n${text}` : kopf;
+    }).join('\n\n');
+  }
+
   function buildCsv(sitzung) {
-    const header = ['Sitzungsdatum', 'Bereich', 'TOP-Nr', 'Titel', 'Beschlussvorlage', 'Ja', 'Nein', 'Enthaltung', 'Ergebnis', 'Bemerkungen'];
+    const header = ['Sitzungsdatum', 'Bereich', 'TOP-Nr', 'Titel', 'Beschlussvorlage', 'Ja', 'Nein', 'Enthaltung', 'Ergebnis', 'Bemerkungen', 'Unterpunkte'];
     const lines = [header.join(';')];
     for (const t of sitzung.tops) {
       const a = t.abstimmung || {};
@@ -25,6 +37,7 @@
         a.durchgefuehrt ? a.enthaltung : '',
         ergebnisAbstimmung(a),
         t.bemerkungen,
+        unterpunkteText(t),
       ].map(esc);
       lines.push(row.join(';'));
     }
