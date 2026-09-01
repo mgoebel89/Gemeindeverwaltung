@@ -20,6 +20,12 @@
 
   const ui = { reiter: 'liste', suche: '', letzteListe: [] };
 
+  // Die drei Wohnungsarten des Melderegisters. Bewusst fest und nicht
+  // konfigurierbar: es sind die amtlichen Begriffe, keine Geschmacksfrage.
+  // Ein abweichender Wert aus der Base geht trotzdem nicht verloren, siehe
+  // `auswahl` im Bearbeiten-Dialog.
+  const WOHNUNGSARTEN = ['Alleinige Wohnung', 'Hauptwohnung', 'Nebenwohnung'];
+
   const heute = () => {
     const d = new Date();
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
@@ -271,11 +277,30 @@
       return el('div', { class: 'ew-feld' }, [el('label', {}, label), input]);
     };
 
+    // Auswahlfeld. Steht im Datensatz ein Wert, den die Liste nicht kennt (alte
+    // Schreibweise, von Hand in NocoDB gepflegt), wird er als zusätzliche
+    // Möglichkeit angehängt — sonst würde das Öffnen des Dialogs ihn stillschweigend
+    // auf den ersten Eintrag ändern, ohne dass jemand etwas angefasst hat.
+    const auswahl = (label, key, werte, leerText) => {
+      const vorhanden = String(daten[key] || '');
+      const liste = werte.slice();
+      if (vorhanden && !liste.includes(vorhanden)) liste.push(vorhanden);
+      const sel = el('select', {
+        onChange: (ev) => { daten[key] = ev.target.value; },
+      }, [
+        // Echter Boolean bei `selected` — der el-Helfer macht node[k] = !!v,
+        // ein leerer String würde die Vorauswahl NICHT setzen.
+        el('option', { value: '', selected: vorhanden === '' }, leerText),
+        ...liste.map(w => el('option', { value: w, selected: w === vorhanden }, w)),
+      ]);
+      return el('div', { class: 'ew-feld' }, [el('label', {}, label), sel]);
+    };
+
     const koerper = el('div', { class: 'ew-form' }, [
       feld('Name (Nachname)', 'nachname'),
       feld('Rufname (Vorname)', 'vorname'),
       feld('Geburtsdatum', 'geburtsdatum', { type: 'date' }),
-      feld('Wohnungsart', 'wohnungsart'),
+      auswahl('Wohnungsart', 'wohnungsart', WOHNUNGSARTEN, '— keine Angabe —'),
       feld('Straße', 'strasse'),
       feld('Hausnummer', 'hausnummer'),
       feld('Zusatz', 'zusatz'),

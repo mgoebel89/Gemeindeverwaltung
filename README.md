@@ -1021,6 +1021,9 @@ bleibt.
   Snapshot/NocoDB-Sync); Env-Fallback `EINWOHNER_NOCODB_URL` / `_TOKEN` / `_BASE` / `_TABLE`.
   Leeres Token-Feld beim Speichern = bestehenden Token behalten.
 - **Spaltenzuordnung** ebenfalls dort, vorbelegt mit den Spalten der bestehenden Liste.
+  Eine **leer gelassene** Zuordnung wird beim Schreiben übersprungen — so lässt sich eine
+  Spalte, die es in der eigenen Base nicht gibt (etwa `Zusatz`), einfach abschalten, statt
+  jedes Anlegen scheitern zu lassen.
   **Wichtig:** `Name` ist im Melderegister der **Nachname**, `Rufname` der **Vorname** —
   davon hängen Sortierung und Urkundenaufdruck ab. „Verbindung testen" zeigt deshalb eine
   **Beispielzeile** mit der aufgelösten Zuordnung; sonst fällt ein vertauschtes Feld erst
@@ -1117,6 +1120,32 @@ Wer lieber mit dem Stift arbeitet, druckt weiterhin die **Prüfliste**
 
 Weggezogene werden **gelöscht** (Datensparsamkeit). Bereits vergebene Ehrungen bleiben
 trotzdem vollständig in der Historie — siehe unten.
+
+### Wohnungsart und Schreibfehler in NocoDB
+
+Die **Wohnungsart** ist ein Auswahlfeld mit den drei amtlichen Werten **Alleinige Wohnung**,
+**Hauptwohnung**, **Nebenwohnung**. Steht in einem Datensatz ein anderer Wert (alte
+Schreibweise, in NocoDB von Hand gepflegt), wird er als zusätzliche Möglichkeit **angehängt**
+statt verworfen — sonst änderte allein das Öffnen des Dialogs den Wert stillschweigend auf den
+ersten Eintrag der Liste.
+
+> **Wenn die Base die Wohnungsart als Auswahlspalte (SingleSelect) führt**, müssen die
+> Optionen dort **genauso heißen**. Passt eine Schreibweise nicht, sagt die App das jetzt
+> ausdrücklich und zählt die zulässigen Werte auf — zu ergänzen sind sie in NocoDB.
+
+**Zwei Ursachen, an denen das Anlegen freiüber scheitern konnte** — beide beim **Lesen**
+unsichtbar, weil eine unbekannte Spalte dort einfach nichts liefert:
+
+1. Eine **leere Spaltenzuordnung** erzeugte ein Feld mit dem Namen `''` und ließ NocoDB den
+   ganzen Schreibvorgang zurückweisen. Solche Felder werden jetzt übersprungen.
+2. **Leere Werte gingen als `''`** statt als `null`. Bei einer Textspalte ist das
+   gleichbedeutend, bei einer **Auswahlspalte** ist `''` aber keine gültige Option — und eine
+   neue Person hat zunächst keine Wohnungsart. Jetzt geht `null`, das leert das Feld sauber.
+
+Schlägt ein Schreibvorgang trotzdem fehl, fragt das Backend die Tabellenstruktur ab und sagt,
+**welche** zugeordnete Spalte es nicht gibt (samt Liste der vorhandenen) oder **welchen Wert**
+eine Auswahlspalte nicht kennt (samt der zulässigen). Nur wenn sich daran nichts erkennen
+lässt, bleibt die Originalmeldung von NocoDB stehen.
 
 ### Altersjubiläen und Ehrungen
 

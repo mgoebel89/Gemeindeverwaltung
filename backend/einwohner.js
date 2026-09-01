@@ -310,22 +310,113 @@ function ausNocoDb(row, felder) {
   };
 }
 
+// Klartextnamen der Felder — nur für Fehlermeldungen, damit dort nicht die
+// internen Bezeichner stehen.
+const FELD_BESCHRIFTUNG = {
+  nachname: 'Name', vorname: 'Rufname', geburtsdatum: 'Geburtsdatum',
+  wohnungsart: 'Wohnungsart', wohnort: 'Wohnort', strasse: 'Straße',
+  hausnummer: 'Hausnummer', zusatz: 'Zusatz',
+};
+
 function nachNocoDb(e, felder) {
   const f = felder || cfg.felder;
   const row = {};
-  row[f.nachname] = text(e.nachname);
-  row[f.vorname] = text(e.vorname);
-  row[f.geburtsdatum] = datumNorm(e.geburtsdatum) || null;
-  row[f.wohnungsart] = text(e.wohnungsart);
-  row[f.wohnort] = text(e.wohnort);
-  row[f.strasse] = text(e.strasse);
+
+  // ZWEI REGELN, die beim Schreiben über Erfolg und 400 entscheiden:
+  //
+  // 1. Eine Spalte ohne Zuordnung wird NICHT geschrieben. Vorher landete bei
+  //    leerer Zuordnung ein Feld mit dem Namen '' im Datensatz — NocoDB weist
+  //    den ganzen Schreibvorgang zurück. Wer eine Spalte in seiner Base nicht
+  //    hat, lässt die Zuordnung in den Einstellungen leer und kann trotzdem
+  //    anlegen.
+  // 2. Leere Werte gehen als null, nicht als ''. Bei Textspalten ist das
+  //    gleichbedeutend; bei einer Auswahlspalte (SingleSelect — Wohnungsart ist
+  //    typischerweise eine) ist '' KEINE gültige Option und führt zur
+  //    Ablehnung, null dagegen leert das Feld sauber.
+  const setz = (spalte, wert) => {
+    if (!spalte) return;
+    row[spalte] = (wert === '' || wert === undefined) ? null : wert;
+  };
+
+  setz(f.nachname, text(e.nachname));
+  setz(f.vorname, text(e.vorname));
+  setz(f.geburtsdatum, datumNorm(e.geburtsdatum));
+  setz(f.wohnungsart, text(e.wohnungsart));
+  setz(f.wohnort, text(e.wohnort));
+  setz(f.strasse, text(e.strasse));
   // Die Hausnummer ist in der Base eine Zahl. Reine Ziffern deshalb als Zahl
   // schicken; „12b" bliebe Text und würde von NocoDB abgelehnt — dafür ist die
   // Spalte `Zusatz` da.
   const hn = text(e.hausnummer);
-  row[f.hausnummer] = hn === '' ? null : (/^\d+$/.test(hn) ? Number(hn) : hn);
-  row[f.zusatz] = text(e.zusatz);
+  setz(f.hausnummer, hn === '' ? '' : (/^\d+$/.test(hn) ? Number(hn) : hn));
+  setz(f.zusatz, text(e.zusatz));
   return row;
+}
+
+// Welche Spalten hat die Tabelle wirklich, welchen Typ haben sie, und welche
+// Werte lässt eine Auswahlspalte zu? Nur für die Fehlerdeutung — im
+// Normalbetrieb wird das nicht abgefragt.
+async function spaltenInfo() {
+  const data = await api(`/api/v2/meta/tables/${encodeURIComponent(cfg.tableId)}`);
+  const cols = (data && (data.columns || data.Columns)) || [];
+  return cols
+    .map(c => ({
+      titel: c.title || c.column_name,
+      typ: c.uidt || '',
+      optionen: (((c.colOptions || {}).options) || []).map(o => o.title).filter(Boolean),
+    }))
+    .filter(c => c.titel);
+}
+
+async function spaltenTitel() {
+  return (await spaltenInfo()).map(c => c.titel);
+}
+
+// „NocoDB 400: …" hilft beim Anlegen niemandem. Schlägt ein Schreibvorgang
+// fehl, wird nachgesehen, ob eine zugeordnete Spalte in der Tabelle überhaupt
+// existiert — das ist die mit Abstand häufigste Ursache und beim LESEN nicht zu
+// bemerken: eine unbekannte Spalte liefert dort einfach nichts.
+async function schreibfehlerDeuten(fehler, row) {
+  let spalten = null;
+  try { spalten = await spaltenInfo(); } catch (_) { return fehler; }
+  if (!spalten || !spalten.length) return fehler;
+  const titel = spalten.map(c => c.titel);
+
+  // Ursache 1: eine zugeordnete Spalte gibt es gar nicht. Beim LESEN fällt das
+  // nie auf — eine unbekannte Spalte liefert dort einfach nichts.
+  const fehlend = Object.entries(cfg.felder)
+    .filter(([, spalte]) => spalte && !titel.includes(spalte))
+    .map(([feld, spalte]) => `„${spalte}" (zugeordnet für ${FELD_BESCHRIFTUNG[feld] || feld})`);
+  if (fehlend.length) {
+    return new EinwohnerError(
+      `Diese Spalte(n) gibt es in der Tabelle nicht: ${fehlend.join(', ')}. `
+      + `Vorhanden sind: ${titel.join(', ')}. `
+      + 'Zuordnung berichtigen unter Einstellungen → Einwohner — eine leer gelassene '
+      + 'Zuordnung wird beim Schreiben übersprungen.',
+      400,
+    );
+  }
+
+  // Ursache 2: ein Wert, den eine Auswahlspalte nicht kennt. Typischer Fall ist
+  // die Wohnungsart — die Base führt sie oft als SingleSelect mit eigener
+  // Schreibweise, und dann passt „Nebenwohnung" eben nicht zu „Nebenwohnsitz".
+  if (row) {
+    for (const c of spalten) {
+      if (!c.optionen.length) continue;
+      const wert = row[c.titel];
+      if (wert === null || wert === undefined || wert === '') continue;
+      if (!c.optionen.includes(String(wert))) {
+        return new EinwohnerError(
+          `Die Spalte „${c.titel}" ist eine Auswahlspalte und kennt den Wert „${wert}" nicht. `
+          + `Zulässig sind: ${c.optionen.join(', ')}. `
+          + 'Entweder in NocoDB als Auswahlmöglichkeit ergänzen oder den passenden Wert nehmen.',
+          400,
+        );
+      }
+    }
+  }
+
+  return fehler;
 }
 
 // --- Lesen ----------------------------------------------------------------
@@ -414,10 +505,14 @@ function pruefe(e) {
 
 async function anlegen(e) {
   pruefe(e);
-  const data = await api(`/api/v2/tables/${encodeURIComponent(cfg.tableId)}/records`, {
-    method: 'POST',
-    body: [nachNocoDb(e)],
-  });
+  const zeile = nachNocoDb(e);
+  let data;
+  try {
+    data = await api(`/api/v2/tables/${encodeURIComponent(cfg.tableId)}/records`, {
+      method: 'POST',
+      body: [zeile],
+    });
+  } catch (err) { throw await schreibfehlerDeuten(err, zeile); }
   cacheLeeren();
   const erzeugt = Array.isArray(data) ? data[0] : data;
   const id = erzeugt && (erzeugt.Id != null ? erzeugt.Id : erzeugt.id);
@@ -427,10 +522,13 @@ async function anlegen(e) {
 async function aktualisieren(id, e) {
   pruefe(e);
   const zahl = Number(id);
-  await api(`/api/v2/tables/${encodeURIComponent(cfg.tableId)}/records`, {
-    method: 'PATCH',
-    body: [Object.assign({ Id: Number.isFinite(zahl) ? zahl : id }, nachNocoDb(e))],
-  });
+  const zeile = nachNocoDb(e);
+  try {
+    await api(`/api/v2/tables/${encodeURIComponent(cfg.tableId)}/records`, {
+      method: 'PATCH',
+      body: [Object.assign({ Id: Number.isFinite(zahl) ? zahl : id }, zeile)],
+    });
+  } catch (err) { throw await schreibfehlerDeuten(err, zeile); }
   cacheLeeren();
   return Object.assign({}, e, { id: String(id) });
 }
@@ -480,7 +578,7 @@ module.exports = {
   STANDARD_FELDER,
   isConfigured, fehlendeAngaben, publicConfig, setConfig,
   hasPin, setPin, anmelden, abmelden, tokenGueltig,
-  tabellen, health,
+  tabellen, health, spaltenTitel, spaltenInfo,
   alle, suchen, holen, anlegen, aktualisieren, loeschen,
   amtlichSortiert, cacheLeeren,
   // für Tests
@@ -489,4 +587,5 @@ module.exports = {
   _datumNorm: datumNorm,
   _passtZuSuche: passtZuSuche,
   _hausnummerTeile: hausnummerTeile,
+  _schreibfehlerDeuten: schreibfehlerDeuten,
 };
