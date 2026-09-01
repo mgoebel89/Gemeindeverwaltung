@@ -180,6 +180,24 @@ db.exec(`
     last_modified TEXT NOT NULL
   );
   CREATE INDEX IF NOT EXISTS idx_ehrungen_modified ON ehrungen(last_modified);
+
+  -- Modul Einwohner: Merkzettel des laufenden Abgleichs mit der Papierliste der
+  -- Verbandsgemeinde. Eine Zeile je bereits durchgegangener Person.
+  -- Hier steht mit Absicht KEIN Name und kein Geburtsdatum, sondern nur die
+  -- NocoDB-Kennung und der Haken. Der Abgleich zieht seine Namen jedes Mal
+  -- frisch aus der Base; damit bleibt es dabei, dass das Melderegister nirgends
+  -- lokal liegt.
+  -- Die Tabelle steht ausserdem NICHT in /api/snapshot und NICHT im
+  -- NocoDB-Sync der Sicherungs-Base. Wer sie dort hinzufuegt, haengt das
+  -- Einwohnermodul am PIN-Gate vorbei.
+  -- Ein neuer Lauf leert sie; sie ist ein Merkzettel, keine Historie.
+  -- (Keine Backticks in diesem Kommentar: das ganze Schema steht in einem
+  --  JS-Template-Literal, ein Backtick hier wuerde es beenden.)
+  CREATE TABLE IF NOT EXISTS einwohner_abgleich (
+    id           TEXT PRIMARY KEY,
+    payload      TEXT NOT NULL,
+    last_modified TEXT NOT NULL
+  );
 `);
 
 const BELEG_DIR = path.join(ATTACH_DIR, 'auslagen');
@@ -580,6 +598,13 @@ const getEhrung = (id) => ehrungenStore.get(id);
 const saveEhrung = (e) => ehrungenStore.save(e);
 const deleteEhrung = (id) => ehrungenStore.delete(id);
 
+// Merkzettel des laufenden Einwohner-Abgleichs (siehe Schema oben).
+const abgleichStore = makePayloadStore('einwohner_abgleich');
+const listAbgleichMarken = () => abgleichStore.list();
+const saveAbgleichMarke = (m) => abgleichStore.save(m);
+const deleteAbgleichMarke = (id) => abgleichStore.delete(id);
+const clearAbgleichMarken = () => { db.prepare('DELETE FROM einwohner_abgleich').run(); };
+
 // --- Modul Arbeitszeiten & Vergütung ---
 const arbeitszeitenStore = makePayloadStore('arbeitszeiten');
 const listArbeitszeiten = () => arbeitszeitenStore.list();
@@ -755,6 +780,7 @@ module.exports = {
   getHomeboxConfig, saveHomeboxConfig,
   getEinwohnerConfig, saveEinwohnerConfig,
   listEhrungen, getEhrung, saveEhrung, deleteEhrung,
+  listAbgleichMarken, saveAbgleichMarke, deleteAbgleichMarke, clearAbgleichMarken,
   listInventarWartungen, getInventarWartung, saveInventarWartung,
   deleteInventarWartung, deleteInventarWartungenZuArtikel,
   listAttachments, getAttachment, attachmentPath, ensureAttachmentDir,

@@ -22,6 +22,7 @@ const einwohner = require('../einwohner');
 const ehrungen = require('../ehrungen');
 const db = require('../db');
 const { jubilaeumslaufJetzt, letzterJubilaeumslauf } = require('../jubilaeumslauf');
+const abgleich = require('../abgleich');
 
 module.exports = function createEinwohnerRouter() {
   const router = express.Router();
@@ -153,9 +154,40 @@ module.exports = function createEinwohnerRouter() {
 
   router.get('/jubilaeumslauf', gate, (_req, res) => res.json(letzterJubilaeumslauf() || null));
 
+  // --- Abgleich mit der Papierliste (vor '/:id') ---
+  // Der laufende Abgleich: Stand abrufen, Haken setzen, abschließen. Die Marken
+  // enthalten nur Kennungen — die Namen kommen über die normale Einwohnerroute
+  // und damit ebenfalls nur durch das Gate.
+  router.get('/abgleich/stand', gate, (_req, res) => {
+    try { res.json(abgleich.stand()); }
+    catch (e) { weiterreichen(res, e); }
+  });
+
+  router.post('/abgleich/start', gate, (_req, res) => {
+    try { res.json(abgleich.starten()); }
+    catch (e) { weiterreichen(res, e); }
+  });
+
+  router.post('/abgleich/abbruch', gate, (_req, res) => {
+    try { res.json(abgleich.abbrechen()); }
+    catch (e) { weiterreichen(res, e); }
+  });
+
+  // Leerer Status nimmt den Haken zurück.
+  router.put('/abgleich/marke/:id', gate, (req, res) => {
+    try { res.json(abgleich.markieren(req.params.id, (req.body || {}).status || '')); }
+    catch (e) { weiterreichen(res, e); }
+  });
+
+  router.post('/abgleich/abschluss', gate, (req, res) => {
+    try { res.json(abgleich.abschliessen((req.body || {}).anzahl)); }
+    catch (e) { weiterreichen(res, e); }
+  });
+
   // --- Abgleich: wann zuletzt geprüft wurde ---
-  // Steht im allgemeinen Settings-Blob, weil es keine Personendaten sind —
-  // nur ein Datum und eine Anzahl.
+  // Bleibt für den Fall, dass auf Papier gearbeitet wurde und nur der Vermerk
+  // fehlt. Steht im allgemeinen Settings-Blob, weil es keine Personendaten sind
+  // — nur ein Datum und eine Anzahl.
   router.post('/abgleich', gate, (req, res) => {
     try {
       const s = db.getSettings() || {};

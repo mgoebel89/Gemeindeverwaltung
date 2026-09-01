@@ -243,15 +243,23 @@
   }
 
   // --- Anlegen / Bearbeiten -------------------------------------------------
-  function bearbeiten(mount, e, fertig) {
+  // opts.vorbelegung  Felder für einen NEUEN Eintrag vorbelegen (der Assistent
+  //                   setzt so die Straße, in der man gerade steht) — der
+  //                   Eintrag gilt trotzdem als neu.
+  // opts.ueberWiz     über dem Vollbild-Assistenten anzeigen. Ohne das läge der
+  //                   Dialog HINTER ihm: .modal-overlay hat z-index 1000,
+  //                   .wiz-overlay 1100.
+  // `fertig` bekommt jetzt mit, was passiert ist ({ gespeichert, geloescht }).
+  // Die übrigen Aufrufer ignorieren das Argument und bleiben unverändert.
+  function bearbeiten(mount, e, fertig, opts = {}) {
     const neu = !e;
     const daten = Object.assign({
       id: '', nachname: '', vorname: '', geburtsdatum: '', wohnungsart: '',
       wohnort: einstellungen().standardWohnort || GR.store.getSettings().ortsname || '',
       strasse: '', hausnummer: '', zusatz: '',
-    }, e || {});
+    }, e || {}, neu ? (opts.vorbelegung || {}) : {});
 
-    const overlay = el('div', { class: 'modal-overlay' });
+    const overlay = el('div', { class: 'modal-overlay' + (opts.ueberWiz ? ' modal-ueber-wiz' : '') });
     const schliessen = () => overlay.remove();
 
     const feld = (label, key, opts = {}) => {
@@ -276,11 +284,12 @@
 
     const speichern = async () => {
       try {
-        if (neu) await GR.api.anlegenEinwohner(daten);
-        else await GR.api.speichernEinwohner(daten.id, daten);
+        const ergebnis = neu
+          ? await GR.api.anlegenEinwohner(daten)
+          : await GR.api.speichernEinwohner(daten.id, daten);
         toast(neu ? 'Angelegt.' : 'Gespeichert.');
         schliessen();
-        fertig();
+        fertig({ gespeichert: true, neu, eintrag: ergebnis || daten });
       } catch (err) { fehler(mount, err); }
     };
 
@@ -294,7 +303,7 @@
         await GR.api.loeschenEinwohner(daten.id);
         toast('Gelöscht.');
         schliessen();
-        fertig();
+        fertig({ geloescht: true, eintrag: daten });
       } catch (err) { fehler(mount, err); }
     };
 
@@ -555,69 +564,420 @@
   // Reiter 3: Abgleich
   // ===========================================================================
   // Die Verbandsgemeinde schickt die Liste einmal im Jahr auf PAPIER, sortiert
-  // nach Straße, Nachname, Vorname. Deshalb gibt es hier keinen Datei-Import,
-  // sondern eine Prüfliste in exakt derselben Sortierung — beide liegen dann
-  // nebeneinander und werden Zeile für Zeile durchgegangen.
+  // nach Straße, Hausnummer, Nachname, Vorname. Es gibt deshalb keinen
+  // Datei-Import, sondern zwei Wege, die dieselbe Reihenfolge benutzen:
+  //
+  //   * den Abgleichsassistenten — die Liste steht am Bildschirm, das Papier
+  //     daneben, und jede Zeile wird direkt abgehakt oder geändert;
+  //   * die Prüfliste als PDF — für alle, die lieber mit dem Stift arbeiten,
+  //     und als Rückfallebene, wenn der Rechner nicht dort steht, wo gearbeitet
+  //     wird.
+  //
+  // Der Stand des Assistenten liegt auf dem Server (backend/abgleich.js) und
+  // übersteht deshalb das Schließen des Fensters. Ein Abgleich über mehrere
+  // hundert Einwohner läuft über Tage.
   async function abgleichAnsicht(ziel, mount) {
     const s = einstellungen();
-    const inhalt = el('div', {});
+    const kopf = el('div', { class: 'card' });
+    ziel.appendChild(kopf);
 
+    const neuZeichnen = () => { ziel.innerHTML = ''; abgleichAnsicht(ziel, mount); };
+
+    let stand = null;
+    try {
+      stand = await GR.api.abgleichStand();
+    } catch (e) {
+      fehler(mount, e);
+      if (!(e && e.gesperrt)) kopf.appendChild(el('p', { class: 'warn' }, e.message || String(e)));
+      return;
+    }
+    const lauf = stand && stand.lauf;
+    const erledigt = Object.keys((stand && stand.marken) || {}).length;
+
+    kopf.appendChild(el('h3', {}, 'Abgleich mit der Liste der Verbandsgemeinde'));
+    kopf.appendChild(el('p', {}, 'Die Reihenfolge ist dieselbe wie auf dem Papier: Straße, Hausnummer, dann Name und Vorname. Im Assistenten stehen die Einwohner straßenweise am Bildschirm — abhaken, ändern oder Zugezogene gleich anlegen.'));
+
+    if (lauf) {
+      kopf.appendChild(el('p', { class: 'ab-hinweis' }, [
+        el('strong', {}, 'Ein Abgleich läuft. '),
+        el('span', {}, `Begonnen am ${datumDe(lauf.startAm)}, ${erledigt} Zeile(n) bereits durchgegangen.`),
+      ]));
+    } else if (s.letzterAbgleich) {
+      kopf.appendChild(el('p', { class: 'help' }, `Zuletzt abgeglichen am ${datumDe(s.letzterAbgleich)}${s.letzterAbgleichAnzahl ? ` (${s.letzterAbgleichAnzahl} Einwohner)` : ''}.`));
+    } else {
+      kopf.appendChild(el('p', { class: 'help' }, 'Bisher kein Abgleich vermerkt.'));
+    }
+
+    kopf.appendChild(el('div', { class: 'toolbar' }, [
+      el('button', {
+        class: 'btn-primary',
+        onClick: async () => {
+          try {
+            // Ein neuer Lauf leert den Merkzettel. Läuft schon einer, wird er
+            // fortgesetzt statt neu begonnen — sonst wäre die Arbeit von
+            // gestern mit einem Klick weg.
+            if (!lauf) await GR.api.abgleichStarten();
+            abgleichAssistent(mount, neuZeichnen);
+          } catch (e) { fehler(mount, e); }
+        },
+      }, lauf ? `▶ Abgleich fortsetzen (${erledigt} erledigt)` : '▶ Abgleich starten'),
+      lauf ? el('button', {
+        title: 'Den laufenden Abgleich verwerfen — die Haken gehen verloren, die Einwohnerdaten bleiben unberührt',
+        onClick: async () => {
+          if (!confirmDialog('Den laufenden Abgleich verwerfen?\n\nAlle gesetzten Haken gehen verloren. An den Einwohnerdaten selbst ändert sich nichts.')) return;
+          try { await GR.api.abgleichAbbrechen(); toast('Abgleich verworfen.'); neuZeichnen(); }
+          catch (e) { fehler(mount, e); }
+        },
+      }, 'Verwerfen') : null,
+    ].filter(Boolean)));
+
+    // --- Papierweg: Prüfliste und reiner Vermerk ---
     ziel.appendChild(el('div', { class: 'card' }, [
-      el('h3', {}, 'Abgleich mit der Liste der Verbandsgemeinde'),
-      el('p', {}, 'Die Prüfliste ist genauso sortiert wie die Papierliste: Straße, dann Nachname, dann Vorname. Ausdrucken, nebeneinanderlegen, durchgehen — Abweichungen anschließend hier eintragen.'),
-      s.letzterAbgleich
-        ? el('p', { class: 'help' }, `Zuletzt abgeglichen am ${datumDe(s.letzterAbgleich)}${s.letzterAbgleichAnzahl ? ` (${s.letzterAbgleichAnzahl} Einwohner)` : ''}.`)
-        : el('p', { class: 'help' }, 'Bisher kein Abgleich vermerkt.'),
+      el('h3', {}, 'Auf Papier arbeiten'),
+      el('p', { class: 'help' }, 'Die Prüfliste hat dieselbe Reihenfolge wie der Assistent und dieselbe wie die Amtsliste. Wer sie mit dem Stift abarbeitet, vermerkt den Abgleich hinterher von Hand.'),
       el('div', { class: 'toolbar' }, [
-        el('button', { class: 'btn-primary', onClick: async () => {
-          try {
-            const liste = await GR.api.listEinwohner({ frisch: true });
-            await GR.einwohnerPdf.buildPruefliste(liste, { target: 'download' });
-          } catch (e) { fehler(mount, e); }
-        } }, '📄 Prüfliste drucken'),
-        el('button', { onClick: async () => {
-          try {
-            const liste = await GR.api.listEinwohner({ frisch: true });
-            await GR.api.abgleichGebucht(liste.length);
-            toast('Abgleich vermerkt.');
-            ziel.innerHTML = '';
-            abgleichAnsicht(ziel, mount);
-          } catch (e) { fehler(mount, e); }
-        } }, '✓ Abgleich als erledigt vermerken'),
+        el('button', {
+          onClick: async () => {
+            try {
+              const liste = await GR.api.listEinwohner({ frisch: true });
+              await GR.einwohnerPdf.buildPruefliste(liste, { target: 'download' });
+            } catch (e) { fehler(mount, e); }
+          },
+        }, '📄 Prüfliste drucken'),
+        el('button', {
+          onClick: async () => {
+            try {
+              const liste = await GR.api.listEinwohner({ frisch: true });
+              await GR.api.abgleichGebucht(liste.length);
+              toast('Abgleich vermerkt.');
+              neuZeichnen();
+            } catch (e) { fehler(mount, e); }
+          },
+        }, '✓ Abgleich als erledigt vermerken'),
       ]),
     ]));
+  }
 
-    ziel.appendChild(el('div', { class: 'card' }, [
-      el('h3', {}, 'Abweichungen eintragen'),
-      el('p', { class: 'help' }, 'Zugezogene anlegen, Weggezogene löschen, Umzüge und Schreibfehler direkt in der Zeile ändern. Alles wird sofort in die NocoDB-Liste geschrieben.'),
-      inhalt,
+  // ===========================================================================
+  // Der Abgleichsassistent (Vollbild)
+  // ===========================================================================
+  // Eine Straße auf einmal, in Papierreihenfolge. Drei Schaltflächen je Zeile:
+  //
+  //   ✓  stimmt              →  'ok'
+  //   ✎  ändern              →  öffnet den Bearbeiten-Dialog, danach 'geaendert'
+  //   ✗  nicht auf der Liste →  'fehlt' (VORMERKUNG, gelöscht wird erst am Ende)
+  //
+  // Dass ✗ nicht sofort löscht, ist Absicht: ein Fingertipp darf niemanden aus
+  // dem Melderegister werfen. Zum Abschluss werden alle Vormerkungen gesammelt
+  // gezeigt und einzeln bestätigt.
+  //
+  // Jede Betätigung geht sofort an den Server. Wer das Fenster schließt, findet
+  // den Stand beim nächsten Öffnen wieder vor.
+  async function abgleichAssistent(mount, onFertig) {
+    const z = { liste: [], marken: {}, strassen: [], aktiv: 0 };
+
+    const fortschritt = el('div', { class: 'ab-fortschritt' });
+    const strassenLeiste = el('div', { class: 'ab-strassen' });
+    const koerper = el('div', { class: 'wiz-body' });
+    const fuss = el('div', { class: 'wiz-foot' });
+    const overlay = el('div', { class: 'wiz-overlay' });
+
+    const schliessen = () => {
+      document.removeEventListener('keydown', aufTaste);
+      overlay.remove();
+      if (onFertig) onFertig();
+    };
+    // Nur schließen, wenn kein Dialog darüber liegt — sonst nähme Escape dem
+    // Bearbeiten-Dialog die Eingabe weg und schlösse den Assistenten gleich mit.
+    const aufTaste = (ev) => {
+      if (ev.key === 'Escape' && !document.querySelector('.modal-ueber-wiz')) schliessen();
+    };
+    document.addEventListener('keydown', aufTaste);
+
+    overlay.appendChild(el('div', { class: 'wiz ab-wiz' }, [
+      el('div', { class: 'wiz-head' }, [
+        el('h3', {}, 'Abgleich mit der Papierliste'),
+        fortschritt,
+        el('button', { class: 'wiz-close', title: 'Schließen — der Stand bleibt gespeichert', onClick: schliessen }, '×'),
+      ]),
+      strassenLeiste,
+      koerper,
+      fuss,
     ]));
+    document.body.appendChild(overlay);
 
-    const suchfeld = el('input', { type: 'search', placeholder: 'Person suchen …' });
-    const treffer = el('div', {});
-    let tippTimer = null;
-    suchfeld.addEventListener('input', () => {
-      clearTimeout(tippTimer);
-      tippTimer = setTimeout(async () => {
-        treffer.innerHTML = '';
-        if (!suchfeld.value.trim()) return;
+    const statusVon = (id) => (z.marken[id] && z.marken[id].status) || '';
+    const istDurch = (id) => !!statusVon(id);
+
+    // Gruppierung, die die Reihenfolge der Liste übernimmt — die kommt bereits
+    // amtlich sortiert aus dem Backend und darf hier nicht neu sortiert werden.
+    function gruppieren(liste) {
+      const gruppen = [];
+      let letzte = null;
+      for (const e of liste) {
+        const name = e.strasse || '';
+        if (!letzte || letzte.name !== name) {
+          letzte = { name, personen: [] };
+          gruppen.push(letzte);
+        }
+        letzte.personen.push(e);
+      }
+      return gruppen;
+    }
+
+    async function laden(ersterAufruf) {
+      koerper.innerHTML = '';
+      koerper.appendChild(el('p', { class: 'help' }, 'Wird geladen …'));
+      try {
+        const [liste, stand] = await Promise.all([
+          GR.api.listEinwohner({ frisch: true }),
+          GR.api.abgleichStand(),
+        ]);
+        z.liste = liste;
+        z.marken = (stand && stand.marken) || {};
+        const vorher = z.strassen[z.aktiv] ? z.strassen[z.aktiv].name : null;
+        z.strassen = gruppieren(liste);
+        // Nach dem Neuladen dieselbe Straße wiederfinden — die Reihenfolge kann
+        // sich verschoben haben, wenn jemand angelegt oder umgezogen wurde.
+        if (vorher != null) {
+          const i = z.strassen.findIndex(g => g.name === vorher);
+          z.aktiv = i >= 0 ? i : Math.min(z.aktiv, Math.max(0, z.strassen.length - 1));
+        }
+        if (ersterAufruf) {
+          // Da weitermachen, wo noch etwas offen ist.
+          const i = z.strassen.findIndex(g => g.personen.some(e => !istDurch(e.id)));
+          z.aktiv = i >= 0 ? i : 0;
+        }
+        zeichnen();
+      } catch (e) {
+        koerper.innerHTML = '';
+        if (e && e.gesperrt) { schliessen(); fehler(mount, e); return; }
+        koerper.appendChild(el('p', { class: 'warn' }, e.message || String(e)));
+      }
+    }
+
+    // --- Zeichnen -----------------------------------------------------------
+    function zeichnen() {
+      const gesamt = z.liste.length;
+      const durch = z.liste.filter(e => istDurch(e.id)).length;
+      const offen = gesamt - durch;
+
+      fortschritt.innerHTML = '';
+      fortschritt.appendChild(el('div', { class: 'ab-balken' }, [
+        el('div', { class: 'ab-balken-fuell', style: `width:${gesamt ? Math.round(durch / gesamt * 100) : 0}%` }),
+      ]));
+      fortschritt.appendChild(el('span', { class: 'ab-zahl' }, `${durch} von ${gesamt} durchgegangen`));
+
+      strassenLeiste.innerHTML = '';
+      z.strassen.forEach((g, i) => {
+        const fertig = g.personen.every(e => istDurch(e.id));
+        const anzahl = g.personen.filter(e => istDurch(e.id)).length;
+        strassenLeiste.appendChild(el('button', {
+          class: 'ab-chip' + (i === z.aktiv ? ' is-active' : '') + (fertig ? ' is-fertig' : ''),
+          onClick: () => { z.aktiv = i; zeichnen(); },
+        }, [
+          el('span', {}, g.name || '(ohne Straßenangabe)'),
+          el('span', { class: 'ab-chip-zahl' }, fertig ? '✓' : `${anzahl}/${g.personen.length}`),
+        ]));
+      });
+
+      koerper.innerHTML = '';
+      const gruppe = z.strassen[z.aktiv];
+      if (!gruppe) {
+        koerper.appendChild(el('p', { class: 'help' }, 'Keine Einwohner erfasst.'));
+      } else {
+        koerper.appendChild(el('h4', { class: 'ab-strassen-titel' }, gruppe.name || '(ohne Straßenangabe)'));
+        koerper.appendChild(el('p', { class: 'help' }, 'Zeile für Zeile mit dem Papier vergleichen. Nach einem Haken springt die Auswahl von selbst zur nächsten offenen Zeile.'));
+        koerper.appendChild(el('div', { class: 'ab-zeilen' }, gruppe.personen.map(zeileBauen)));
+      }
+
+      fussBauen(offen);
+    }
+
+    function zeileBauen(e) {
+      const status = statusVon(e.id);
+      const knopf = (zeichen, wert, titel, klasse) => el('button', {
+        class: 'ab-knopf ' + klasse + (status === wert ? ' is-an' : ''),
+        title: titel,
+        onClick: () => (wert === 'geaendert' ? aendern(e) : umschalten(e, wert)),
+      }, zeichen);
+
+      return el('div', { class: 'ab-zeile' + (status ? ' status-' + status : ''), 'data-id': e.id }, [
+        el('span', { class: 'ab-hn' }, [e.hausnummer, e.zusatz].filter(Boolean).join('') || '—'),
+        el('span', { class: 'ab-name' }, [
+          el('strong', {}, e.nachname || '—'),
+          el('span', {}, e.vorname ? ', ' + e.vorname : ''),
+        ]),
+        el('span', { class: 'ab-geb' }, datumDe(e.geburtsdatum) || '— kein Geburtsdatum —'),
+        el('span', { class: 'ab-art' }, e.wohnungsart || ''),
+        el('div', { class: 'ab-aktionen' }, [
+          knopf('✓', 'ok', 'Stimmt so', 'ab-ok'),
+          knopf('✎', 'geaendert', 'Ändern — Umzug, Schreibfehler, Geburtsdatum', 'ab-aendern'),
+          knopf('✗', 'fehlt', 'Steht nicht auf der Papierliste — zum Löschen vormerken', 'ab-fehlt'),
+        ]),
+      ]);
+    }
+
+    function fussBauen(offen) {
+      fuss.innerHTML = '';
+      const gruppe = z.strassen[z.aktiv];
+      fuss.appendChild(el('button', {
+        onClick: () => bearbeiten(mount, null, async (erg) => {
+          // Wer während des Laufs zuzieht, ist damit auch gleich abgeglichen.
+          if (erg && erg.gespeichert && erg.eintrag && erg.eintrag.id) {
+            try { await GR.api.abgleichMarke(erg.eintrag.id, 'neu'); } catch (_) {}
+          }
+          await laden(false);
+        }, {
+          ueberWiz: true,
+          vorbelegung: gruppe ? { strasse: gruppe.name } : {},
+        }),
+      }, '+ Zugezogenen anlegen'));
+
+      fuss.appendChild(el('span', { class: 'wiz-status' },
+        offen ? `${offen} Zeile(n) noch offen` : 'Alle Zeilen durchgegangen'));
+
+      fuss.appendChild(el('div', { class: 'spacer' }));
+
+      fuss.appendChild(el('button', {
+        disabled: z.aktiv <= 0,
+        onClick: () => { z.aktiv = Math.max(0, z.aktiv - 1); zeichnen(); },
+      }, '← Zurück'));
+      fuss.appendChild(el('button', {
+        disabled: z.aktiv >= z.strassen.length - 1,
+        onClick: () => { z.aktiv = Math.min(z.strassen.length - 1, z.aktiv + 1); zeichnen(); },
+      }, 'Nächste Straße →'));
+      fuss.appendChild(el('button', { class: 'btn-primary', onClick: abschluss }, 'Abgleich abschließen'));
+    }
+
+    // --- Haken setzen -------------------------------------------------------
+    async function umschalten(e, wert) {
+      // Dieselbe Schaltfläche noch einmal nimmt den Haken zurück.
+      const ziel = statusVon(e.id) === wert ? '' : wert;
+      try {
+        await GR.api.abgleichMarke(e.id, ziel);
+        if (ziel) z.marken[e.id] = { status: ziel, am: new Date().toISOString() };
+        else delete z.marken[e.id];
+        zeichnen();
+        if (ziel) weiterZurNaechsten(e.id);
+      } catch (err) {
+        if (err && err.gesperrt) schliessen();
+        fehler(mount, err);
+      }
+    }
+
+    function aendern(e) {
+      bearbeiten(mount, e, async (erg) => {
+        if (erg && erg.gespeichert) {
+          try { await GR.api.abgleichMarke(e.id, 'geaendert'); } catch (_) {}
+        } else if (erg && erg.geloescht) {
+          // Wer hier gelöscht wird, ist weg — die Marke wäre eine Karteileiche.
+          try { await GR.api.abgleichMarke(e.id, ''); } catch (_) {}
+        }
+        await laden(false);
+      }, { ueberWiz: true });
+    }
+
+    // Nach einem Haken den Finger auf die nächste offene Zeile derselben Straße
+    // legen. Damit lässt sich die Liste mit Enter durchklappern, ohne dass die
+    // Hand zur Maus muss.
+    function weiterZurNaechsten(idAktuell) {
+      const gruppe = z.strassen[z.aktiv];
+      if (!gruppe) return;
+      const i = gruppe.personen.findIndex(p => p.id === idAktuell);
+      const naechste = gruppe.personen.slice(i + 1).find(p => !istDurch(p.id))
+        || gruppe.personen.find(p => !istDurch(p.id));
+      if (!naechste) return;
+      const zeilen = koerper.querySelectorAll('.ab-zeile');
+      for (const zeile of zeilen) {
+        if (zeile.getAttribute('data-id') === String(naechste.id)) {
+          const knopf = zeile.querySelector('.ab-ok');
+          if (knopf) knopf.focus();
+          return;
+        }
+      }
+    }
+
+    // --- Abschluss ----------------------------------------------------------
+    // Hier und nur hier wird gelöscht. Die Vormerkungen stehen einzeln zur
+    // Bestätigung; abgewählt bleibt die Person unverändert stehen.
+    function abschluss() {
+      const vorgemerkt = z.liste.filter(e => statusVon(e.id) === 'fehlt');
+      const offen = z.liste.filter(e => !istDurch(e.id)).length;
+      const auswahl = new Set(vorgemerkt.map(e => e.id));
+
+      const modal = el('div', { class: 'modal-overlay modal-ueber-wiz' });
+      const zu = () => modal.remove();
+
+      const liste = el('div', { class: 'ab-abschluss-liste' }, vorgemerkt.map(e => el('label', { class: 'ab-abschluss-zeile' }, [
+        el('input', {
+          type: 'checkbox',
+          checked: true,
+          onChange: (ev) => { if (ev.target.checked) auswahl.add(e.id); else auswahl.delete(e.id); },
+        }),
+        el('span', {}, [
+          el('strong', {}, e.nachname || '—'),
+          el('span', {}, e.vorname ? ', ' + e.vorname : ''),
+          el('span', { class: 'help' }, ' · ' + (anschrift(e) || 'ohne Anschrift')
+            + (e.geburtsdatum ? ' · ' + datumDe(e.geburtsdatum) : '')),
+        ]),
+      ])));
+
+      const melden = el('p', { class: 'help' });
+
+      const durchfuehren = async (ev) => {
+        const knopf = ev.target;
+        const zuLoeschen = vorgemerkt.filter(e => auswahl.has(e.id));
+        const text = zuLoeschen.length
+          ? `${zuLoeschen.length} Person(en) endgültig aus der Einwohnerliste löschen und den Abgleich abschließen?\n\nDie Datensätze werden in NocoDB entfernt. Bereits vergebene Ehrungen bleiben in der Historie erhalten.`
+          : 'Abgleich abschließen? Es wird niemand gelöscht.';
+        if (!confirmDialog(text)) return;
+        knopf.disabled = true;
+        let fehlgeschlagen = 0;
+        for (const e of zuLoeschen) {
+          melden.textContent = `Lösche ${vollerName(e) || e.id} …`;
+          try { await GR.api.loeschenEinwohner(e.id); }
+          catch (_) { fehlgeschlagen++; }
+        }
         try {
-          const liste = await GR.api.listEinwohner({ q: suchfeld.value });
-          treffer.appendChild(bauTabelle(liste, mount, async () => {
-            treffer.innerHTML = '';
-            suchfeld.dispatchEvent(new Event('input'));
-          }));
-        } catch (e) { fehler(mount, e); }
-      }, 250);
-    });
+          await GR.api.abgleichAbschluss(z.liste.length - (zuLoeschen.length - fehlgeschlagen));
+        } catch (err) {
+          knopf.disabled = false;
+          fehler(mount, err);
+          return;
+        }
+        zu();
+        toast(fehlgeschlagen
+          ? `Abgleich abgeschlossen — ${fehlgeschlagen} Löschung(en) sind fehlgeschlagen.`
+          : 'Abgleich abgeschlossen.', fehlgeschlagen ? 6000 : 3000);
+        schliessen();
+      };
 
-    inhalt.appendChild(el('div', { class: 'toolbar' }, [
-      el('button', { class: 'btn-primary', onClick: () => bearbeiten(mount, null, () => {
-        toast('Angelegt.');
-      }) }, '+ Zugezogenen anlegen'),
-      suchfeld,
-    ]));
-    inhalt.appendChild(treffer);
+      modal.appendChild(el('div', { class: 'modal modal-breit' }, [
+        el('h3', {}, 'Abgleich abschließen'),
+        offen
+          ? el('p', { class: 'warn' }, `${offen} Zeile(n) sind noch nicht durchgegangen. Abschließen geht trotzdem — der Merkzettel wird dabei geleert.`)
+          : el('p', { class: 'help' }, 'Alle Zeilen sind durchgegangen.'),
+        vorgemerkt.length
+          ? el('div', {}, [
+            el('p', {}, [
+              el('strong', {}, `${vorgemerkt.length} Person(en) stehen nicht mehr auf der Papierliste. `),
+              el('span', {}, 'Angehakt wird gelöscht — wer abgewählt bleibt, bleibt in der Liste stehen.'),
+            ]),
+            liste,
+          ])
+          : el('p', { class: 'help' }, 'Es ist niemand zum Löschen vorgemerkt.'),
+        melden,
+        el('div', { class: 'toolbar', style: 'margin-top:16px; margin-bottom:0;' }, [
+          el('button', { class: 'btn-primary', onClick: durchfuehren }, 'Abschließen'),
+          el('button', { onClick: zu }, 'Zurück zum Abgleich'),
+        ]),
+      ]));
+      document.body.appendChild(modal);
+      modal.addEventListener('click', ev => { if (ev.target === modal) zu(); });
+    }
+
+    await laden(true);
   }
 
   GR.views = GR.views || {};

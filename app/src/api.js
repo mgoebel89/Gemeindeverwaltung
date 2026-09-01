@@ -350,6 +350,17 @@
   async function speichernEhrung(id, e) { return ewFetch(ew(`/ehrungen/${encodeURIComponent(id)}`), { method: 'PUT', body: e }); }
   async function jubilaeumslaufJetzt() { return ewFetch(ew('/jubilaeumslauf'), { method: 'POST' }); }
   async function abgleichGebucht(anzahl) { return ewFetch(ew('/abgleich'), { method: 'POST', body: { anzahl } }); }
+  // Laufender Abgleich mit der Papierliste. Die Marken tragen nur Kennungen;
+  // die zugehörigen Namen holt die Ansicht über listEinwohner.
+  async function abgleichStand() { return ewFetch(ew('/abgleich/stand')); }
+  async function abgleichStarten() { return ewFetch(ew('/abgleich/start'), { method: 'POST' }); }
+  async function abgleichAbbrechen() { return ewFetch(ew('/abgleich/abbruch'), { method: 'POST' }); }
+  async function abgleichMarke(id, status) {
+    return ewFetch(ew(`/abgleich/marke/${encodeURIComponent(id)}`), { method: 'PUT', body: { status } });
+  }
+  async function abgleichAbschluss(anzahl) {
+    return ewFetch(ew('/abgleich/abschluss'), { method: 'POST', body: { anzahl } });
+  }
 
   async function listDocNotes(id) { return jsonFetch(`/api/dokumente/${encodeURIComponent(id)}/notes`); }
   async function addDocNote(id, note) { return jsonFetch(`/api/dokumente/${encodeURIComponent(id)}/notes`, { method: 'POST', body: { note } }); }
@@ -414,6 +425,7 @@
     getEinwohnerConfig, putEinwohnerConfig, einwohnerTabellen, einwohnerHealth,
     listEinwohner, getEinwohner, anlegenEinwohner, speichernEinwohner, loeschenEinwohner,
     listEhrungen, listEhrungsHistorie, speichernEhrung, jubilaeumslaufJetzt, abgleichGebucht,
+    abgleichStand, abgleichStarten, abgleichAbbrechen, abgleichMarke, abgleichAbschluss,
     getTask, updateTask, listTaskLabels, addTaskLabel, removeTaskLabel,
     listDocNotes, addDocNote, deleteDocNote,
     putMieter, deleteMieterRemote,

@@ -349,15 +349,42 @@ async function alle({ frisch = false } = {}) {
   return out;
 }
 
-// Amtliche Sortierung: Straße, dann Nachname, dann Vorname. Bewusst NICHT nach
-// Hausnummer — die Liste der Verbandsgemeinde sortiert genauso, und nur so
-// lassen sich beide nebeneinander durchgehen.
+// Amtliche Sortierung: Straße, dann HAUSNUMMER, dann Nachname, dann Vorname —
+// genau so führt die Verbandsgemeinde ihre Papierliste.
+//
+// KORREKTUR (2026-09-01): Hier stand bis dahin ausdrücklich „bewusst NICHT nach
+// Hausnummer“. Das war eine Annahme über die Amtsliste, und sie war falsch —
+// beim ersten echten Abgleich liefen die beiden Listen deshalb auseinander.
+// Diese Funktion ist die EINZIGE Stelle, an der die Reihenfolge festgelegt wird;
+// Bildschirmliste, Prüfliste und Abgleichsassistent erben sie.
 const sammler = new Intl.Collator('de', { sensitivity: 'base', numeric: true });
+
+// Hausnummern sortieren zahlmäßig, nicht alphabetisch: 2 vor 10, und „12a“ vor
+// „12b“. Der Buchstabe kann in der Hausnummer selbst stecken („12b“) oder in der
+// eigenen Spalte `Zusatz` — beides wird hier zusammengezogen, sonst stünde
+// dieselbe Adresse je nach Erfassung an zwei verschiedenen Stellen.
+function hausnummerTeile(e) {
+  const roh = `${e.hausnummer == null ? '' : e.hausnummer}`.trim();
+  const m = /^(\d+)(.*)$/.exec(roh);
+  return {
+    // Ohne Hausnummer ans Ende, nicht an den Anfang: eine leere Angabe ist
+    // ein Erfassungsmangel und soll beim Durchgehen auffallen.
+    zahl: m ? Number(m[1]) : Number.POSITIVE_INFINITY,
+    rest: ((m ? m[2] : roh) + ' ' + `${e.zusatz || ''}`).trim(),
+  };
+}
+
 function amtlichSortiert(liste) {
-  return liste.slice().sort((a, b) =>
-    sammler.compare(a.strasse, b.strasse)
-    || sammler.compare(a.nachname, b.nachname)
-    || sammler.compare(a.vorname, b.vorname));
+  return liste.slice().sort((a, b) => {
+    const s = sammler.compare(a.strasse, b.strasse);
+    if (s) return s;
+    const ha = hausnummerTeile(a);
+    const hb = hausnummerTeile(b);
+    if (ha.zahl !== hb.zahl) return ha.zahl < hb.zahl ? -1 : 1;
+    return sammler.compare(ha.rest, hb.rest)
+      || sammler.compare(a.nachname, b.nachname)
+      || sammler.compare(a.vorname, b.vorname);
+  });
 }
 
 function passtZuSuche(e, q) {
@@ -461,4 +488,5 @@ module.exports = {
   _nachNocoDb: nachNocoDb,
   _datumNorm: datumNorm,
   _passtZuSuche: passtZuSuche,
+  _hausnummerTeile: hausnummerTeile,
 };

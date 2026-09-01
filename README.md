@@ -1055,19 +1055,65 @@ Netz" nicht mehr als Begründung reicht.
 ### Abgleich mit der Papierliste
 
 Die Verbandsgemeinde schickt die Einwohnerliste einmal jährlich auf **Papier**, sortiert nach
-Straße, dann Nachname, dann Vorname. Deshalb gibt es keinen Datei-Import, sondern eine
-**Prüfliste** (`app/src/export/einwohner-pdf.js`) in **exakt derselben Sortierung** — bewusst
-**nicht** nach Hausnummer, sonst ließen sich die beiden Listen nicht Zeile für Zeile
-nebeneinander durchgehen.
+**Straße, Hausnummer, Nachname, Vorname**. Einen Datei-Import gibt es deshalb nicht — dafür
+zwei Wege, die beide **exakt in dieser Reihenfolge** arbeiten:
+
+> **Korrektur (2026-09-01):** Bis dahin sortierten Prüfliste und Bildschirmliste **ohne**
+> Hausnummer, mit der ausdrücklichen Begründung, die Amtsliste täte das genauso. Beim ersten
+> echten Abgleich stellte sich heraus: sie tut es nicht. Festgelegt wird die Reihenfolge an
+> **einer** Stelle — `amtlichSortiert` in `backend/einwohner.js`. Wer sie ändert, ändert sie
+> dort; Bildschirmliste, Prüfliste und Assistent erben sie. Hausnummern sortieren dabei
+> **zahlmäßig** (2 vor 10) und ziehen die Spalte `Zusatz` mit ein, damit „12a" vor „12b" steht
+> und dieselbe Adresse nicht je nach Erfassung an zwei Stellen auftaucht.
+
+#### Der Abgleichsassistent (Vollbild)
+
+Reiter *Abgleich* → **„Abgleich starten"**. Die Einwohner stehen straßenweise am Bildschirm,
+das Papier daneben. Je Zeile drei Schaltflächen:
+
+| | Bedeutung | Wirkung |
+|---|---|---|
+| ✓ | stimmt so | Zeile gilt als durchgegangen (grün) |
+| ✎ | ändern | öffnet den Bearbeiten-Dialog; nach dem Speichern gilt die Zeile als geändert (gelb) |
+| ✗ | steht nicht auf der Papierliste | **Vormerkung** zum Löschen (rot) — gelöscht wird erst zum Schluss |
+
+- Dieselbe Schaltfläche noch einmal **nimmt den Haken zurück**.
+- Nach einem Haken springt die Auswahl von selbst auf die nächste offene Zeile — die Liste
+  lässt sich so mit der Eingabetaste durchklappern, ohne zur Maus zu greifen.
+- **„+ Zugezogenen anlegen"** legt sofort an, mit der gerade offenen Straße vorbelegt; der
+  neue Eintrag gilt damit auch gleich als abgeglichen.
+- Oben zeigen **Straßen-Chips** den Fortschritt je Straße (`3/9`, fertige mit ✓), daneben ein
+  Balken für das Ganze.
+- **Escape** oder × schließt den Assistenten — der Stand bleibt erhalten.
+
+**Der Stand liegt auf dem Server**, in der Tabelle `einwohner_abgleich` (`backend/abgleich.js`).
+Ein Abgleich über mehrere hundert Einwohner läuft über Tage; läge der Haken nur im Speicher der
+Seite, wäre er beim ersten Neuladen weg. In dieser Tabelle steht **nur die NocoDB-Kennung und
+der Haken** — kein Name, kein Geburtsdatum, keine Anschrift. Die Namen holt die Oberfläche bei
+jedem Öffnen frisch aus der Base, hinter dem PIN-Gate. Die Tabelle steht deshalb **weder im
+Snapshot noch im NocoDB-Sync**; wer sie dort einträgt, hängt das Modul am Gate vorbei.
+
+**Zum Abschluss** („Abgleich abschließen") zeigt der Assistent alle Vormerkungen einzeln mit
+Name und Anschrift. Angehakt wird gelöscht, abgewählt bleibt stehen — und zwar erst nach einer
+Rückfrage, die die Anzahl nennt. Dass ✗ nicht sofort löscht, ist Absicht: ein Fingertipp darf
+niemanden aus dem Melderegister werfen, und die Löschung geht unwiderruflich nach NocoDB.
+Danach werden Datum und Anzahl vermerkt und der Merkzettel geleert.
+
+„Verwerfen" bricht einen laufenden Abgleich ab: die Haken gehen verloren, an den
+Einwohnerdaten ändert sich nichts.
+
+#### Die Prüfliste auf Papier
+
+Wer lieber mit dem Stift arbeitet, druckt weiterhin die **Prüfliste**
+(`app/src/export/einwohner-pdf.js`) — dieselbe Reihenfolge, nur ausgedruckt.
 
 - Spalten: Ankreuzfeld, Name, Vorname, Anschrift, Geburtsdatum. Straßen als
   Zwischenüberschrift, Tabellenkopf auf jeder Seite, Fußzeile mit Seitenzahl und dem Vermerk
   „vertraulich".
 - Das **Geburtsdatum** steht mit drauf, obwohl die Amtsliste keines führt: beim Durchgehen
   fällt ohnehin auf, wenn ein Jahrgang nicht stimmen kann — und die Ehrungen hängen daran.
-- Abweichungen anschließend im Reiter *Abgleich* eintragen: Zugezogene anlegen, Weggezogene
-  löschen, Umzüge und Schreibfehler in der Zeile ändern. Alles wird sofort nach NocoDB
-  geschrieben. „Abgleich als erledigt vermerken" hält Datum und Anzahl fest.
+- „Abgleich als erledigt vermerken" hält Datum und Anzahl fest, wenn auf Papier gearbeitet
+  wurde.
 
 Weggezogene werden **gelöscht** (Datensparsamkeit). Bereits vergebene Ehrungen bleiben
 trotzdem vollständig in der Historie — siehe unten.
@@ -1131,10 +1177,10 @@ der Glückwunschtext mit dem Namen als größtem Element.
 > `ß` sind in WinAnsi enthalten und unproblematisch. Ein „?" mitten im Namen auf einer
 > Ehrenurkunde wäre schlimmer als ein fehlender Akzent — perfekt ist es trotzdem nicht.
 
-> **Migration:** Neue Tabelle `ehrungen` (wird beim Start automatisch angelegt) und der neue
-> DB-Key `einwohner`. Keine neuen npm-Abhängigkeiten. Frontend nach dem Update mit
-> **Strg+F5** neu laden. Danach *Einstellungen → Einwohner*: Verbindung eintragen, Verbindung
-> testen (Beispielzeile prüfen!), **PIN vergeben**.
+> **Migration:** Neue Tabellen `ehrungen` und `einwohner_abgleich` (werden beim Start
+> automatisch angelegt) und der neue DB-Key `einwohner`. Keine neuen npm-Abhängigkeiten.
+> Frontend nach dem Update mit **Strg+F5** neu laden. Danach *Einstellungen → Einwohner*:
+> Verbindung eintragen, Verbindung testen (Beispielzeile prüfen!), **PIN vergeben**.
 
 ## Lizenz
 

@@ -7,11 +7,14 @@
   // Prüfliste für den jährlichen Abgleich mit der Papierliste der
   // Verbandsgemeinde.
   //
-  // Die Sortierung ist der ganze Zweck dieses Dokuments: Straße, dann Nachname,
-  // dann Vorname — genau wie die Amtsliste. Bewusst NICHT nach Hausnummer;
-  // sortierte man danach, ließen sich die beiden Listen nicht mehr Zeile für
-  // Zeile nebeneinander durchgehen, und das ist die einzige Arbeitsweise, die
-  // ohne Datei funktioniert.
+  // Die Sortierung ist der ganze Zweck dieses Dokuments: Straße, dann
+  // Hausnummer, dann Nachname, dann Vorname — genau wie die Amtsliste. Nur so
+  // lassen sich beide Listen Zeile für Zeile nebeneinander durchgehen, und das
+  // ist die einzige Arbeitsweise, die ohne Datei funktioniert.
+  //
+  // Sortiert wird NICHT hier, sondern in backend/einwohner.js:amtlichSortiert —
+  // die Liste kommt bereits in der richtigen Reihenfolge an. Wer die Reihenfolge
+  // ändern will, ändert sie dort, sonst laufen Papier und Bildschirm auseinander.
   //
   // Die Amtsliste führt kein Geburtsdatum. Es steht hier trotzdem mit, weil
   // beim Durchgehen ohnehin auffällt, wenn ein Jahrgang nicht stimmen kann —
@@ -99,7 +102,7 @@
     state.y += 5;
     doc.setTextColor(90);
     doc.text(
-      `Stand ${datumDe(heuteIso())} · ${anzahl} Einwohner · sortiert nach Straße, Name, Vorname`,
+      `Stand ${datumDe(heuteIso())} · ${anzahl} Einwohner · sortiert nach Straße, Hausnummer, Name, Vorname`,
       MARGIN_X, state.y, { maxWidth: breite },
     );
     doc.setTextColor(0);
@@ -183,8 +186,9 @@
   }
 
   // --- Hauptbauer -----------------------------------------------------------
-  // `liste` kommt bereits amtlich sortiert aus dem Backend. Hier wird nur noch
-  // nach Straße gruppiert — dieselbe Reihenfolge, nur mit Zwischenüberschrift.
+  // `liste` kommt bereits amtlich sortiert aus dem Backend (Straße, Hausnummer,
+  // Nachname, Vorname). Hier wird nur noch nach Straße gruppiert — dieselbe
+  // Reihenfolge, nur mit Zwischenüberschrift.
   function buildPruefliste(liste, opts = {}) {
     const doc = newDoc();
     if (!doc) return null;

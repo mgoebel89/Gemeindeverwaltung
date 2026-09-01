@@ -1388,3 +1388,108 @@ tr:hover td { background: #fafbfc; }
   /* Auf dem Handy zählt, wer wann dran ist — die Wohnungsart kann weg. */
   .ew-tabelle th:nth-child(7), .ew-tabelle td:nth-child(7) { display: none; }
 }
+
+/* ===== Einwohner: Abgleichsassistent ===== */
+/* Der Assistent benutzt das Vollbild-Gerüst der Dokumente (.wiz-*) und ergänzt
+   nur die Straßenleiste und die Zeilen. */
+
+/* Der Bearbeiten-Dialog muss ÜBER dem Assistenten liegen: .modal-overlay hat
+   z-index 1000, .wiz-overlay 1100 — ohne das hier verschwände der Dialog
+   dahinter, und der Assistent sähe einfach eingefroren aus. */
+.modal-ueber-wiz { z-index: 1200; }
+
+.ab-hinweis {
+  background: #eef6ff; border-left: 3px solid var(--primary);
+  padding: 8px 12px; border-radius: 4px; margin: 10px 0;
+}
+
+.ab-wiz { max-width: 1120px; }
+
+/* Fortschritt in der Kopfzeile, an der Stelle der Schrittanzeige. */
+.ab-fortschritt { margin-left: auto; display: flex; align-items: center; gap: 10px; }
+.ab-balken {
+  width: 160px; height: 8px; border-radius: 999px; background: #e5e7eb; overflow: hidden;
+}
+.ab-balken-fuell { height: 100%; background: var(--success, #2e7d32); transition: width 0.2s; }
+.ab-zahl { font-size: 0.85rem; color: var(--muted); white-space: nowrap; }
+
+/* Straßenleiste: waagerecht scrollbar, damit auch zwanzig Straßen in eine
+   Zeile passen, ohne die Höhe des Assistenten aufzufressen. */
+.ab-strassen {
+  display: flex; gap: 8px; padding: 10px 20px; overflow-x: auto;
+  border-bottom: 1px solid var(--border); flex: 0 0 auto;
+}
+.ab-chip {
+  display: inline-flex; align-items: center; gap: 8px; white-space: nowrap;
+  padding: 6px 12px; border: 1px solid var(--border); border-radius: 999px;
+  background: var(--surface); cursor: pointer; font-size: 0.9rem;
+}
+.ab-chip:hover { border-color: var(--primary); }
+.ab-chip.is-active { background: var(--primary); color: white; border-color: var(--primary); }
+.ab-chip.is-fertig { border-color: #2e7d32; }
+.ab-chip.is-fertig:not(.is-active) { color: #2e7d32; }
+.ab-chip-zahl { font-size: 0.78rem; opacity: 0.8; }
+
+.ab-strassen-titel { margin: 0 0 2px; }
+
+.ab-zeilen { display: flex; flex-direction: column; gap: 4px; margin-top: 12px; }
+
+/* Feste Spaltenbreiten: beim Vergleich mit dem Papier springt das Auge immer
+   auf dieselbe Stelle. Die Hausnummer steht vorn, weil danach sortiert wird. */
+.ab-zeile {
+  display: grid;
+  grid-template-columns: 56px minmax(0, 1fr) 108px 110px auto;
+  align-items: center; gap: 10px;
+  padding: 7px 10px; border: 1px solid var(--border); border-radius: 6px;
+  background: var(--surface);
+}
+.ab-zeile.status-ok { background: #f2fbf3; border-color: #b7e0bb; }
+.ab-zeile.status-geaendert { background: #fff8e8; border-color: #f0d79a; }
+.ab-zeile.status-neu { background: #eef6ff; border-color: #b6d4f5; }
+.ab-zeile.status-fehlt { background: #fdf1f1; border-color: #eab8b8; }
+
+.ab-hn { font-variant-numeric: tabular-nums; font-weight: 600; color: #33506f; }
+.ab-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ab-geb { font-variant-numeric: tabular-nums; color: #5a6b80; font-size: 0.9rem; }
+.ab-art { color: #6b7a8d; font-size: 0.82rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.ab-aktionen { display: flex; gap: 6px; }
+.ab-knopf {
+  width: 38px; height: 34px; padding: 0; cursor: pointer; font-size: 1rem; line-height: 1;
+  border: 1px solid var(--border); border-radius: 6px; background: var(--surface);
+  /* inline-flex statt Vorgabe: die globale Knopfregel setzt text-align links,
+     das Zeichen klebte sonst am linken Rand. */
+  display: inline-flex; align-items: center; justify-content: center;
+}
+.ab-knopf:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
+.ab-ok:hover, .ab-ok.is-an { background: #2e7d32; border-color: #2e7d32; color: white; }
+.ab-aendern:hover, .ab-aendern.is-an { background: #b8860b; border-color: #b8860b; color: white; }
+.ab-fehlt:hover, .ab-fehlt.is-an { background: #b3261e; border-color: #b3261e; color: white; }
+
+.ab-abschluss-liste { display: flex; flex-direction: column; gap: 4px; margin: 10px 0; }
+.ab-abschluss-zeile {
+  display: flex; align-items: center; gap: 10px;
+  padding: 7px 10px; border: 1px solid var(--border); border-radius: 6px; cursor: pointer;
+}
+.ab-abschluss-zeile:hover { background: #f7f9fc; }
+.ab-abschluss-zeile input { width: auto; margin: 0; }
+
+@media (max-width: 760px) {
+  /* Auf dem Handy wird aus der Zeile eine Karte: Name und Anschrift oben,
+     die drei Schaltflächen darunter über die volle Breite — mit dem Daumen
+     bedienbar, ohne zu zielen. */
+  .ab-zeile {
+    grid-template-columns: 56px minmax(0, 1fr);
+    grid-template-areas: "hn name" "hn geb" "aktionen aktionen";
+    row-gap: 4px;
+  }
+  .ab-hn { grid-area: hn; align-self: start; }
+  .ab-name { grid-area: name; white-space: normal; }
+  .ab-geb { grid-area: geb; }
+  .ab-art { display: none; }
+  .ab-aktionen { grid-area: aktionen; }
+  .ab-aktionen .ab-knopf { flex: 1; height: 40px; }
+  .ab-balken { display: none; }
+  .ab-wiz { margin: 0; max-height: 100vh; border-radius: 0; }
+  .wiz-foot { flex-wrap: wrap; }
+}
