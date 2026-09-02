@@ -1,7 +1,7 @@
 (function () {
   'use strict';
   window.GR = window.GR || {};
-  const { ergebnisAbstimmung } = GR.models;
+  const { ergebnisAbstimmung, istBeschlussTop } = GR.models;
 
   function esc(v) {
     const s = v === null || v === undefined ? '' : String(v);
@@ -22,7 +22,7 @@
   }
 
   function buildCsv(sitzung) {
-    const header = ['Sitzungsdatum', 'Bereich', 'TOP-Nr', 'Titel', 'Beschlussvorlage', 'Ja', 'Nein', 'Enthaltung', 'Ergebnis', 'Bemerkungen', 'Unterpunkte'];
+    const header = ['Sitzungsdatum', 'Bereich', 'TOP-Nr', 'Titel', 'Art', 'Beschlussvorlage', 'Ja', 'Nein', 'Enthaltung', 'Ergebnis', 'Bemerkungen', 'Unterpunkte'];
     const lines = [header.join(';')];
     for (const t of sitzung.tops) {
       const a = t.abstimmung || {};
@@ -31,6 +31,7 @@
         t.bereich === 'oeffentlich' ? 'öffentlich' : 'nicht-öffentlich',
         t.nummer,
         t.titel,
+        istBeschlussTop(t) ? 'Beschlussfassung' : 'Beratung',
         t.beschlussvorlage,
         a.durchgefuehrt ? a.ja : '',
         a.durchgefuehrt ? a.nein : '',

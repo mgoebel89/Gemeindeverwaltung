@@ -1537,6 +1537,53 @@ tr:hover td { background: #fafbfc; }
 .up-v-text li { margin: 1px 0; }
 .up-v-leer { color: var(--muted); font-style: italic; font-size: 0.9rem; }
 
+/* Der Abstimmungsteil der Vorschau. Grobe Andeutung des gedruckten Kastens,
+   kein Faksimile — er soll wiedererkennbar sein, nicht massstabsgetreu.
+   Ohne erfasste Abstimmung (.leer) blass: der Kasten ist im Protokoll
+   vorgesehen, aber noch nicht ausgefuellt. */
+.up-v-abst {
+  margin-top: 14px; border: 1px solid #333; border-radius: 3px;
+  font-size: 0.88rem; overflow: hidden;
+}
+.up-v-abst.leer { border-color: var(--border); color: var(--muted); }
+.up-v-abst-kopf, .up-v-abst-zeile {
+  display: flex; flex-wrap: wrap; gap: 4px 18px;
+  padding: 6px 10px; border-bottom: 1px solid var(--border);
+}
+.up-v-abst-kopf { font-weight: 600; }
+.up-v-abst-bem, .up-v-abst-fuss { padding: 6px 10px; }
+.up-v-abst-bem { border-bottom: 1px solid var(--border); }
+.up-v-abst-fuss { font-style: italic; color: var(--muted); }
+.up-v-abst:not(.leer) .up-v-abst-fuss { font-style: normal; color: inherit; font-weight: 600; }
+
+/* Behaelter der aufklappbaren Vorschau. Leer, solange zugeklappt — deshalb
+   kein eigener Abstand, sonst klaffte in jeder TOP-Karte eine Luecke. */
+.up-vorschau-feld:not(:empty) { margin-top: 14px; }
+
+/* ===== Sitzung: Art des Tagesordnungspunktes ===== */
+/* Beschlussfassung oder Beratung — die ABSICHT, in der Vorbereitung gesetzt.
+   Nicht zu verwechseln mit der tatsaechlich durchgefuehrten Abstimmung. */
+.top-art { margin-top: 10px; }
+.top-art-label {
+  display: block; font-size: 0.8rem; color: var(--muted); margin-bottom: 4px;
+}
+.top-art-gruppe { display: inline-flex; flex-wrap: wrap; gap: 0; }
+.top-art-btn {
+  padding: 7px 14px; border: 1px solid var(--border); background: #fff;
+  cursor: pointer; font-size: 0.9rem; color: var(--muted);
+}
+.top-art-gruppe .top-art-btn:first-child {
+  border-radius: var(--radius) 0 0 var(--radius);
+}
+.top-art-gruppe .top-art-btn:last-child {
+  border-radius: 0 var(--radius) var(--radius) 0; border-left: none;
+}
+.top-art-btn.aktiv {
+  background: #33506f; border-color: #33506f; color: #fff; font-weight: 600;
+}
+.top-art-gruppe .top-art-btn.aktiv + .top-art-btn { border-left: none; }
+.top-art .help { margin-top: 6px; }
+
 @media (max-width: 760px) {
   .up-kopf { flex-wrap: wrap; }
   .up-kopf input { flex: 1 1 100%; order: 3; }

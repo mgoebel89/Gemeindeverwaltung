@@ -19,6 +19,15 @@
       nummer,
       bereich,
       titel: '',
+      // Art des TOPs, in der VORBEREITUNG festgelegt: soll über diesen Punkt
+      // ein Beschluss gefasst werden, oder wird nur beraten?
+      //
+      // Das ist etwas anderes als `abstimmung.durchgefuehrt` — und diese
+      // Verwechslung war der eigentliche Mangel: es gab nur die eine Flagge,
+      // und die entsteht erst in der Sitzung. In der Vorbereitung hat noch
+      // nichts stattgefunden, also sah dort jeder TOP wie eine bloße Beratung
+      // aus, auch ein Beschluss-TOP. Hier steht die ABSICHT, dort das ERGEBNIS.
+      beschlussfassung: true,
       beschlussvorlage: '',
       // Unterpunkte eines TOPs — gedacht für „Verschiedenes", wo mehrere Themen
       // nacheinander besprochen werden, die im Protokoll auseinandergehalten
@@ -34,6 +43,27 @@
       stimmrechtRuhtIds: [],
       abstimmung: emptyAbstimmung(),
     };
+  }
+
+  // Ist dieser TOP ein Beschluss-TOP? Jeder Zugriff geht hier durch, statt sich
+  // an einem Dutzend Stellen auf `top.beschlussfassung` zu verlassen.
+  //
+  // BESTANDSDATEN kennen das Feld nicht. Für sie wird die Art aus dem
+  // abgeleitet, was tatsächlich passiert ist: wurde abgestimmt, war es ein
+  // Beschluss-TOP. Damit verhalten sich alte Sitzungen exakt so wie bisher —
+  // niemand findet ein Protokoll von vor der Änderung anders wieder.
+  function istBeschlussTop(top) {
+    if (!top) return false;
+    if (typeof top.beschlussfassung === 'boolean') return top.beschlussfassung;
+    return !!(top.abstimmung && top.abstimmung.durchgefuehrt);
+  }
+
+  // Beschluss-TOPs, über die am Ende nicht abgestimmt wurde. Beim Abschließen
+  // der Sitzung wird darauf hingewiesen — im Protokoll erscheint dann keine
+  // Abstimmungsbox, und das soll niemandem erst hinterher auffallen.
+  function topsOhneAbstimmung(sitzung) {
+    const tops = (sitzung && Array.isArray(sitzung.tops)) ? sitzung.tops : [];
+    return tops.filter(t => istBeschlussTop(t) && !(t.abstimmung && t.abstimmung.durchgefuehrt));
   }
 
   function emptyUnterpunkt() {
@@ -1381,6 +1411,7 @@
     SCHEMA_VERSION, uuid,
     emptyAbstimmung, emptyTop, emptySitzung,
     emptyUnterpunkt, unterpunkteVon, unterpunktNummer,
+    istBeschlussTop, topsOhneAbstimmung,
     ergebnisAbstimmung, isEinstimmig, einstimmigRichtung,
     MITGLIED_FUNKTIONEN, fullName, emptyMitglied,
     PERSON_ROLLEN, PERSON_ROLLEN_LABEL, PERSON_ROLLEN_MODUL,

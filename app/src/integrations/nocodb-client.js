@@ -2,7 +2,7 @@
   'use strict';
   window.GR = window.GR || {};
   const { store } = GR;
-  const { ergebnisAbstimmung, fullName } = GR.models;
+  const { ergebnisAbstimmung, fullName, istBeschlussTop } = GR.models;
 
   // --- HTTP-Helfer ---
   function settings() {
@@ -115,6 +115,7 @@
     { title: 'Bereich', uidt: 'SingleLineText' },
     { title: 'TopNr', uidt: 'Number' },
     { title: 'Titel', uidt: 'SingleLineText' },
+    { title: 'Art', uidt: 'SingleLineText' },
     { title: 'Beschlussvorlage', uidt: 'LongText' },
     { title: 'Ja', uidt: 'Number' },
     { title: 'Nein', uidt: 'Number' },
@@ -429,6 +430,7 @@
       Bereich: top.bereich === 'oeffentlich' ? 'öffentlich' : 'nicht-öffentlich',
       TopNr: top.nummer,
       Titel: top.titel || '',
+      Art: istBeschlussTop(top) ? 'Beschlussfassung' : 'Beratung',
       Beschlussvorlage: top.beschlussvorlage || '',
       Ja: a.durchgefuehrt ? (a.ja || 0) : null,
       Nein: a.durchgefuehrt ? (a.nein || 0) : null,

@@ -2,7 +2,7 @@
   'use strict';
   window.GR = window.GR || {};
   const { store } = GR;
-  const { fullName, isEinstimmig, einstimmigRichtung } = GR.models;
+  const { fullName, isEinstimmig, einstimmigRichtung, istBeschlussTop } = GR.models;
   const { formatDatum, wochentag, toast } = GR.ui;
 
 
@@ -442,13 +442,22 @@
       state.y += 1.5;
     }
     drawTopTitle(doc, state, top);
+    // ZWEI VERSCHIEDENE FRAGEN, und sie haben verschiedene Antworten:
+    //
+    //   beschluss  — war für diesen Punkt eine Beschlussfassung VORGESEHEN?
+    //                Danach richtet sich die Überschrift „Beschlussvorlage:".
+    //   abgestimmt — wurde tatsächlich abgestimmt? Nur dann darf die
+    //                Abstimmungsbox gedruckt werden. Ein Beschluss, den es
+    //                nicht gab, wird nirgends behauptet; die App weist beim
+    //                Abschließen der Sitzung auf solche Punkte hin.
+    const beschluss = istBeschlussTop(top);
     const abgestimmt = !!(top.abstimmung && top.abstimmung.durchgefuehrt);
-    if (abgestimmt) {
+    if (beschluss) {
       drawText(doc, state, 'Beschlussvorlage:', { bold: true, lineGap: GAP_LABEL });
     }
     if ((top.beschlussvorlage || '').trim()) {
       drawMarkdown(doc, state, top.beschlussvorlage, { lineGap: GAP_BLOCK });
-    } else if (abgestimmt) {
+    } else if (beschluss) {
       drawText(doc, state, '—', { lineGap: GAP_BLOCK });
     }
 

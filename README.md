@@ -381,11 +381,42 @@ bei zwischenzeitlichen Änderungen wäre nicht mehr entscheidbar, was gelten sol
 Das ursprüngliche Modul: Vorbereitung (`#/sitzung/vorbereitung`) und laufende Sitzung
 (`#/sitzung/live`), Ergebnis ist das **Protokoll-PDF** (`app/src/export/pdf.js`).
 
-Ein Tagesordnungspunkt hat einen **Titel**, ein großes **Textfeld** und optional eine
-**Abstimmung**. Das Textfeld heißt in der Oberfläche **„Beschlussvorlage"**, sobald abgestimmt
-wurde, sonst **„Beratung"** — ohne Beschluss wird nichts beschlossen, und ein Feld sollte
-nicht heißen, was es nicht ist. Gespeichert wird beides im selben Feld; alte Protokolle bleiben
-unverändert.
+Ein Tagesordnungspunkt hat einen **Titel**, eine **Art**, ein großes **Textfeld** und
+optional eine **Abstimmung**.
+
+### Art des Punkts: Beschlussfassung oder Beratung
+
+Direkt unter dem Titel steht **„Art des Punkts"** mit zwei Schaltern:
+**Beschlussfassung** (Vorgabe für jeden neuen TOP — der Regelfall im Gemeinderat) und
+**Beratung** für Punkte wie „Verschiedenes". Die Art lässt sich in der **Vorbereitung** und
+in der **laufenden Sitzung** umstellen.
+
+Davon hängen ab: die Beschriftung des Textfelds (**„Beschlussvorlage"** bzw. **„Beratung"**),
+ob **Unterpunkte** angeboten werden, ob das **Bemerkungsfeld** erscheint, und ob im Protokoll
+die Überschrift „Beschlussvorlage:" gedruckt wird.
+
+> **Zwei Dinge, die man nicht verwechseln darf.** Die **Art** ist die *Absicht* und wird in der
+> Vorbereitung festgelegt. Das Häkchen **„Abstimmung wurde durchgeführt"** ist das *Ergebnis*
+> und entsteht erst in der Sitzung. Früher gab es nur das Zweite — und weil in der Vorbereitung
+> naturgemäß noch nichts abgestimmt ist, sah dort **jeder** TOP wie eine bloße Beratung aus.
+> Allein die **Abstimmungsbox** im PDF richtet sich weiterhin nach dem Ergebnis: einen Beschluss,
+> den es nicht gab, behauptet das Protokoll nirgends.
+
+**Umschalten verliert nichts.** Wird aus einer Beschlussfassung eine Beratung, bleibt eine schon
+getippte Beschlussvorlage stehen und wird gedruckt; umgekehrt bleiben erfasste Unterpunkte
+erhalten (nur neue lassen sich dann nicht mehr anlegen). Wurde bereits abgestimmt und der Punkt
+danach auf Beratung gestellt, bleibt das Abstimmungsergebnis im Protokoll — mit einem Hinweis
+in der Oberfläche.
+
+**Beschluss geplant, aber nicht abgestimmt?** Beim **Abschließen der Sitzung** nennt die App
+diese Punkte namentlich und fragt nach. Im Protokoll erscheint dort keine Abstimmungsbox — das
+ist richtig, wenn der Punkt vertagt wurde, und ein Versehen, wenn nicht. Gespeichert wird beides
+im selben Textfeld; alte Protokolle bleiben unverändert.
+
+**Bestandsdaten** kennen die neue Angabe nicht. Für sie wird die Art aus dem abgeleitet, was
+tatsächlich passiert ist: wurde abgestimmt, war es eine Beschlussfassung. Alte Sitzungen sehen
+damit genauso aus wie vorher (`M.istBeschlussTop` in `app/src/models.js` — der einzige Ort, an
+dem diese Frage beantwortet wird).
 
 ### Unterpunkte (für „Verschiedenes")
 
@@ -403,17 +434,30 @@ beiden Stellen gleich verhält).
 - **Reihenfolge** über ↑/↓, Löschen über ×. Ein Unterpunkt mit Inhalt wird nur nach Rückfrage
   gelöscht, ein leerer sofort.
 - Der **Text eines Unterpunkts** versteht Aufzählungen (`- ` / `* `) und Nummernlisten (`1. `).
-- Unterpunkte gibt es **nur bei TOPs ohne Abstimmung** — bei einem Beschluss-TOP gehört der Text
-  in die Beschlussvorlage. Wird **nachträglich abgestimmt**, bleiben vorhandene Unterpunkte
-  stehen und werden weiter gedruckt; nur neue lassen sich nicht mehr anlegen. Etwas
-  auszublenden, was gespeichert ist, wäre genau der Fehler von unten.
+- Unterpunkte gibt es **nur bei Punkten der Art „Beratung"** — bei einer Beschlussfassung
+  gehört der Text in die Beschlussvorlage. Wird ein Punkt **nachträglich auf Beschlussfassung
+  umgestellt**, bleiben vorhandene Unterpunkte stehen und werden weiter gedruckt; nur neue
+  lassen sich nicht mehr anlegen. Etwas auszublenden, was gespeichert ist, wäre genau der
+  Fehler von unten.
 
-### Live-Vorschau
+### Vorschau „So steht es im Protokoll"
 
-Unter dem TOP steht in der laufenden Sitzung eine Vorschau **„So steht es im Protokoll"** mit
-Nummern, Überschriften und Aufzählungen. Sie kann **bewusst genauso wenig wie der Druck** — kein
-Fettdruck, keine Kursivschrift. Eine Vorschau, die mehr zeigt, als das PDF nachher kann, führt in
-die Irre.
+Die Vorschau zeigt einen TOP so, wie er im Protokoll erscheint: Nummern, Überschriften,
+Aufzählungen und den Abstimmungsteil.
+
+- In der **laufenden Sitzung** steht sie immer unter dem TOP.
+- In der **Vorbereitung** klappt sie je TOP über den Knopf **„Vorschau"** in der Kopfzeile der
+  Karte auf. Bewusst nicht dauerhaft: dort stehen alle TOPs untereinander, und die Seite wäre
+  sonst doppelt so lang. Der aufgeklappte Zustand **überlebt das Neuzeichnen** (TOP verschieben,
+  Unterpunkt anlegen) — sonst klappte sie bei jedem Handgriff wieder zu.
+- Sie **läuft beim Tippen mit**, ohne dass der Cursor aus dem Feld springt (`vorschauFeld` in
+  `app/src/ui/unterpunkte.js`: der Behälter wird nachgezogen, nicht die ganze Karte).
+- Der **Abstimmungsteil** erscheint bei einer Beschlussfassung. Solange nicht abgestimmt wurde,
+  steht dort ein blasser, leerer Kasten mit dem Hinweis „Wird in der Sitzung erfasst" — so sieht
+  man der Vorschau die Art des Punkts an. Nach der Abstimmung zeigt er Einstimmig bzw.
+  Stimmenmehrheit, die Zahlen, die Bemerkungen und das Ergebnis.
+- Sie kann **bewusst genauso wenig wie der Druck** — kein Fettdruck, keine Kursivschrift. Eine
+  Vorschau, die mehr zeigt, als das PDF nachher kann, führt in die Irre.
 
 ### Was der PDF-Renderer versteht
 
@@ -428,7 +472,9 @@ die Irre.
 ### Bemerkungen
 
 Das Feld **Bemerkungen** gehört zur Abstimmung und erscheint im PDF in der Abstimmungsbox. Es
-wird deshalb nur noch angezeigt, **wenn abgestimmt wurde**.
+wird deshalb nur bei Punkten der Art **Beschlussfassung** angezeigt — maßgeblich ist die Art,
+nicht ob schon abgestimmt wurde, sonst ließe sich erst dann etwas eintragen, wenn das Ergebnis
+bereits feststeht.
 
 > **Behobener Fehler:** Vorher war das Feld immer sichtbar, gedruckt wurde es aber nur innerhalb
 > der Abstimmungsbox — und die gibt es ohne Abstimmung nicht. Alles, was bei einem TOP wie
@@ -442,6 +488,10 @@ TOP-Unterpunkte laufen als lesbarer Text (`7.1 Titel`, Zeilenumbruch, Text) in *
 **NocoDB-JSON-Export** und in die **Datensicherung** — dort in einer eigenen Spalte
 **`Unterpunkte`** der Beschluss-Tabelle. Die Spalte legt der Sync bei Bedarf selbst an
 (`ensureColumns`), es ist in NocoDB nichts vorzubereiten.
+
+Die **Art des Punkts** steht als Spalte **`Art`** (Beschlussfassung / Beratung) daneben — so
+lässt sich in NocoDB auswerten, welche Punkte Beschlüsse waren. Für die Wiederherstellung ist
+sie nicht nötig: Sitzungen kommen vollständig aus der `Payload`-Spalte zurück.
 
 ## Modul „Dokumente" (Paperless-ngx)
 

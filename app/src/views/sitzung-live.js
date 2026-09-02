@@ -514,16 +514,22 @@
       const top = sitzung.tops.find(t => t.id === activeTopId);
       if (!top) return el('div', { class: 'card empty' }, 'TOP nicht gefunden.');
 
+      // Die Vorschau läuft beim Tippen mit — `save()` allein zeichnet nichts neu,
+      // und eine Vorschau, die etwas anderes zeigt als das Feld darüber, ist
+      // schlimmer als gar keine.
+      const v = GR.unterpunkte.vorschauFeld(top, { offen: true });
+      const speichern = () => { save(); v.aktualisieren(); };
+
       const titel = el('input', { type: 'text', value: top.titel });
-      titel.oninput = e => { top.titel = e.target.value; save(); };
+      titel.oninput = e => { top.titel = e.target.value; speichern(); };
 
       const vorlage = el('textarea', { style: 'min-height:140px' });
       vorlage.value = top.beschlussvorlage;
-      vorlage.oninput = e => { top.beschlussvorlage = e.target.value; save(); };
+      vorlage.oninput = e => { top.beschlussvorlage = e.target.value; speichern(); };
 
       const bemerk = el('textarea');
       bemerk.value = top.bemerkungen;
-      bemerk.oninput = e => { top.bemerkungen = e.target.value; save(); };
+      bemerk.oninput = e => { top.bemerkungen = e.target.value; speichern(); };
 
       const children = [
         el('div', { class: 'card' }, [
@@ -533,6 +539,9 @@
           ]),
           el('label', {}, 'Titel'),
           titel,
+          // Auch in der Sitzung umstellbar: aus einer Beratung wird kurzfristig
+          // eine Beschlussfassung, und umgekehrt wird ein Punkt vertagt.
+          GR.unterpunkte.artWaehler(top, { onChange: () => { save(); rerender(); } }),
           el('label', { style: 'margin-top:10px' }, GR.unterpunkte.textfeldLabel(top)),
           vorlage,
           el('label', { style: 'margin-top:10px' }, 'Sitzungsleitung für diesen TOP (abweichend)'),
@@ -541,7 +550,7 @@
         ]),
         GR.unterpunkte.zeigen(top)
           ? el('div', { class: 'card' }, [
-            GR.unterpunkte.editor(top, { onChange: save, onStruktur: () => { save(); rerender(); } }),
+            GR.unterpunkte.editor(top, { onChange: speichern, onStruktur: () => { save(); rerender(); } }),
           ])
           : null,
         abstimmungCard(top),
@@ -581,23 +590,26 @@
       // Text darin (aus der Zeit, als das Feld immer sichtbar war), bleibt es
       // sichtbar — und wird dann auch gedruckt. Ein Feld auszublenden, in dem
       // etwas steht, wäre derselbe Fehler noch einmal.
+      // Maßgeblich ist jetzt die ART des Punkts, nicht ob schon abgestimmt
+      // wurde — sonst ließe sich bei einem Beschluss-TOP erst dann etwas
+      // eintragen, wenn das Ergebnis schon feststeht.
       const bemAlt = (top.bemerkungen || '').trim();
-      const bemZeigen = GR.unterpunkte.abgestimmt(top) || !!bemAlt;
+      const bemZeigen = GR.unterpunkte.beschluss(top) || !!bemAlt;
 
       return el('div', {}, [
         ...children,
         bemZeigen
           ? el('div', { class: 'card' }, [
             el('h3', {}, 'Bemerkungen'),
-            !GR.unterpunkte.abgestimmt(top)
+            !GR.unterpunkte.beschluss(top)
               ? el('p', { class: 'help warn-mild' },
-                'Dieser TOP hat keine Abstimmung. Der Text wird trotzdem gedruckt, damit er '
+                'Dieser TOP ist eine Beratung. Der Text wird trotzdem gedruckt, damit er '
                 + 'nicht verlorengeht — für neue Notizen sind die Unterpunkte oben gedacht.')
               : null,
             bemerk,
           ].filter(Boolean))
           : null,
-        GR.unterpunkte.vorschau(top),
+        v.el,
       ].filter(Boolean));
     }
 
@@ -663,7 +675,25 @@
         } }, 'Sitzung als JSON sichern'),
         el('button', { class: sitzung.status === 'abgeschlossen' ? 'btn-primary' : '', onClick: () => {
           if (sitzung.status !== 'abgeschlossen') {
-            if (!confirmDialog('Sitzung als abgeschlossen markieren?')) return;
+            // Punkte, die als Beschlussfassung geplant waren, über die aber
+            // nicht abgestimmt wurde. Im Protokoll erscheint dort keine
+            // Abstimmungsbox — es soll niemandem erst hinterher auffallen.
+            const offen = GR.models.topsOhneAbstimmung(sitzung);
+            if (offen.length) {
+              const liste = offen
+                .map(t => `  • TOP ${t.nummer} — ${t.titel || '(ohne Titel)'}`)
+                .join('\n');
+              const frage = offen.length === 1
+                ? 'Für diesen Punkt war eine Beschlussfassung vorgesehen, es wurde aber nicht abgestimmt:'
+                : `Für diese ${offen.length} Punkte war eine Beschlussfassung vorgesehen, es wurde aber nicht abgestimmt:`;
+              if (!confirmDialog(
+                frage + '\n\n' + liste
+                + '\n\nIm Protokoll erscheint dort keine Abstimmung. Wurde der Punkt vertagt, '
+                + 'ist das richtig so — sonst zuerst die Abstimmung nachtragen.'
+                + '\n\nSitzung trotzdem abschließen?')) return;
+            } else if (!confirmDialog('Sitzung als abgeschlossen markieren?')) {
+              return;
+            }
             sitzung.status = 'abgeschlossen';
           } else {
             sitzung.status = 'live';

@@ -20,27 +20,80 @@
   // (`M.unterpunktNummer`) — gespeichert stimmte sie nach dem ersten Umsortieren
   // nicht mehr, und niemand denkt daran, sie nachzuziehen.
 
-  // Wann darf der TOP Unterpunkte bekommen? Nur solange nicht abgestimmt wurde
-  // — bei einem Beschluss-TOP gehört der Text in die Beschlussvorlage.
+  // ZWEI FLAGGEN, DIE MAN NICHT VERWECHSELN DARF:
   //
-  // Bereits erfasste Unterpunkte bleiben aber sichtbar und werden weiter
-  // gedruckt, auch wenn nachträglich abgestimmt wird. Alles andere wäre genau
-  // der Fehler, den das Bemerkungsfeld jahrelang hatte: der Text ist gespeichert,
-  // und niemand bekommt ihn je wieder zu sehen.
+  //   beschluss(top)  — die ABSICHT, in der Vorbereitung festgelegt: über
+  //                     diesen Punkt soll ein Beschluss gefasst werden.
+  //   abgestimmt(top) — das ERGEBNIS, erst in der Sitzung entstanden: es wurde
+  //                     tatsächlich abgestimmt, die Zahlen stehen fest.
+  //
+  // Früher gab es nur die zweite. Da sie in der Vorbereitung zwangsläufig
+  // überall `false` ist, sah dort jeder TOP wie eine bloße Beratung aus.
+  // Die Darstellung richtet sich deshalb nach der ABSICHT; allein die
+  // Abstimmungsbox im Protokoll richtet sich nach dem ERGEBNIS — ein Beschluss,
+  // den es nicht gab, darf nirgends gedruckt werden.
+  function beschluss(top) {
+    return M.istBeschlussTop(top);
+  }
   function abgestimmt(top) {
     return !!(top && top.abstimmung && top.abstimmung.durchgefuehrt);
   }
+
+  // Wann darf der TOP Unterpunkte bekommen? Nur bei einem Beratungspunkt — bei
+  // einer Beschlussfassung gehört der Text in die Beschlussvorlage.
+  //
+  // Bereits erfasste Unterpunkte bleiben aber sichtbar und werden weiter
+  // gedruckt, auch wenn der TOP nachträglich auf Beschlussfassung umgestellt
+  // wird. Alles andere wäre genau der Fehler, den das Bemerkungsfeld jahrelang
+  // hatte: der Text ist gespeichert, und niemand bekommt ihn je wieder zu sehen.
   function zeigen(top) {
-    return !abgestimmt(top) || M.unterpunkteVon(top).length > 0;
+    return !beschluss(top) || M.unterpunkteVon(top).length > 0;
   }
   function bearbeitbar(top) {
-    return !abgestimmt(top);
+    return !beschluss(top);
   }
 
-  // Beschriftung des großen Textfelds. Ohne Abstimmung wird nichts beschlossen,
-  // dann ist „Beschlussvorlage" schlicht der falsche Name.
+  // Beschriftung des großen Textfelds. Bei einem Beratungspunkt wird nichts
+  // beschlossen, dann ist „Beschlussvorlage" schlicht der falsche Name.
   function textfeldLabel(top) {
-    return abgestimmt(top) ? 'Beschlussvorlage' : 'Beratung';
+    return beschluss(top) ? 'Beschlussvorlage' : 'Beratung';
+  }
+
+  // --- Art des Punkts -------------------------------------------------------
+  // Der Umschalter liegt hier und nicht zweimal in den Ansichten, aus demselben
+  // Grund wie der Editor: Vorbereitung und laufende Sitzung brauchen ihn beide.
+  //
+  // Umschalten verliert NIE etwas. Wird aus einer Beschlussfassung eine
+  // Beratung, bleibt eine bereits getippte Beschlussvorlage stehen und wird
+  // gedruckt; umgekehrt bleiben erfasste Unterpunkte erhalten.
+  function artWaehler(top, { onChange }) {
+    const zeile = el('div', { class: 'top-art' });
+    const setze = (wert) => {
+      if (beschluss(top) === wert) return;
+      top.beschlussfassung = wert;
+      onChange();
+    };
+    const knopf = (wert, text, titel) => el('button', {
+      type: 'button',
+      class: 'top-art-btn' + (beschluss(top) === wert ? ' aktiv' : ''),
+      title: titel,
+      onClick: () => setze(wert),
+    }, text);
+
+    zeile.appendChild(el('span', { class: 'top-art-label' }, 'Art des Punkts'));
+    zeile.appendChild(el('div', { class: 'top-art-gruppe' }, [
+      knopf(true, 'Beschlussfassung', 'Über diesen Punkt wird abgestimmt. Das Protokoll zeigt eine Beschlussvorlage und die Abstimmungsbox.'),
+      knopf(false, 'Beratung', 'Nur Aussprache, kein Beschluss. Für Punkte wie „Verschiedenes" — hier stehen die Unterpunkte zur Verfügung.'),
+    ]));
+
+    // Nachträglich umgestellt, obwohl schon abgestimmt wurde? Dann bleibt die
+    // Abstimmung im Protokoll — sie hat stattgefunden. Nicht kommentarlos.
+    if (abgestimmt(top) && !beschluss(top)) {
+      zeile.appendChild(el('p', { class: 'help warn-mild' },
+        'Für diesen Punkt wurde bereits abgestimmt. Das Ergebnis bleibt im Protokoll erhalten, '
+        + 'auch wenn er jetzt als Beratung geführt wird.'));
+    }
+    return zeile;
   }
 
   // --- Editor ---------------------------------------------------------------
@@ -78,8 +131,9 @@
 
     if (!bearbeitbar(top)) {
       karte.appendChild(el('p', { class: 'help warn-mild' },
-        'Für diesen TOP wurde abgestimmt. Die vorhandenen Unterpunkte bleiben erhalten und '
-        + 'werden gedruckt; neue lassen sich hier nicht mehr anlegen.'));
+        'Dieser Punkt ist eine Beschlussfassung. Die vorhandenen Unterpunkte bleiben erhalten '
+        + 'und werden gedruckt; neue lassen sich erst wieder anlegen, wenn er als Beratung '
+        + 'geführt wird.'));
     }
 
     liste.forEach((up, i) => {
@@ -163,6 +217,48 @@
     return raus.join('');
   }
 
+  // Der Abstimmungsteil, so wie ihn `drawAbstimmungBox` im PDF setzt — nur
+  // grob, es geht um Wiedererkennung, nicht um ein Faksimile.
+  //
+  // Wurde noch nicht abgestimmt, steht hier ein ausgegrauter Platzhalter: der
+  // Kasten ist im fertigen Protokoll vorgesehen, aber noch leer. So sieht man
+  // der Vorschau schon in der Vorbereitung an, welche Art von Punkt vorliegt.
+  function abstimmungBlock(top) {
+    const ist = abgestimmt(top);
+    if (!ist && !beschluss(top)) return null;
+
+    const a = (top.abstimmung || {});
+    const einst = M.isEinstimmig(a);
+    const richtung = M.einstimmigRichtung(a);
+    const haken = (an) => (an ? '☒' : '☐');
+    const zahl = (n) => (ist ? String(n || 0) : '');
+
+    const kasten = el('div', { class: 'up-v-abst' + (ist ? '' : ' leer') });
+    kasten.appendChild(el('div', { class: 'up-v-abst-kopf' }, [
+      el('span', {}, `${haken(einst)} Einstimmig`),
+      el('span', {}, `${haken(ist && !einst)} Mit Stimmenmehrheit`),
+    ]));
+    kasten.appendChild(el('div', { class: 'up-v-abst-zeile' }, [
+      el('span', {}, `${haken(einst && richtung === 'dafuer')} dafür`),
+      el('span', {}, `${haken(einst && richtung === 'dagegen')} dagegen`),
+      el('span', {}, `Ja: ${zahl(a.ja)}`),
+      el('span', {}, `Nein: ${zahl(a.nein)}`),
+      el('span', {}, `Enthaltungen: ${zahl(a.enthaltung)}`),
+    ]));
+
+    // Die Bemerkungen sind im Protokoll die letzte Zeile dieses Kastens —
+    // deshalb stehen sie hier drin und nicht darunter.
+    const bem = (top.bemerkungen || '').trim();
+    if (ist) {
+      kasten.appendChild(el('div', { class: 'up-v-abst-bem' }, 'Bemerkungen: ' + bem));
+      kasten.appendChild(el('div', { class: 'up-v-abst-fuss' }, 'Ergebnis: ' + M.ergebnisAbstimmung(a)));
+    } else {
+      kasten.appendChild(el('div', { class: 'up-v-abst-fuss' },
+        'Wird in der Sitzung erfasst.'));
+    }
+    return kasten;
+  }
+
   function vorschau(top) {
     const box = el('div', { class: 'card up-vorschau' });
     box.appendChild(el('div', { class: 'up-vorschau-fahne' }, 'So steht es im Protokoll'));
@@ -172,10 +268,10 @@
       (nummer ? `TOP ${nummer}` : 'TOP') + (top.titel ? ' · ' + top.titel : '')));
 
     const einleitung = (top.beschlussvorlage || '').trim();
-    if (abgestimmt(top)) box.appendChild(el('div', { class: 'up-v-label' }, 'Beschlussvorlage:'));
+    if (beschluss(top)) box.appendChild(el('div', { class: 'up-v-label' }, 'Beschlussvorlage:'));
     if (einleitung) {
       box.appendChild(el('div', { class: 'up-v-text', html: listenHtml(einleitung) }));
-    } else if (abgestimmt(top)) {
+    } else if (beschluss(top)) {
       box.appendChild(el('div', { class: 'up-v-text' }, '—'));
     }
 
@@ -190,25 +286,52 @@
       ]));
     });
 
-    if (!einleitung && !liste.length && !abgestimmt(top)) {
+    if (!einleitung && !liste.length && !beschluss(top)) {
       box.appendChild(el('p', { class: 'help' }, 'Noch nichts erfasst.'));
     }
 
-    // Bemerkungen erscheinen im Protokoll nur bei einem Beschluss-TOP (dort in
-    // der Abstimmungsbox). Steht bei einem TOP ohne Abstimmung noch Text darin,
-    // wird er ausnahmsweise gedruckt — sonst verschwände er unbemerkt.
+    // Bemerkungen stehen im Protokoll in der Abstimmungsbox — die zeichnet
+    // `abstimmungBlock` mit. NUR wenn nicht abgestimmt wurde, gibt es die Box
+    // nicht, und dann druckt das PDF sie als eigenen Absatz. Genau so hier.
     const bem = (top.bemerkungen || '').trim();
-    if (bem) {
+    if (bem && !abgestimmt(top)) {
       box.appendChild(el('div', { class: 'up-v-unterpunkt' }, [
         el('div', { class: 'up-v-ueberschrift' }, 'Bemerkungen:'),
         el('div', { class: 'up-v-text', html: listenHtml(bem) }),
       ]));
     }
+
+    const abst = abstimmungBlock(top);
+    if (abst) box.appendChild(abst);
     return box;
   }
 
+  // --- Vorschau-Feld --------------------------------------------------------
+  // Die Vorschau muss beim Tippen mitlaufen. Die Ansichten speichern bei jedem
+  // Tastendruck (`oninput`), zeichnen sich aber nur bei Strukturänderungen neu
+  // — eine einmal gebaute Vorschau stünde also veraltet daneben, und eine
+  // Vorschau, die etwas anderes zeigt als das Feld darüber, ist schlimmer als
+  // gar keine. Deshalb gibt es hier einen Behälter, den die Ansicht nachziehen
+  // kann, ohne die ganze Karte neu zu bauen (was den Cursor aus dem Feld risse).
+  function vorschauFeld(top, { offen = false } = {}) {
+    const behaelter = el('div', { class: 'up-vorschau-feld' });
+    let sichtbar = !!offen;
+    const aktualisieren = () => {
+      behaelter.innerHTML = '';
+      if (sichtbar) behaelter.appendChild(vorschau(top));
+    };
+    const umschalten = (wert) => {
+      sichtbar = (wert === undefined) ? !sichtbar : !!wert;
+      aktualisieren();
+      return sichtbar;
+    };
+    aktualisieren();
+    return { el: behaelter, aktualisieren, umschalten, istOffen: () => sichtbar };
+  }
+
   GR.unterpunkte = {
-    editor, vorschau, zeigen, bearbeitbar, textfeldLabel, abgestimmt,
+    editor, vorschau, vorschauFeld, artWaehler,
+    zeigen, bearbeitbar, textfeldLabel, abgestimmt, beschluss,
     // für Tests
     _listenHtml: listenHtml,
   };

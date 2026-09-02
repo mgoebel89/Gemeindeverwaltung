@@ -5,6 +5,12 @@
   const { el, toast, confirmDialog } = GR.ui;
   const { emptyTop, fullName } = GR.models;
 
+  // Welche TOP-Vorschauen sind aufgeklappt? Bewusst AUSSERHALB von
+  // renderVorbereitung: die Ansicht baut sich bei jeder Strukturänderung
+  // komplett neu auf (TOP verschieben, Unterpunkt anlegen). Läge der Zustand
+  // innen, klappte die Vorschau bei jedem dieser Handgriffe wieder zu.
+  const offeneVorschau = new Set();
+
   function renderVorbereitung(mount, sitzungId) {
     let sitzung = store.getSitzung(sitzungId);
     if (!sitzung) {
@@ -63,15 +69,20 @@
     ]);
 
     function topCard(top) {
+      // Die Vorschau hängt an Titel und Text und muss beim Tippen mitlaufen —
+      // `save()` allein zeichnet nichts neu.
+      const v = GR.unterpunkte.vorschauFeld(top, { offen: offeneVorschau.has(top.id) });
+      const speichern = () => { save(); v.aktualisieren(); };
+
       const titelI = el('input', { type: 'text', value: top.titel, placeholder: 'TOP-Titel' });
-      titelI.oninput = e => { top.titel = e.target.value; save(); };
+      titelI.oninput = e => { top.titel = e.target.value; speichern(); };
       const vorlageT = el('textarea', {
-        placeholder: GR.unterpunkte.abgestimmt(top)
+        placeholder: GR.unterpunkte.beschluss(top)
           ? 'Beschlussvorlage (kann hier vorbereitet werden)'
           : 'Beratungstext — bei mehreren Themen die Unterpunkte darunter benutzen',
       });
       vorlageT.value = top.beschlussvorlage;
-      vorlageT.oninput = e => { top.beschlussvorlage = e.target.value; save(); };
+      vorlageT.oninput = e => { top.beschlussvorlage = e.target.value; speichern(); };
 
       const moveUp = () => {
         const sameBereich = sitzung.tops.filter(t => t.bereich === top.bereich);
@@ -101,22 +112,44 @@
       // „Verschiedenes" ansteht, weiß man oft vorher, und in der Sitzung kommt
       // dann nur noch das Ergebnis dazu.
       const unterpunkte = GR.unterpunkte.zeigen(top)
-        ? GR.unterpunkte.editor(top, { onChange: save, onStruktur: () => { save(); rerender(); } })
+        ? GR.unterpunkte.editor(top, {
+          onChange: speichern,
+          onStruktur: () => { save(); rerender(); },
+        })
         : null;
+
+      // Die Art des Punkts ändert Beschriftung und Unterpunkt-Sichtbarkeit —
+      // danach muss die Karte neu gebaut werden.
+      const art = GR.unterpunkte.artWaehler(top, {
+        onChange: () => { save(); rerender(); },
+      });
+
+      const vorschauBtn = el('button', {
+        class: 'btn-sm' + (v.istOffen() ? ' btn-primary' : ''),
+        title: 'Zeigt diesen TOP so, wie er im Protokoll erscheint',
+        onClick: () => {
+          const offen = v.umschalten();
+          if (offen) offeneVorschau.add(top.id); else offeneVorschau.delete(top.id);
+          vorschauBtn.className = 'btn-sm' + (offen ? ' btn-primary' : '');
+        },
+      }, 'Vorschau');
 
       return el('div', { class: 'card' }, [
         el('div', { class: 'toolbar' }, [
           el('strong', {}, `TOP ${top.nummer}`),
           el('div', { class: 'spacer' }),
+          vorschauBtn,
           el('button', { class: 'btn-sm', onClick: moveUp }, '↑'),
           el('button', { class: 'btn-sm', onClick: moveDown }, '↓'),
           el('button', { class: 'btn-sm btn-danger', onClick: del }, 'Löschen'),
         ]),
         el('label', {}, 'Titel'),
         titelI,
+        art,
         el('label', { style: 'margin-top:10px' }, GR.unterpunkte.textfeldLabel(top)),
         vorlageT,
         unterpunkte,
+        v.el,
       ].filter(Boolean));
     }
 

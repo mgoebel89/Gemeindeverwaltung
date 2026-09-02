@@ -2,7 +2,7 @@
   'use strict';
   window.GR = window.GR || {};
   const { store } = GR;
-  const { ergebnisAbstimmung, uuid, fullName } = GR.models;
+  const { ergebnisAbstimmung, uuid, fullName, istBeschlussTop } = GR.models;
 
   function nameOf(id, mitglieder) {
     const m = mitglieder.find(x => x.id === id);
@@ -45,6 +45,7 @@
       Bereich: t.bereich === 'oeffentlich' ? 'öffentlich' : 'nicht-öffentlich',
       TopNr: t.nummer,
       Titel: t.titel,
+      Art: istBeschlussTop(t) ? 'Beschlussfassung' : 'Beratung',
       Beschlussvorlage: t.beschlussvorlage,
       Ja: t.abstimmung?.durchgefuehrt ? t.abstimmung.ja : null,
       Nein: t.abstimmung?.durchgefuehrt ? t.abstimmung.nein : null,
