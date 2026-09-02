@@ -22,6 +22,10 @@
   // ganze Zeile in eine andere Kodierung (Buchstabensalat). Siehe vorgaenge-pdf.
   const WINANSI_EXTRA = '€‚ƒ„…†‡ˆ‰Š‹Œ Ž‘’“”•–—˜™š›œžŸ';
   function winAnsi(text) {
+    // Hoch-/tiefgestellte Zeichen zuerst entschaerfen: die Pruefung unten
+    // laesst ² (0xB2) richtigerweise durch, macht aus ₂ aber ein '?'.
+    // Lesbar ist 'CO2'. Siehe export/pdf-inline.js.
+    if (window.GR && GR.pdfInline) text = GR.pdfInline.entschaerfe(text);
     let out = '';
     for (const ch of String(text == null ? '' : text)) {
       const cp = ch.codePointAt(0);

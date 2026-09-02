@@ -50,7 +50,28 @@
     doc.setFont('helvetica', bold && italic ? 'bolditalic' : bold ? 'bold' : italic ? 'italic' : 'normal');
     doc.setFontSize(size);
     doc.setTextColor(color[0], color[1], color[2]);
-    const lines = doc.splitTextToSize(String(text ?? ''), maxWidth);
+    const roh = String(text ?? '');
+
+    // Auszeichnungen (m^2, CO_2, **fett**, *kursiv*) brauchen den Zeilensetzer,
+    // weil eine Zeile dann aus verschieden gesetzten Stuecken besteht. Ohne
+    // Auszeichnung bleibt es beim einfachen, schnellen Weg.
+    if (GR.pdfInline && GR.pdfInline.hatAuszeichnung(roh)) {
+      const stuecke = GR.pdfInline.zerlege(roh);
+      const zeilen = GR.pdfInline.umbrich(doc, stuecke, maxWidth, size, bold, italic);
+      for (const zl of zeilen) {
+        ensureSpace(doc, state, lineGap);
+        let x = MARGIN_X + indent;
+        if (align === 'right') {
+          x = PAGE_W - MARGIN_X - GR.pdfInline.zeilenBreite(doc, zl, size, bold, italic);
+        }
+        GR.pdfInline.zeichneZeile(doc, zl, x, state.y, size, bold, italic);
+        state.y += lineGap;
+      }
+      doc.setTextColor(color[0], color[1], color[2]);
+      return;
+    }
+
+    const lines = doc.splitTextToSize(roh, maxWidth);
     for (const ln of lines) {
       ensureSpace(doc, state, lineGap);
       const x = align === 'right' ? PAGE_W - MARGIN_X : MARGIN_X + indent;
@@ -59,17 +80,30 @@
     }
   }
 
+  // Eine Textzeile mit Auszeichnungen setzen und die naechste y-Position
+  // zurueckgeben. Gemeinsamer Weg fuer alle Zweige von drawMarkdown, damit
+  // Absatz, Aufzaehlung, Nummernliste und Ueberschrift sich gleich verhalten.
+  function drawInlineLines(doc, state, text, x, maxWidth, size, lineGap, bold) {
+    const stuecke = GR.pdfInline.zerlege(text);
+    const zeilen = GR.pdfInline.umbrich(doc, stuecke, maxWidth, size, !!bold, false);
+    zeilen.forEach((zl, i) => {
+      ensureSpace(doc, state, lineGap);
+      GR.pdfInline.zeichneZeile(doc, zl, x, state.y, size, !!bold, false);
+      state.y += lineGap;
+    });
+    return zeilen.length;
+  }
+
   // Sehr leichter Markdown-Renderer.
   // - Überschriften: Zeilen, die mit "# ", "## " oder "### " beginnen — fett,
   //   die oberste Ebene etwas größer
   // - Listenelemente: Zeilen, die mit "- ", "* " oder "1. " beginnen
-  // - **fett** und *kursiv* werden NICHT geparst (zu viel Aufwand für jsPDF:
-  //   ein Schriftwechsel mitten in der Zeile hieße, die Zeile in Stücke zu
-  //   zerlegen und jedes einzeln zu positionieren — samt eigener Umbruchlogik)
+  // - **fett**, *kursiv*, hochgestellt `m^2` und tiefgestellt `CO_2` — die
+  //   Auszeichnungen INNERHALB einer Zeile macht `export/pdf-inline.js`
   // - Leerzeilen werden als halber Zeilenabstand übernommen
   //
   // Die Vorschau in ui/unterpunkte.js kann bewusst GENAU dasselbe und nicht
-  // mehr. Eine Vorschau, die Fettdruck zeigt, den das Protokoll nicht hat,
+  // mehr. Eine Vorschau, die etwas zeigt, das im Protokoll anders aussieht,
   // wäre schlimmer als gar keine.
   function drawMarkdown(doc, state, text, opts = {}) {
     const {
@@ -98,14 +132,9 @@
         // mindestens ihre erste Textzeile bei sich.
         ensureSpace(doc, state, lineGap * 2);
         state.y += 1.5;
-        doc.setFont('helvetica', 'bold');
-        doc.setFontSize(hSize);
-        for (const ln of doc.splitTextToSize(heading[2], maxWidth)) {
-          ensureSpace(doc, state, lineGap);
-          doc.text(ln, MARGIN_X + indent, state.y);
-          state.y += lineGap;
-        }
-        // Zurücksetzen, sonst liefe der Rest des Blocks fett weiter.
+        drawInlineLines(doc, state, heading[2], MARGIN_X + indent, maxWidth, hSize, lineGap, true);
+        // Zurücksetzen, sonst liefe der Rest des Blocks fett und zu groß
+        // weiter — auch der Aufzählungspunkt, der direkt gesetzt wird.
         doc.setFont('helvetica', 'normal');
         doc.setFontSize(size);
         continue;
@@ -113,33 +142,22 @@
       if (bullet) {
         const t = bullet[1];
         const bIndent = 6;
-        const wrapped = doc.splitTextToSize(t, maxWidth - bIndent);
+        // Erst Platz sichern, dann den Punkt setzen: sonst landet er am
+        // Seitenfuss und sein Text auf der naechsten Seite.
         ensureSpace(doc, state, lineGap);
         doc.text('•', MARGIN_X + indent + 1.5, state.y);
-        wrapped.forEach((ln, i) => {
-          if (i > 0) ensureSpace(doc, state, lineGap);
-          doc.text(ln, MARGIN_X + indent + bIndent, state.y);
-          state.y += lineGap;
-        });
+        drawInlineLines(doc, state, t, MARGIN_X + indent + bIndent,
+          maxWidth - bIndent, size, lineGap, false);
       } else if (numbered) {
         const num = numbered[1];
         const t = numbered[2];
         const nIndent = 9;
-        const wrapped = doc.splitTextToSize(t, maxWidth - nIndent);
         ensureSpace(doc, state, lineGap);
         doc.text(num + '.', MARGIN_X + indent + 1.5, state.y);
-        wrapped.forEach((ln, i) => {
-          if (i > 0) ensureSpace(doc, state, lineGap);
-          doc.text(ln, MARGIN_X + indent + nIndent, state.y);
-          state.y += lineGap;
-        });
+        drawInlineLines(doc, state, t, MARGIN_X + indent + nIndent,
+          maxWidth - nIndent, size, lineGap, false);
       } else {
-        const wrapped = doc.splitTextToSize(raw, maxWidth);
-        for (const ln of wrapped) {
-          ensureSpace(doc, state, lineGap);
-          doc.text(ln, MARGIN_X + indent, state.y);
-          state.y += lineGap;
-        }
+        drawInlineLines(doc, state, raw, MARGIN_X + indent, maxWidth, size, lineGap, false);
       }
     }
   }

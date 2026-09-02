@@ -544,6 +544,7 @@
           GR.unterpunkte.artWaehler(top, { onChange: () => { save(); rerender(); } }),
           el('label', { style: 'margin-top:10px' }, GR.unterpunkte.textfeldLabel(top)),
           vorlage,
+          GR.unterpunkte.schreibhilfe(),
           el('label', { style: 'margin-top:10px' }, 'Sitzungsleitung für diesen TOP (abweichend)'),
           sitzungsleitungSelect(top),
           el('p', { class: 'help' }, 'Leer = Standard-Sitzungsleitung. Auswahl ist auf aktuell Anwesende beschränkt.'),

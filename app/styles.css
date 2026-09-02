@@ -1536,6 +1536,17 @@ tr:hover td { background: #fafbfc; }
 .up-v-text ul, .up-v-text ol { margin: 2px 0 6px; padding-left: 22px; }
 .up-v-text li { margin: 1px 0; }
 .up-v-leer { color: var(--muted); font-style: italic; font-size: 0.9rem; }
+.up-v-text .up-v-h { margin: 8px 0 2px; font-weight: 700; line-height: 1.3; }
+.up-v-text h4.up-v-h { font-size: 1rem; }
+.up-v-text h5.up-v-h { font-size: 0.95rem; }
+.up-v-text h6.up-v-h { font-size: 0.92rem; }
+/* Hoch- und Tiefgestelltes soll die Zeilenhoehe nicht auseinanderziehen. */
+.up-v-text sup, .up-v-text sub { font-size: 0.7em; line-height: 0; }
+.schreibhilfe { margin-top: 6px; line-height: 1.7; }
+.schreibhilfe code {
+  background: #eef1f5; border-radius: 3px; padding: 1px 5px;
+  font-size: 0.86em; white-space: nowrap;
+}
 
 /* Der Abstimmungsteil der Vorschau. Grobe Andeutung des gedruckten Kastens,
    kein Faksimile — er soll wiedererkennbar sein, nicht massstabsgetreu.

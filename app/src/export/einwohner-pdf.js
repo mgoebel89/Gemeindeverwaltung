@@ -39,7 +39,11 @@
 
   function newDoc() {
     if (!window.jspdf || !window.jspdf.jsPDF) { alert('jsPDF ist nicht geladen.'); return null; }
-    return new window.jspdf.jsPDF({ unit: 'mm', format: 'a4', orientation: 'portrait' });
+    // Einmal umhuellt, damit kein eingefuegtes Zeichen die Zeile zerreisst:
+    // ₂ und ⁴-⁹ kann die Standardschrift nicht, aus „CO₂" wird sonst „CO,"
+    // samt zerrissener Laufweite. Siehe export/pdf-inline.js.
+    const doc = new window.jspdf.jsPDF({ unit: 'mm', format: 'a4', orientation: 'portrait' });
+    return GR.pdfInline ? GR.pdfInline.schuetze(doc) : doc;
   }
 
   function setFont(doc, size, bold) {

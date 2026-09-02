@@ -17,7 +17,11 @@
       alert('jsPDF ist nicht geladen.\n\nBitte vendor/jspdf.inline.js bereitstellen (siehe vendor/README.txt).');
       return null;
     }
-    return new window.jspdf.jsPDF({ unit: 'mm', format: 'a4', orientation: 'portrait' });
+    // Einmal umhuellt, damit kein eingefuegtes Zeichen die Zeile zerreisst:
+    // ₂ und ⁴-⁹ kann die Standardschrift nicht, aus „CO₂" wird sonst „CO,"
+    // samt zerrissener Laufweite. Siehe export/pdf-inline.js.
+    const doc = new window.jspdf.jsPDF({ unit: 'mm', format: 'a4', orientation: 'portrait' });
+    return GR.pdfInline ? GR.pdfInline.schuetze(doc) : doc;
   }
 
   function setFont(doc, size, bold, italic, color) {

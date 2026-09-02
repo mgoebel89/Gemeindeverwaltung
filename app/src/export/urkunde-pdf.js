@@ -69,6 +69,10 @@
   };
 
   function winAnsi(text) {
+    // Hoch-/tiefgestellte Zeichen zuerst entschaerfen: die Pruefung unten
+    // laesst ² (0xB2) richtigerweise durch, macht aus ₂ aber ein '?'.
+    // Lesbar ist 'CO2'. Siehe export/pdf-inline.js.
+    if (window.GR && GR.pdfInline) text = GR.pdfInline.entschaerfe(text);
     let out = '';
     for (const ch of String(text == null ? '' : text)) {
       if (UMSCHRIFT[ch] !== undefined) { out += UMSCHRIFT[ch]; continue; }

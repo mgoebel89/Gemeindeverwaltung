@@ -456,18 +456,51 @@ Aufzählungen und den Abstimmungsteil.
   steht dort ein blasser, leerer Kasten mit dem Hinweis „Wird in der Sitzung erfasst" — so sieht
   man der Vorschau die Art des Punkts an. Nach der Abstimmung zeigt er Einstimmig bzw.
   Stimmenmehrheit, die Zahlen, die Bemerkungen und das Ergebnis.
-- Sie kann **bewusst genauso wenig wie der Druck** — kein Fettdruck, keine Kursivschrift. Eine
-  Vorschau, die mehr zeigt, als das PDF nachher kann, führt in die Irre.
+- Sie kann **bewusst genau so viel wie der Druck** und keinen Deut mehr. Hoch- und
+  Tiefgestelltes, Fett und Kursiv kommen aus demselben Zerleger wie das PDF
+  (`GR.pdfInline.zerlege`), damit die beiden Wege gar nicht erst auseinanderlaufen können.
+  Eine Vorschau, die etwas anderes zeigt als das Protokoll, führt in die Irre.
 
 ### Was der PDF-Renderer versteht
 
-`drawMarkdown` in `app/src/export/pdf.js` ist ein sehr kleiner Markdown-Renderer und beherrscht:
-**Überschriften** (`# `, `## `, `### ` — fett, oberste Ebene etwas größer), **Aufzählungen**
-(`- `, `* `), **Nummernlisten** (`1. `) und Leerzeilen als halben Abstand.
+`drawMarkdown` in `app/src/export/pdf.js` beherrscht zeilenweise: **Überschriften** (`# `, `## `,
+`### `), **Aufzählungen** (`- `, `* `), **Nummernlisten** (`1. `) und Leerzeilen als halben
+Abstand. Innerhalb einer Zeile kommt `app/src/export/pdf-inline.js` dazu:
 
-> **`**fett**` und `*kursiv*` versteht er nicht** und die Sternchen würden mitgedruckt. Grund:
-> ein Schriftwechsel mitten in der Zeile hieße in jsPDF, die Zeile in Stücke zu zerlegen und
-> jedes einzeln zu positionieren — samt eigener Umbruchlogik.
+| Schreibweise | Ergebnis |
+| --- | --- |
+| `m^2`, `CO_2` | hoch- und tiefgestellt, ein Zeichen |
+| `m^{-2}`, `X_{max}` | hoch- und tiefgestellt, mehrere Zeichen |
+| `**fett**` | **fett** |
+| `*kursiv*` | *kursiv* |
+| `\_`, `\^`, `\*` | das Zeichen wörtlich |
+
+Der Backslash ist wichtig: `Anlage_3` würde sonst als `Anlage₃` gedruckt. `Anlage\_3` bleibt
+`Anlage_3`. Unter dem Textfeld steht in beiden Ansichten eine Kurzhilfe mit diesen Zeichen —
+eine Auszeichnung, die nur im Handbuch steht, findet niemand.
+
+**Warum das ein eigener Baustein ist.** jsPDF setzt eine Zeile nur in EINER Schrift und EINER
+Größe. Sobald sich mitten in der Zeile etwas ändert, muss die Zeile in Stücke zerlegt, jedes
+einzeln gemessen und an eigener x-Position gesetzt werden, und der Umbruch muss über die
+Stückgrenzen hinweg rechnen — `splitTextToSize` kann das nicht mehr. Genau diese Maschinerie
+fehlte, weshalb Fett und Kursiv jahrelang draußen blieben; mit ihr kamen sie fast geschenkt
+dazu. Beim Zeichnen werden benachbarte Stücke gleichen Stils wieder zusammengefasst, sonst
+gingen Wortabstände verloren.
+
+> **Fertige Sonderzeichen sind keine Abkürzung.** Am Blatt gemessen, was die
+> PDF-Standardschrift kann: `¹ ² ³` und `°` drucken korrekt — ein getipptes „1.250 m²" war nie
+> kaputt. Aber `⁰` und `⁴`–`⁹` drucken als **falsche Buchstaben** (`p`, `t`, `u`, `v`, …), und
+> `₀`–`₉` als **Satzzeichen**: aus „CO₂" wurde „CO,". In beiden Fällen verliert obendrein die
+> **ganze Zeile** ihre Laufweite, weil jsPDF auf eine andere Kodierung umschaltet und sämtliche
+> Breiten falsch misst. Solche Zeichen werden deshalb eingelesen und über denselben Weg gesetzt
+> wie `m^2` — wer aus Word ein „CO₂" einfügt, bekommt es einfach richtig gedruckt.
+
+**In den übrigen Modulen** (Vermietung, Auslagen, Verträge, Vorgänge, Arbeitszeiten, Einwohner,
+Urkunde) gibt es die Schreibweise nicht — dort wird nur dafür gesorgt, dass kein eingefügtes
+Zeichen die Zeile zerstört: `²` und `³` bleiben stehen, aus `CO₂` wird das lesbare `CO2`. Bei
+den vier Modulen ohne eigenen Zeichenfilter hängt sich `GR.pdfInline.schuetze(doc)` einmal an
+das Dokument, statt Dutzende Aufrufstellen einzeln anzufassen — so kann keine vergessen werden,
+auch keine später hinzugefügte.
 
 ### Bemerkungen
 

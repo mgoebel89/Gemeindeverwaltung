@@ -96,6 +96,26 @@
     return zeile;
   }
 
+  // Kurzhilfe zur Schreibweise, direkt unter dem grossen Textfeld. Ohne Hinweis
+  // in der Oberflaeche findet niemand eine Auszeichnung, die es nur im Handbuch
+  // gibt — genau das war beim alten Aufzaehlungs-Markdown der Fall.
+  function schreibhilfe() {
+    return el('p', { class: 'help schreibhilfe' }, [
+      'Schreibweise: ',
+      el('code', {}, '- '), ' Aufzaehlung · ',
+      el('code', {}, '# '), ' Überschrift · ',
+      el('code', {}, '**fett**'), ' · ',
+      el('code', {}, '*kursiv*'), ' · ',
+      el('code', {}, 'm^2'), ' hochgestellt · ',
+      el('code', {}, 'CO_2'), ' tiefgestellt. ',
+      'Mehrere Zeichen in geschweifte Klammern: ',
+      el('code', {}, 'm^{-2}'), '. Ein wörtlicher Unterstrich: ',
+      // Zwei Backslashes im Quelltext, damit EINER auf dem Bildschirm steht —
+      // ausgerechnet in der Zeile, die den Backslash erklaert.
+      el('code', {}, '\\_'), '.',
+    ]);
+  }
+
   // --- Editor ---------------------------------------------------------------
   // onChange() wird nach jeder Änderung gerufen (speichern), onStruktur() nach
   // Änderungen, die die Liste umbauen (anlegen, löschen, verschieben) und daher
@@ -186,10 +206,25 @@
   // Zeigt den TOP so, wie er im Protokoll erscheint. Der Zweck ist die
   // Gliederung, nicht das Aussehen: Nummern, Überschriften, Aufzählungen.
   //
-  // Bewusst ein eigener, winziger Renderer statt `marked`: das PDF versteht nur
-  // Aufzählungen und Nummernlisten (siehe drawMarkdown in export/pdf.js). Eine
-  // Vorschau, die mehr kann als der Druck, führt in die Irre — sie würde
-  // Fettdruck zeigen, den das Protokoll nachher nicht hat.
+  // Bewusst ein eigener, winziger Renderer statt `marked`: er kann GENAU so
+  // viel wie `drawMarkdown` in export/pdf.js und keinen Deut mehr. Eine
+  // Vorschau, die mehr kann als der Druck, fuehrt in die Irre.
+  //
+  // Die Auszeichnungen INNERHALB einer Zeile (m^2, CO_2, **fett**, *kursiv*)
+  // kommen aus demselben Zerleger wie das PDF (`GR.pdfInline.zerlege`), damit
+  // die beiden Wege gar nicht erst auseinanderlaufen koennen.
+  function auszeichnungHtml(text, sicher) {
+    if (!GR.pdfInline) return sicher(text);
+    return GR.pdfInline.zerlege(text).map(t => {
+      let h = sicher(t.text);
+      if (t.stil.fett) h = '<strong>' + h + '</strong>';
+      if (t.stil.kursiv) h = '<em>' + h + '</em>';
+      if (t.stil.hoch) h = '<sup>' + h + '</sup>';
+      if (t.stil.tief) h = '<sub>' + h + '</sub>';
+      return h;
+    }).join('');
+  }
+
   function listenHtml(text) {
     const zeilen = String(text || '').split(/\r?\n/);
     const raus = [];
@@ -202,15 +237,20 @@
       if (!roh.trim()) { schliesse(); continue; }
       const punkt = roh.match(/^\s*[-*]\s+(.*)$/);
       const zahl = roh.match(/^\s*\d+\.\s+(.*)$/);
-      if (punkt) {
+      const ueber = roh.match(/^\s*(#{1,3})\s+(.*)$/);
+      if (ueber) {
+        schliesse();
+        const stufe = ueber[1].length;
+        raus.push(`<h${stufe + 3} class="up-v-h">${auszeichnungHtml(ueber[2], sicher)}</h${stufe + 3}>`);
+      } else if (punkt) {
         if (liste !== 'ul') { schliesse(); raus.push('<ul>'); liste = 'ul'; }
-        raus.push(`<li>${sicher(punkt[1])}</li>`);
+        raus.push(`<li>${auszeichnungHtml(punkt[1], sicher)}</li>`);
       } else if (zahl) {
         if (liste !== 'ol') { schliesse(); raus.push('<ol>'); liste = 'ol'; }
-        raus.push(`<li>${sicher(zahl[1])}</li>`);
+        raus.push(`<li>${auszeichnungHtml(zahl[1], sicher)}</li>`);
       } else {
         schliesse();
-        raus.push(`<p>${sicher(roh)}</p>`);
+        raus.push(`<p>${auszeichnungHtml(roh, sicher)}</p>`);
       }
     }
     schliesse();
@@ -330,7 +370,7 @@
   }
 
   GR.unterpunkte = {
-    editor, vorschau, vorschauFeld, artWaehler,
+    editor, vorschau, vorschauFeld, artWaehler, schreibhilfe,
     zeigen, bearbeitbar, textfeldLabel, abgestimmt, beschluss,
     // für Tests
     _listenHtml: listenHtml,

@@ -148,6 +148,7 @@
         art,
         el('label', { style: 'margin-top:10px' }, GR.unterpunkte.textfeldLabel(top)),
         vorlageT,
+        GR.unterpunkte.schreibhilfe(),
         unterpunkte,
         v.el,
       ].filter(Boolean));

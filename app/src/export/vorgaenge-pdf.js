@@ -24,7 +24,11 @@
   const WINANSI_EXTRA = '€‚ƒ„…†‡ˆ‰Š‹Œ Ž‘’“”•–—˜™š›œžŸ';
   const ERSATZ = { '→': '»', '←': '«', '✓': '-', '✔': '-', '☑': '-', '☐': '-', '·': '·', '‑': '-', '−': '-', ' ': ' ', '\t': ' ' };
   function winAnsi(text) {
+    // Hoch-/tiefgestellte Zeichen zuerst entschaerfen: die Pruefung unten
+    // laesst ² (0xB2) durch, was richtig ist, macht aus ₂ aber ein '?'.
+    // Lesbar ist 'CO2'. Siehe export/pdf-inline.js.
     let s = String(text == null ? '' : text);
+    if (window.GR && GR.pdfInline) s = GR.pdfInline.entschaerfe(s);
     s = s.replace(/[→←✓✔☑☐‑− \t]/g, ch => ERSATZ[ch] || ' ');
     let out = '';
     for (const ch of s) {
